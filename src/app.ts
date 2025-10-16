@@ -1,0 +1,285 @@
+// @ts-nocheck
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import dotenv from "dotenv";
+
+import { errorMiddleware } from "./middleware/error";
+import { dbConnection } from "./utils/database";
+import { envConfig } from "./utils/env";
+import { logger } from "./utils/logger";
+
+// Load environment variables
+dotenv.config();
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: false
+}));
+
+// CORS configuration
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:3001"
+  ],
+  credentials: true
+}));
+
+// Body parsing middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Request logging middleware
+app.use((req, res, next) => {
+  logger.info(`${req.method} ${req.path}`, {
+    ip: req.ip,
+    userAgent: req.get("User-Agent"),
+  });
+  next();
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    environment: envConfig.get("NODE_ENV"),
+  });
+});
+
+// Test endpoint
+app.get("/", (req, res) => {
+  res.json({
+    message: "Welcome to the API",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Admin routes
+import adminRoutes from "./routes/admin/index";
+app.use("/api/admin", adminRoutes);
+
+// Webhook routes (public endpoints for external systems)
+import logisticsWebhooks from "./routes/webhooks/logisticsWebhooks";
+app.use("/api/webhooks/logistics", logisticsWebhooks);
+
+// TODO: Add Buyer and Seller routes
+// import buyerRoutes from "./routes/buyer/index";
+// import sellerRoutes from "./routes/seller/index";
+// app.use("/api/buyer", buyerRoutes);
+// app.use("/api/seller", sellerRoutes);
+
+// Load Swagger spec with fallback
+let specs: any = {
+  openapi: "3.0.0",
+  info: { title: "Simbi Market Admin API", version: "1.0.0" },
+  paths: {},
+};
+
+try {
+  const swagger = require("./config/swagger");
+  if (swagger?.specs) {
+    specs = swagger.specs;
+    logger.info(`Swagger spec loaded: ${Object.keys(specs.paths || {}).length} endpoints`);
+  }
+} catch (e: any) {
+  logger.warn("Failed to load swagger spec, using fallback", { error: e.message });
+}
+
+// Swagger UI endpoint (CDN-based, Vercel-compatible)
+app.get("/api-docs", (req, res) => {
+  res.setHeader("Content-Type", "text/html");
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Simbi Market - Admin API Documentation</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      
+      <!-- Swagger UI CSS from CDN -->
+      <link rel="stylesheet" type="text/css" 
+            href="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui.css" />
+      
+      <style>
+        /* Custom styling */
+        body { margin: 0; padding: 0; }
+        
+        /* Hide Swagger topbar */
+        .swagger-ui .topbar { display: none; }
+        
+        /* Custom header */
+        .custom-header {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 20px;
+          text-align: center;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .custom-header h1 {
+          margin: 0;
+          font-size: 28px;
+          font-weight: 600;
+        }
+        .custom-header p {
+          margin: 5px 0 0 0;
+          opacity: 0.9;
+          font-size: 14px;
+        }
+        
+        /* HTTP method colors */
+        .swagger-ui .opblock.opblock-post {
+          border-color: #49cc90;
+          background: rgba(73, 204, 144, 0.1);
+        }
+        .swagger-ui .opblock.opblock-get {
+          border-color: #61affe;
+          background: rgba(97, 175, 254, 0.1);
+        }
+        .swagger-ui .opblock.opblock-put {
+          border-color: #fca130;
+          background: rgba(252, 161, 48, 0.1);
+        }
+        .swagger-ui .opblock.opblock-delete {
+          border-color: #f93e3e;
+          background: rgba(249, 62, 62, 0.1);
+        }
+        
+        /* Improved button styling */
+        .swagger-ui .btn.authorize {
+          background: #667eea;
+          border-color: #667eea;
+        }
+        .swagger-ui .btn.authorize:hover {
+          background: #764ba2;
+          border-color: #764ba2;
+        }
+        
+        /* Schema styling */
+        .swagger-ui .model-box {
+          background: #f7f7f7;
+          border-radius: 4px;
+        }
+        
+        /* Response styling */
+        .swagger-ui .responses-inner {
+          padding: 20px;
+          background: #fafafa;
+          border-radius: 4px;
+        }
+      </style>
+    </head>
+    <body>
+      <!-- Custom Header -->
+      <div class="custom-header">
+        <h1>🚗 Simbi Market - Admin API</h1>
+        <p>Complete API Documentation for Zimbabwe AutoParts Marketplace</p>
+      </div>
+      
+      <!-- Swagger UI Container -->
+      <div id="swagger-ui"></div>
+      
+      <!-- Swagger UI JavaScript from CDN -->
+      <script src="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui-bundle.js"></script>
+      <script src="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui-standalone-preset.js"></script>
+      
+      <script>
+        window.onload = function() {
+          const ui = SwaggerUIBundle({
+            spec: ${JSON.stringify(specs)},
+            dom_id: '#swagger-ui',
+            deepLinking: true,
+            presets: [
+              SwaggerUIBundle.presets.apis,
+              SwaggerUIStandalonePreset
+            ],
+            plugins: [
+              SwaggerUIBundle.plugins.DownloadUrl
+            ],
+            layout: "StandaloneLayout",
+            persistAuthorization: true,        // Remembers JWT token across refreshes
+            displayRequestDuration: true,      // Shows request time
+            filter: true,                      // Enable search/filter
+            showRequestHeaders: true,          // Show request headers
+            docExpansion: 'list',             // Expand operations list
+            defaultModelsExpandDepth: 1,
+            defaultModelExpandDepth: 1,
+            tryItOutEnabled: true,            // Enable "Try it out"
+            syntaxHighlight: {
+              activated: true,
+              theme: 'monokai'
+            }
+          });
+          
+          window.ui = ui;
+        };
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+// Swagger JSON endpoint (for debugging and external tools)
+app.get("/api-docs.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.json(specs);
+});
+
+// Debug endpoint (development only)
+if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "dev") {
+  app.get("/api-spec", (req, res) => {
+    res.json({
+      success: true,
+      spec: specs,
+      paths: Object.keys(specs.paths || {}),
+      totalPaths: Object.keys(specs.paths || {}).length,
+      environment: process.env.NODE_ENV,
+    });
+  });
+}
+
+// Error handling middleware (should be last)
+app.use(errorMiddleware);
+
+const startServer = async (): Promise<void> => {
+  try {
+    await dbConnection.connect();
+
+    app.listen(port, () => {
+      logger.info(`🚀 Server running on port ${port}`, {
+        environment: envConfig.get("NODE_ENV"),
+        port: port,
+      });
+    });
+  } catch (error: any) {
+    logger.error("Failed to start server", { error: error.message });
+    process.exit(1);
+  }
+};
+
+const gracefulShutdown = async (signal: string): Promise<void> => {
+  logger.info(`Received ${signal}. Shutting down gracefully...`);
+
+  try {
+    await dbConnection.disconnect();
+    logger.info("Server shut down successfully");
+    process.exit(0);
+  } catch (error: any) {
+    logger.error("Error during shutdown", { error: error.message });
+    process.exit(1);
+  }
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+// Start the server only if not in test environment
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}
+
+export default app;

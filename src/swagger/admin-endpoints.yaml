@@ -1,0 +1,843 @@
+paths:
+  # ============================================================================
+  # AUTHENTICATION ENDPOINTS
+  # ============================================================================
+  /api/admin/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new admin
+      description: Create a new admin account (Super Admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRegister'
+      responses:
+        '201':
+          description: Admin created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+
+  /api/admin/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Admin login
+      description: Authenticate admin and receive JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLogin'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                        description: JWT token
+                      admin:
+                        type: object
+                  timestamp:
+                    type: string
+        '401':
+          description: Invalid credentials
+
+  /api/admin/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current admin profile
+      description: Retrieve the authenticated admin's profile information
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Unauthorized
+
+  /api/admin/auth/change-password:
+    put:
+      tags:
+        - Authentication
+      summary: Change admin password
+      description: Change the password for the authenticated admin
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currentPassword
+                - newPassword
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        '200':
+          description: Password changed successfully
+        '401':
+          description: Current password incorrect
+
+  /api/admin/auth/admins:
+    get:
+      tags:
+        - Authentication
+      summary: List all admins
+      description: Get a list of all admin users (Super Admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: role
+          schema:
+            type: string
+          description: Filter by role
+        - in: query
+          name: status
+          schema:
+            type: string
+          description: Filter by status
+      responses:
+        '200':
+          description: Admins retrieved successfully
+
+  # ============================================================================
+  # DASHBOARD & KPI ENDPOINTS
+  # ============================================================================
+  /api/admin/dashboard/kpis:
+    get:
+      tags:
+        - Dashboard & KPIs
+      summary: Get dashboard KPIs
+      description: Retrieve main dashboard KPIs (GMV, active users, avg SRI, etc.)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: KPIs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      gmv:
+                        type: number
+                      activeSellers:
+                        type: number
+                      activeBuyers:
+                        type: number
+                      avgSRI:
+                        type: number
+                      pendingOrders:
+                        type: number
+                      completedOrders:
+                        type: number
+                      openDisputes:
+                        type: number
+                      revenue30Days:
+                        type: number
+
+  # ============================================================================
+  # ENHANCED KPI ENDPOINTS (NEW - Section 9 Requirements)
+  # ============================================================================
+  /api/admin/dashboard/kpis/sri-violations:
+    get:
+      tags:
+        - Enhanced KPIs
+      summary: 🆕 SRI Violations KPI
+      description: |
+        Hourly monitoring of sellers below SRI threshold 70.
+        **NEW ENDPOINT** - Implements admin.md Section 9 requirement for "SRI Violation Rate – hourly monitoring"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: SRI violations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/SRIViolationsKPI'
+                  timestamp:
+                    type: string
+
+  /api/admin/dashboard/kpis/document-expiry:
+    get:
+      tags:
+        - Enhanced KPIs
+      summary: 🆕 Document Expiry KPI
+      description: |
+        Daily monitoring of compliance certificate expiry.
+        **NEW ENDPOINT** - Implements admin.md Section 9 requirement for "Document Expiry Rate – daily monitoring"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Document expiry data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/DocumentExpiryKPI'
+                  timestamp:
+                    type: string
+
+  /api/admin/dashboard/kpis/transaction-failures:
+    get:
+      tags:
+        - Enhanced KPIs
+      summary: 🆕 Transaction Failures KPI
+      description: |
+        Real-time tracking of payment gateway failures.
+        **NEW ENDPOINT** - Implements admin.md Section 9 requirement for "Failed Transaction Rate – real-time tracking"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Transaction failures retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/TransactionFailuresKPI'
+                  timestamp:
+                    type: string
+
+  /api/admin/dashboard/kpis/dispute-metrics:
+    get:
+      tags:
+        - Enhanced KPIs
+      summary: 🆕 Dispute Resolution Metrics
+      description: |
+        Weekly performance measurement of dispute resolution (7-day SLA).
+        **NEW ENDPOINT** - Implements admin.md Section 9 requirement for "Dispute Resolution Time – weekly performance measurement"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dispute metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/DisputeMetricsKPI'
+                  timestamp:
+                    type: string
+
+  /api/admin/dashboard/alerts:
+    get:
+      tags:
+        - Dashboard & KPIs
+      summary: Get system alerts
+      description: Retrieve system alerts with optional filtering by tier and status
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: tier
+          schema:
+            type: string
+            enum: [CRITICAL, HIGH, LOW]
+          description: Filter by alert tier
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [OPEN, ACKNOWLEDGED, RESOLVED]
+          description: Filter by status
+      responses:
+        '200':
+          description: Alerts retrieved successfully
+
+  /api/admin/dashboard/alerts/{id}/acknowledge:
+    post:
+      tags:
+        - Dashboard & KPIs
+      summary: Acknowledge an alert
+      description: Mark an alert as acknowledged
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Alert ID
+      responses:
+        '200':
+          description: Alert acknowledged
+
+  /api/admin/dashboard/alerts/{id}/resolve:
+    post:
+      tags:
+        - Dashboard & KPIs
+      summary: Resolve an alert
+      description: Mark an alert as resolved with resolution notes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - resolutionNotes
+              properties:
+                resolutionNotes:
+                  type: string
+      responses:
+        '200':
+          description: Alert resolved
+
+  # ============================================================================
+  # PRODUCTS ENDPOINTS
+  # ============================================================================
+  /api/admin/products:
+    get:
+      tags:
+        - Products
+      summary: Get all products
+      description: Retrieve paginated list of products with filtering
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: number
+            default: 20
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Products retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+
+    post:
+      tags:
+        - Products
+      summary: Create a new product
+      description: Add a new product to the master database
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - oemPartNumber
+                - partName
+                - categoryId
+              properties:
+                oemPartNumber:
+                  type: string
+                partName:
+                  type: string
+                categoryId:
+                  type: string
+                description:
+                  type: string
+                imageUrls:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Product created successfully
+
+  /api/admin/products/{id}:
+    get:
+      tags:
+        - Products
+      summary: Get product by ID
+      description: Retrieve detailed information about a specific product
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product retrieved successfully
+
+    put:
+      tags:
+        - Products
+      summary: Update a product
+      description: Update product information
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Product updated successfully
+
+    delete:
+      tags:
+        - Products
+      summary: Delete a product
+      description: Soft delete a product from the database
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product deleted successfully
+
+  /api/admin/products/import:
+    post:
+      tags:
+        - Products
+      summary: Import products from JSON
+      description: Bulk import products from a JSON file
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - filePath
+              properties:
+                filePath:
+                  type: string
+      responses:
+        '202':
+          description: Import started successfully
+
+  /api/admin/products/bulk-status:
+    post:
+      tags:
+        - Products
+      summary: Bulk update product status
+      description: Update status for multiple products at once
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - productIds
+                - status
+              properties:
+                productIds:
+                  type: array
+                  items:
+                    type: string
+                status:
+                  type: string
+                  enum: [ACTIVE, INACTIVE, DISCONTINUED]
+      responses:
+        '200':
+          description: Status updated successfully
+
+  /api/admin/products/custom-requests:
+    get:
+      tags:
+        - Products
+      summary: Get custom product requests
+      description: Retrieve all custom product requests from sellers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED, MORE_INFO_NEEDED]
+        - in: query
+          name: page
+          schema:
+            type: number
+        - in: query
+          name: limit
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Custom requests retrieved successfully
+
+  /api/admin/products/custom-requests/stats:
+    get:
+      tags:
+        - Products
+      summary: Get custom request statistics
+      description: Get statistics on custom product requests
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+
+  /api/admin/products/custom-requests/{id}:
+    get:
+      tags:
+        - Products
+      summary: Get custom request by ID
+      description: Retrieve detailed information about a custom product request
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Request retrieved successfully
+
+  /api/admin/products/custom-requests/{id}/approve:
+    post:
+      tags:
+        - Products
+      summary: Approve custom request
+      description: Approve a custom product request and add to master database
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Request approved successfully
+
+  /api/admin/products/custom-requests/{id}/reject:
+    post:
+      tags:
+        - Products
+      summary: Reject custom request
+      description: Reject a custom product request with a reason
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Request rejected successfully
+
+  /api/admin/products/custom-requests/{id}/request-info:
+    post:
+      tags:
+        - Products
+      summary: Request more information
+      description: Request additional information from the seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+      responses:
+        '200':
+          description: Information requested successfully
+
+  # ============================================================================
+  # SETTINGS ENDPOINTS
+  # ============================================================================
+  /api/admin/settings/mfa-status:
+    get:
+      tags:
+        - Settings
+      summary: 🆕 Get MFA Adoption Status
+      description: |
+        Monitor MFA enforcement across admins and sellers.
+        **NEW ENDPOINT** - Implements admin.md Section 8 requirement for "Monitoring MFA enforcement"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: MFA status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/MFAStatus'
+                  timestamp:
+                    type: string
+
+  /api/admin/settings/password-compliance:
+    get:
+      tags:
+        - Settings
+      summary: 🆕 Get Password Compliance Status
+      description: |
+        Track password age and compliance.
+        **NEW ENDPOINT** - Implements admin.md Section 8 requirement for "Password policy compliance"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Password compliance retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PasswordCompliance'
+                  timestamp:
+                    type: string
+
+  /api/admin/settings:
+    get:
+      tags:
+        - Settings
+      summary: Get all system settings
+      description: Retrieve all system configuration settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Settings retrieved successfully
+
+    post:
+      tags:
+        - Settings
+      summary: Create a new setting
+      description: Create a new system configuration setting (Super Admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+                - value
+                - dataType
+              properties:
+                key:
+                  type: string
+                value:
+                  type: string
+                dataType:
+                  type: string
+                  enum: [string, number, boolean, json]
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Setting created successfully
+
+  /api/admin/settings/{key}:
+    get:
+      tags:
+        - Settings
+      summary: Get setting by key
+      description: Retrieve a specific setting by its key
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Setting retrieved successfully
+
+    put:
+      tags:
+        - Settings
+      summary: Update a setting
+      description: Update an existing system setting
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                value:
+                  type: string
+      responses:
+        '200':
+          description: Setting updated successfully
+
+    delete:
+      tags:
+        - Settings
+      summary: Delete a setting
+      description: Delete a system setting
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Setting deleted successfully
+
+  /api/admin/settings/initialize-defaults:
+    post:
+      tags:
+        - Settings
+      summary: Initialize default settings
+      description: Create default system settings (Super Admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Default settings initialized
+
+  # ============================================================================
+  # CONTINUATION NOTE
+  # ============================================================================
+  # Additional endpoints for Sellers, Financial, Disputes, Logistics, HR, Compliance, and Inventory
+  # are available in the system. This YAML provides the core and newly added endpoints.
+  # Total admin endpoints: 100+
+

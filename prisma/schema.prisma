@@ -1,0 +1,969 @@
+// Simbi Market - Comprehensive Database Schema
+// Version: 1.0
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTHENTICATION & RBAC
+// ============================================================================
+
+enum UserRole {
+  SUPER_ADMIN
+  FINOPS_ANALYST
+  COMPLIANCE_MANAGER
+  LOGISTICS_COORDINATOR
+  TECH_SUPPORT
+  INDIVIDUAL_BUYER
+  ENTERPRISE_BUYER
+  SELLER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+model Admin {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password      String // Argon2id hashed
+  firstName     String
+  lastName      String
+  role          UserRole
+  status        UserStatus @default(ACTIVE)
+  mfaEnabled    Boolean  @default(false)
+  mfaSecret     String?
+  lastLoginAt   DateTime?
+  lastLoginIp   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  activityLogs     ActivityLog[]
+  disputesHandled  Dispute[]
+  alertsHandled    AdminAlert[]
+  
+  @@map("admins")
+  @@index([email])
+  @@index([role])
+  @@index([status])
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  adminId     String
+  action      String   // e.g., "VIEWED_DOCUMENT", "APPROVED_SELLER", "PROCESSED_PAYOUT"
+  entityType  String   // e.g., "Seller", "Order", "Product"
+  entityId    String
+  ipAddress   String
+  userAgent   String?
+  metadata    Json?    // Additional context
+  createdAt   DateTime @default(now())
+
+  admin       Admin    @relation(fields: [adminId], references: [id])
+
+  @@map("activity_logs")
+  @@index([adminId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// MASTER PRODUCT DATABASE (2 Million Parts)
+// ============================================================================
+
+enum MeasurementUnit {
+  METRIC
+  IMPERIAL
+}
+
+model MasterProduct {
+  id                    String   @id @default(uuid())
+  masterPartId          String   @unique // Custom identifier
+  oemPartNumber         String   // Original Equipment Manufacturer part number
+  name                  String
+  description           String   @db.Text
+  categoryId            String
+  manufacturer          String
+  
+  // Dimensional data for logistics
+  length                Float?
+  width                 Float?
+  height                Float?
+  weight                Float?
+  unit                  MeasurementUnit @default(METRIC)
+  
+  // Vehicle compatibility (JSON array for flexibility)
+  vehicleCompatibility  Json     // { make, model, year, engineCode, trimLevel, vinRange }
+  
+  // Metadata
+  imageUrls             Json?    // Array of image URLs
+  specSheetUrl          String?
+  isActive              Boolean  @default(true)
+  isCustom              Boolean  @default(false) // True if admin-approved custom product
+  approvedAt            DateTime?
+  approvedBy            String?
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  category              ProductCategory @relation(fields: [categoryId], references: [id])
+  sellerInventory       SellerInventory[]
+  customRequest         CustomProductRequest?
+  
+  @@map("master_products")
+  @@index([oemPartNumber])
+  @@index([categoryId])
+  @@index([manufacturer])
+  @@index([isActive])
+}
+
+model ProductCategory {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  slug              String   @unique
+  description       String?  @db.Text
+  commissionRate    Float    // Platform commission rate (e.g., 0.10 for 10%)
+  parentId          String?  // For hierarchical categories
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  parent            ProductCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children          ProductCategory[] @relation("CategoryHierarchy")
+  products          MasterProduct[]
+  
+  @@map("product_categories")
+  @@index([slug])
+  @@index([parentId])
+}
+
+// ============================================================================
+// SELLER MANAGEMENT
+// ============================================================================
+
+enum SellerStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum DocumentType {
+  ZIMRA_CERTIFICATE
+  TIN_CERTIFICATE
+  KYC_DOCUMENT
+  BUSINESS_REGISTRATION
+  TAX_CLEARANCE
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+model Seller {
+  id                    String   @id @default(uuid())
+  email                 String   @unique
+  password              String   // Argon2id hashed
+  businessName          String
+  tradingName           String?
+  businessAddress       String   @db.Text
+  contactNumber         String   // Encrypted
+  tin                   String   @unique // Tax Identification Number
+  
+  // Business details
+  registrationNumber    String?
+  bankAccountName       String?
+  bankAccountNumber     String?  // Encrypted
+  bankName              String?
+  
+  // Status and compliance
+  status                SellerStatus @default(PENDING_APPROVAL)
+  sriScore              Float    @default(0) // Seller Reliability Index (0-100)
+  lastSriCalculation    DateTime?
+  
+  // Flags
+  mfaEnabled            Boolean  @default(false)
+  mfaSecret             String?
+  isEligible            Boolean  @default(false) // Above SRI threshold (70)
+  isShadowBanned        Boolean  @default(false)
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  documents             SellerDocument[]
+  inventory             SellerInventory[]
+  orders                Order[]
+  employees             SellerEmployee[]
+  sriHistory            SRIHistory[]
+  payouts               Payout[]
+  customProductRequests CustomProductRequest[]
+  
+  @@map("sellers")
+  @@index([email])
+  @@index([status])
+  @@index([sriScore])
+  @@index([isEligible])
+}
+
+model SellerDocument {
+  id                String   @id @default(uuid())
+  sellerId          String
+  documentType      DocumentType
+  status            DocumentStatus @default(PENDING)
+  fileUrl           String   // Encrypted S3 URL
+  fileHash          String   // SHA-256 checksum
+  issuedDate        DateTime?
+  expiryDate        DateTime?
+  
+  uploadedAt        DateTime @default(now())
+  approvedAt        DateTime?
+  approvedBy        String?  // Admin ID
+  rejectionReason   String?  @db.Text
+  
+  // Audit trail
+  viewLogs          Json?    // Array of {adminId, timestamp, ipAddress}
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  seller            Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  @@map("seller_documents")
+  @@index([sellerId])
+  @@index([documentType])
+  @@index([status])
+  @@index([expiryDate])
+}
+
+model SRIHistory {
+  id                    String   @id @default(uuid())
+  sellerId              String
+  score                 Float
+  
+  // Component scores (0.0 - 1.0)
+  fulfilmentRate        Float
+  onTimeDeliveryRate    Float
+  defectRate            Float
+  complianceScore       Float
+  
+  // Metadata
+  calculationDate       DateTime @default(now())
+  ordersPeriodStart     DateTime
+  ordersPeriodEnd       DateTime
+  totalOrdersAnalyzed   Int
+  
+  seller                Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  @@map("sri_history")
+  @@index([sellerId])
+  @@index([calculationDate])
+}
+
+// ============================================================================
+// INVENTORY MANAGEMENT
+// ============================================================================
+
+enum Currency {
+  USD
+  ZWL
+}
+
+model SellerInventory {
+  id                String   @id @default(uuid())
+  sellerId          String
+  masterProductId   String
+  
+  // Pricing
+  sellerPrice       Float    // Pseller in primary currency
+  currency          Currency @default(USD)
+  
+  // Stock
+  quantity          Int
+  lowStockThreshold Int      @default(5)
+  
+  // Metadata
+  isActive          Boolean  @default(true)
+  lastPriceUpdate   DateTime?
+  priceUpdateCount  Int      @default(0) // For anti-sniping detection
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  seller            Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  masterProduct     MasterProduct @relation(fields: [masterProductId], references: [id])
+  orderItems        OrderItem[]
+  
+  @@unique([sellerId, masterProductId])
+  @@map("seller_inventory")
+  @@index([sellerId])
+  @@index([masterProductId])
+  @@index([isActive])
+}
+
+// ============================================================================
+// BUYER MANAGEMENT
+// ============================================================================
+
+enum BuyerType {
+  INDIVIDUAL
+  ENTERPRISE
+}
+
+enum BuyerStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+}
+
+model Buyer {
+  id                String   @id @default(uuid())
+  email             String   @unique
+  password          String   // Argon2id hashed
+  firstName         String
+  lastName          String
+  phoneNumber       String   // Encrypted
+  
+  // Buyer type
+  buyerType         BuyerType @default(INDIVIDUAL)
+  status            BuyerStatus @default(ACTIVE)
+  
+  // Loyalty program (Individual buyers)
+  loyaltyPoints     Int      @default(0)
+  loyaltyTier       LoyaltyTier @default(BRONZE)
+  
+  // Enterprise-specific fields
+  companyName       String?
+  taxId             String?
+  creditLimit       Float?   @default(0)
+  creditUsed        Float?   @default(0)
+  paymentTermDays   Int?     // e.g., 30 for net-30
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  orders            Order[]
+  addresses         BuyerAddress[]
+  enterpriseUsers   EnterpriseUser[] // For multi-user management
+  
+  @@map("buyers")
+  @@index([email])
+  @@index([buyerType])
+  @@index([status])
+}
+
+model BuyerAddress {
+  id                String   @id @default(uuid())
+  buyerId           String
+  
+  fullName          String
+  phoneNumber       String
+  addressLine1      String
+  addressLine2      String?
+  city              String
+  province          String
+  postalCode        String?
+  
+  isDefault         Boolean  @default(false)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  buyer             Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  orders            Order[]
+  
+  @@map("buyer_addresses")
+  @@index([buyerId])
+}
+
+enum EnterpriseUserRole {
+  MASTER_ADMIN
+  REQUESTER
+  APPROVER
+  VIEWER
+}
+
+model EnterpriseUser {
+  id                String   @id @default(uuid())
+  enterpriseBuyerId String
+  email             String   @unique
+  firstName         String
+  lastName          String
+  role              EnterpriseUserRole
+  spendingLimit     Float?   // Per-transaction limit
+  
+  isActive          Boolean  @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  enterpriseBuyer   Buyer    @relation(fields: [enterpriseBuyerId], references: [id], onDelete: Cascade)
+  
+  @@map("enterprise_users")
+  @@index([enterpriseBuyerId])
+  @@index([email])
+}
+
+// ============================================================================
+// ORDERS & TRANSACTIONS
+// ============================================================================
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAYMENT_FAILED
+  AWAITING_SELLER_ACCEPTANCE
+  SELLER_REJECTED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+  DISPUTED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  ECOCASH
+  PAYNOW
+  BANK_TRANSFER
+  CREDIT_FACILITY
+  CASH_ON_DELIVERY
+}
+
+model Order {
+  id                    String   @id @default(uuid())
+  orderNumber           String   @unique // Human-readable order number
+  buyerId               String
+  sellerId              String
+  addressId             String
+  
+  // Enterprise-specific
+  poNumber              String?  // Purchase Order Number
+  costCenter            String?  // Cost center reference
+  
+  // Pricing
+  subtotal              Float
+  shippingCost          Float
+  platformCommission    Float
+  totalAmount           Float    // Display price (Pdisplay)
+  currency              Currency
+  exchangeRate          Float?   // Locked exchange rate for ZWL transactions
+  exchangeRateTimestamp DateTime?
+  
+  // Status
+  status                OrderStatus @default(PENDING_PAYMENT)
+  paymentStatus         PaymentStatus @default(PENDING)
+  
+  // Fulfilment
+  sellerAcceptedAt      DateTime?
+  sellerRejectedAt      DateTime?
+  rejectionReason       String?  @db.Text
+  
+  // Shipping
+  estimatedDeliveryDate DateTime?
+  actualDeliveryDate    DateTime?
+  
+  // Metadata
+  ipAddress             String?
+  userAgent             String?
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  buyer                 Buyer         @relation(fields: [buyerId], references: [id])
+  seller                Seller        @relation(fields: [sellerId], references: [id])
+  shippingAddress       BuyerAddress  @relation(fields: [addressId], references: [id])
+  items                 OrderItem[]
+  payment               Payment?
+  shipment              Shipment?
+  dispute               Dispute?
+  payout                Payout?
+  
+  @@map("orders")
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id                String   @id @default(uuid())
+  orderId           String
+  inventoryId       String
+  
+  quantity          Int
+  unitPrice         Float    // Seller price at time of order
+  displayPrice      Float    // Display price (with commission)
+  commission        Float    // Platform commission
+  
+  createdAt         DateTime @default(now())
+
+  order             Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inventory         SellerInventory  @relation(fields: [inventoryId], references: [id])
+  
+  @@map("order_items")
+  @@index([orderId])
+}
+
+model Payment {
+  id                String   @id @default(uuid())
+  orderId           String   @unique
+  
+  amount            Float
+  currency          Currency
+  paymentMethod     PaymentMethod
+  
+  // Gateway details
+  gatewayProvider   String?  // e.g., "Paynow", "Ecocash"
+  gatewayTransactionId String?
+  gatewayResponse   Json?
+  
+  // Status
+  status            PaymentStatus @default(PENDING)
+  paidAt            DateTime?
+  failedAt          DateTime?
+  failureReason     String?  @db.Text
+  refundedAt        DateTime?
+  refundAmount      Float?
+  
+  // Metadata for chargebacks, refunds, etc.
+  metadata          Json?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  @@map("payments")
+  @@index([orderId])
+  @@index([status])
+  @@index([gatewayTransactionId])
+}
+
+// ============================================================================
+// FINANCIAL MANAGEMENT
+// ============================================================================
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  FROZEN
+}
+
+model Payout {
+  id                String   @id @default(uuid())
+  sellerId          String
+  orderId           String   @unique
+  
+  grossAmount       Float    // Seller's price
+  platformCommission Float
+  gatewayFee        Float
+  netAmount         Float    // Amount paid to seller
+  currency          Currency
+  
+  status            PayoutStatus @default(PENDING)
+  scheduledDate     DateTime
+  processedDate     DateTime?
+  
+  // Banking details
+  bankReference     String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  seller            Seller   @relation(fields: [sellerId], references: [id])
+  order             Order    @relation(fields: [orderId], references: [id])
+  
+  @@map("payouts")
+  @@index([sellerId])
+  @@index([status])
+  @@index([scheduledDate])
+}
+
+model ExchangeRate {
+  id                String   @id @default(uuid())
+  fromCurrency      Currency
+  toCurrency        Currency
+  rate              Float
+  source            String   // e.g., "RBZ_OFFICIAL", "MANUAL_ADMIN"
+  
+  effectiveDate     DateTime @default(now())
+  createdAt         DateTime @default(now())
+  
+  @@map("exchange_rates")
+  @@index([fromCurrency, toCurrency, effectiveDate])
+}
+
+// ============================================================================
+// DISPUTE MANAGEMENT
+// ============================================================================
+
+enum DisputeType {
+  WRONG_PART
+  DEFECTIVE_PRODUCT
+  COUNTERFEIT_PRODUCT
+  NOT_RECEIVED
+  DAMAGED_IN_TRANSIT
+  OTHER
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  AWAITING_EVIDENCE
+  RESOLVED_BUYER_FAVOR
+  RESOLVED_SELLER_FAVOR
+  CLOSED_NO_FAULT
+}
+
+model Dispute {
+  id                String   @id @default(uuid())
+  orderId           String   @unique
+  disputeType       DisputeType
+  status            DisputeStatus @default(OPEN)
+  
+  // Details
+  buyerDescription  String   @db.Text
+  sellerResponse    String?  @db.Text
+  adminNotes        String?  @db.Text
+  
+  // Assignment
+  assignedAdminId   String?
+  
+  // Evidence
+  buyerEvidenceUrls Json?    // Array of file URLs
+  sellerEvidenceUrls Json?   // Array of file URLs
+  
+  // Resolution
+  resolutionDate    DateTime?
+  resolutionOutcome String?  @db.Text
+  isFaultBased      Boolean  @default(true) // Impacts SRI
+  
+  // SLO Tracking (Service Level Objective)
+  sloTargetDate     DateTime? // Target resolution date based on priority
+  sloStatus         String?   // "ON_TIME", "AT_RISK", "BREACHED"
+  sloBreached       Boolean   @default(false)
+  
+  // Metadata for return labels, etc.
+  metadata          Json?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  order             Order    @relation(fields: [orderId], references: [id])
+  assignedAdmin     Admin?   @relation(fields: [assignedAdminId], references: [id])
+  
+  @@map("disputes")
+  @@index([orderId])
+  @@index([status])
+  @@index([assignedAdminId])
+  @@index([createdAt])
+  @@index([isFaultBased])
+  @@index([sloStatus])
+  @@index([sloBreached])
+}
+
+// ============================================================================
+// LOGISTICS & SHIPPING
+// ============================================================================
+
+enum CarrierStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Carrier {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  code              String   @unique // e.g., "DHL", "FEDEX", "ARAMEX"
+  contactEmail      String
+  contactPhone      String
+  
+  // API integration
+  hasApiIntegration Boolean  @default(false)
+  apiEndpoint       String?
+  apiKey            String?  // Encrypted
+  
+  // Service levels
+  serviceLevels     Json     // Array of {name, avgDeliveryDays, costMatrix}
+  
+  status            CarrierStatus @default(ACTIVE)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  shipments         Shipment[]
+  
+  @@map("carriers")
+  @@index([code])
+}
+
+enum ShipmentStatus {
+  PENDING_PICKUP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED_DELIVERY
+  RETURNED_TO_SENDER
+}
+
+model Shipment {
+  id                String   @id @default(uuid())
+  orderId           String   @unique
+  carrierId         String
+  
+  trackingNumber    String   @unique
+  
+  // Dimensions and weight (from master product)
+  weight            Float
+  length            Float
+  width             Float
+  height            Float
+  
+  // Status
+  status            ShipmentStatus @default(PENDING_PICKUP)
+  
+  // Tracking
+  estimatedDelivery DateTime
+  actualDelivery    DateTime?
+  trackingHistory   Json?    // Array of {status, timestamp, location, notes}
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  carrier           Carrier  @relation(fields: [carrierId], references: [id])
+  
+  @@map("shipments")
+  @@index([orderId])
+  @@index([trackingNumber])
+  @@index([status])
+}
+
+// ============================================================================
+// SELLER HR & PAYROLL
+// ============================================================================
+
+model SellerEmployee {
+  id                String   @id @default(uuid())
+  sellerId          String
+  
+  nationalId        String   @unique // For tax reconciliation
+  firstName         String
+  lastName          String
+  phoneNumber       String   // Encrypted
+  email             String?
+  
+  // Employment
+  position          String
+  department        String?
+  salary            Float    // Encrypted
+  hourlyRate        Float?   // Encrypted
+  
+  // Banking
+  bankAccountNumber String?  // Encrypted
+  bankName          String?
+  
+  isActive          Boolean  @default(true)
+  hiredDate         DateTime
+  terminatedDate    DateTime?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  seller            Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  shifts            EmployeeShift[]
+  payslips          Payslip[]
+  
+  @@map("seller_employees")
+  @@index([sellerId])
+  @@index([nationalId])
+}
+
+model EmployeeShift {
+  id                String   @id @default(uuid())
+  employeeId        String
+  
+  clockInTime       DateTime
+  clockInLocation   Json     // {lat, lng, accuracy}
+  clockOutTime      DateTime?
+  clockOutLocation  Json?    // {lat, lng, accuracy}
+  
+  totalHours        Float?
+  isValidated       Boolean  @default(false) // Geo-fence validation
+  
+  createdAt         DateTime @default(now())
+
+  employee          SellerEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@map("employee_shifts")
+  @@index([employeeId])
+  @@index([clockInTime])
+}
+
+model Payslip {
+  id                String   @id @default(uuid())
+  employeeId        String
+  
+  periodStart       DateTime
+  periodEnd         DateTime
+  
+  grossSalary       Float
+  payeDeduction     Float    // PAYE tax
+  nssaDeduction     Float    // NSSA contribution
+  otherDeductions   Float?
+  netSalary         Float
+  
+  pdfUrl            String?  // Signed PDF
+  
+  generatedAt       DateTime @default(now())
+  paidAt            DateTime?
+  
+  employee          SellerEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  @@map("payslips")
+  @@index([employeeId])
+  @@index([periodEnd])
+}
+
+// ============================================================================
+// ADMIN DASHBOARD & ALERTS
+// ============================================================================
+
+enum AlertTier {
+  CRITICAL  // Tier 1 - Red
+  HIGH      // Tier 2 - Orange
+  LOW       // Tier 3 - Yellow
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model AdminAlert {
+  id                String   @id @default(uuid())
+  tier              AlertTier
+  status            AlertStatus @default(OPEN)
+  
+  title             String
+  message           String   @db.Text
+  alertCode         String   // e.g., "PAYMENT_GATEWAY_DOWN", "SRI_VIOLATION"
+  
+  // Context
+  entityType        String?  // e.g., "Seller", "Order"
+  entityId          String?
+  metadata          Json?
+  
+  // Assignment
+  assignedAdminId   String?
+  acknowledgedAt    DateTime?
+  resolvedAt        DateTime?
+  resolutionNotes   String?  @db.Text
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  assignedAdmin     Admin?   @relation(fields: [assignedAdminId], references: [id])
+  
+  @@map("admin_alerts")
+  @@index([tier])
+  @@index([status])
+  @@index([alertCode])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// CUSTOM PRODUCT REQUESTS
+// ============================================================================
+
+enum CustomProductRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  MORE_INFO_NEEDED
+}
+
+model CustomProductRequest {
+  id                  String                      @id @default(uuid())
+  sellerId            String
+  seller              Seller                      @relation(fields: [sellerId], references: [id])
+  
+  productName         String
+  category            String
+  make                String
+  model               String
+  year                Int?
+  partCode            String?
+  description         String?                     @db.Text
+  imageUrls           Json?                       // Array of image URLs
+  
+  status              CustomProductRequestStatus  @default(PENDING)
+  adminNotes          String?                     @db.Text
+  reviewedBy          String?                     // Admin ID
+  reviewedAt          DateTime?
+  
+  // If approved, reference to created MasterProduct
+  createdProductId    String?                     @unique
+  createdProduct      MasterProduct?              @relation(fields: [createdProductId], references: [id])
+  
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  
+  @@map("custom_product_requests")
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// SYSTEM CONFIGURATION
+// ============================================================================
+
+model SystemSetting {
+  id                String   @id @default(uuid())
+  key               String   @unique
+  value             String   @db.Text
+  dataType          String   // e.g., "string", "number", "boolean", "json"
+  description       String?  @db.Text
+  
+  updatedBy         String?  // Admin ID
+  updatedAt         DateTime @updatedAt
+  
+  @@map("system_settings")
+}

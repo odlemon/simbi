@@ -1,0 +1,263 @@
+// @ts-nocheck
+import { Response } from "express";
+import { AuthenticatedRequest } from "../../../types";
+import { SystemSettingsService } from "../../../services/admin/settings/SystemSettingsService";
+import { logger } from "../../../utils/logger";
+
+export class SettingsController {
+  private settingsService: SystemSettingsService;
+
+  constructor() {
+    this.settingsService = new SystemSettingsService();
+  }
+
+  // GET /api/admin/settings
+  getAllSettings = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const settings = await this.settingsService.getAllSettings();
+
+      res.status(200).json({
+        success: true,
+        data: settings,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getAllSettings", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch settings",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // GET /api/admin/settings/:key
+  getSettingByKey = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { key } = req.params;
+      const setting = await this.settingsService.getSettingByKey(key);
+
+      if (!setting) {
+        res.status(404).json({
+          success: false,
+          message: "Setting not found",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: setting,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getSettingByKey", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch setting",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // PUT /api/admin/settings/:key
+  updateSetting = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const { key } = req.params;
+      const { value, dataType, description } = req.body;
+
+      if (!value || !dataType) {
+        res.status(400).json({
+          success: false,
+          message: "value and dataType are required",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const setting = await this.settingsService.upsertSetting(
+        key,
+        value,
+        dataType,
+        description,
+        req.admin.id
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Setting updated successfully",
+        data: setting,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in updateSetting", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to update setting",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // POST /api/admin/settings
+  createSetting = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const { key, value, dataType, description } = req.body;
+
+      if (!key || !value || !dataType) {
+        res.status(400).json({
+          success: false,
+          message: "key, value, and dataType are required",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const setting = await this.settingsService.upsertSetting(
+        key,
+        value,
+        dataType,
+        description,
+        req.admin.id
+      );
+
+      res.status(201).json({
+        success: true,
+        message: "Setting created successfully",
+        data: setting,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in createSetting", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to create setting",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // DELETE /api/admin/settings/:key
+  deleteSetting = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const { key } = req.params;
+      await this.settingsService.deleteSetting(key, req.admin.id);
+
+      res.status(200).json({
+        success: true,
+        message: "Setting deleted successfully",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in deleteSetting", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to delete setting",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // POST /api/admin/settings/initialize-defaults
+  initializeDefaults = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const count = await this.settingsService.initializeDefaults();
+
+      res.status(200).json({
+        success: true,
+        message: `${count} default settings initialized`,
+        data: { count },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in initializeDefaults", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to initialize defaults",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // ============================================================================
+  // MFA & PASSWORD COMPLIANCE MONITORING
+  // ============================================================================
+
+  // GET /api/admin/settings/mfa-status
+  getMFAStatus = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const data = await this.settingsService.getMFAStatus();
+
+      res.status(200).json({
+        success: true,
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getMFAStatus", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch MFA status",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // GET /api/admin/settings/password-compliance
+  getPasswordCompliance = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const data = await this.settingsService.getPasswordCompliance();
+
+      res.status(200).json({
+        success: true,
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getPasswordCompliance", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch password compliance",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+}
+

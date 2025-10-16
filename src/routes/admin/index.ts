@@ -1,0 +1,51 @@
+// @ts-nocheck
+import { Router } from "express";
+import authRoutes from "./auth/authRoutes";
+import productRoutes from "./products/productRoutes";
+import sellerRoutes from "./sellers/sellerRoutes";
+import financialRoutes from "./financial/financialRoutes";
+import disputeRoutes from "./disputes/disputeRoutes";
+import dashboardRoutes from "./dashboard/dashboardRoutes";
+import logisticsRoutes from "./logistics/logisticsRoutes";
+import hrRoutes from "./hr/hrRoutes";
+import settingsRoutes from "./settings/settingsRoutes";
+import complianceRoutes from "./compliance/complianceRoutes";
+import inventoryRoutes from "./inventory/inventoryRoutes";
+
+const router = Router();
+
+// Auth routes
+router.use("/auth", authRoutes);
+
+// Product routes
+router.use("/products", productRoutes);
+
+// Seller routes
+router.use("/sellers", sellerRoutes);
+
+// Financial routes
+router.use("/financial", financialRoutes);
+
+// Dispute routes
+router.use("/disputes", disputeRoutes);
+
+// Dashboard routes
+router.use("/dashboard", dashboardRoutes);
+
+// Logistics routes
+router.use("/logistics", logisticsRoutes);
+
+// HR & Payroll routes
+router.use("/hr", hrRoutes);
+
+// System Settings routes
+router.use("/settings", settingsRoutes);
+
+// Compliance routes
+router.use("/compliance", complianceRoutes);
+
+// Inventory routes
+router.use("/inventory", inventoryRoutes);
+
+export default router;
+
