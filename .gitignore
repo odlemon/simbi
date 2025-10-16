@@ -48,7 +48,4 @@ coverage/
 temp/
 tmp/
 
-# Large data files
-data/
-*.json.gz
-carparts.json
+
