@@ -277,8 +277,9 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-// Start the server only if not in test environment
-if (process.env.NODE_ENV !== "test") {
+// Start the server only if not in test environment or serverless (Vercel)
+// Vercel sets VERCEL=1 environment variable
+if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   startServer();
 }
 
