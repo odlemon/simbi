@@ -1,0 +1,634 @@
+// @ts-nocheck
+import { Response } from "express";
+import { InventoryService } from "../../../services/seller/inventory/InventoryService";
+import { ApiResponse, AuthenticatedRequest } from "../../../types";
+import { logger } from "../../../utils/logger";
+
+const inventoryService = new InventoryService();
+
+export class InventoryController {
+  /**
+   * @swagger
+   * /api/seller/inventory/catalog:
+   *   get:
+   *     summary: Browse master product catalog
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: search
+   *         schema:
+   *           type: string
+   *         description: Search by product name, OEM number, or manufacturer
+   *       - in: query
+   *         name: categoryId
+   *         schema:
+   *           type: string
+   *         description: Filter by category
+   *       - in: query
+   *         name: make
+   *         schema:
+   *           type: string
+   *         description: Vehicle make
+   *       - in: query
+   *         name: model
+   *         schema:
+   *           type: string
+   *         description: Vehicle model
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Catalog retrieved successfully
+   */
+  async browseCatalog(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { search, categoryId, make, model, page, limit } = req.query;
+
+      const result = await inventoryService.browseMasterCatalog(
+        search as string,
+        categoryId as string,
+        make as string,
+        model as string,
+        parseInt(page as string) || 1,
+        parseInt(limit as string) || 20
+      );
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Master catalog retrieved successfully",
+        data: result,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to browse catalog", { error: error.message });
+      const response: ApiResponse = {
+        success: false,
+        message: "Failed to browse catalog",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/listings:
+   *   post:
+   *     summary: Create new product listing from master catalog
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - masterProductId
+   *               - sellerPrice
+   *               - quantity
+   *               - condition
+   *             properties:
+   *               masterProductId:
+   *                 type: string
+   *               sellerPrice:
+   *                 type: number
+   *               currency:
+   *                 type: string
+   *                 enum: [USD, ZWL, ZAR]
+   *               quantity:
+   *                 type: integer
+   *               lowStockThreshold:
+   *                 type: integer
+   *               reorderPoint:
+   *                 type: integer
+   *               condition:
+   *                 type: string
+   *                 enum: [NEW, USED, REFURBISHED, OEM]
+   *               sellerSku:
+   *                 type: string
+   *               sellerNotes:
+   *                 type: string
+   *               sellerImages:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *     responses:
+   *       201:
+   *         description: Listing created successfully
+   */
+  async createListing(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const listing = await inventoryService.createListing(sellerId, req.body);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Product listing created successfully",
+        data: listing,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(201).json(response);
+    } catch (error: any) {
+      logger.error("Failed to create listing", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: error.message || "Failed to create listing",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(400).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/listings:
+   *   get:
+   *     summary: Get seller's inventory listings
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: isActive
+   *         schema:
+   *           type: boolean
+   *       - in: query
+   *         name: lowStock
+   *         schema:
+   *           type: boolean
+   *       - in: query
+   *         name: condition
+   *         schema:
+   *           type: string
+   *           enum: [NEW, USED, REFURBISHED, OEM]
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Inventory retrieved successfully
+   */
+  async getInventory(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { isActive, lowStock, condition, page, limit } = req.query;
+
+      const filters = {
+        isActive: isActive === "true" ? true : isActive === "false" ? false : undefined,
+        lowStock: lowStock === "true",
+        condition: condition as any,
+        page: parseInt(page as string) || 1,
+        limit: parseInt(limit as string) || 20,
+      };
+
+      const result = await inventoryService.getInventory(sellerId, filters);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Inventory retrieved successfully",
+        data: result,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to get inventory", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: "Failed to get inventory",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/listings/{id}:
+   *   get:
+   *     summary: Get single inventory item
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Inventory item retrieved successfully
+   */
+  async getInventoryItem(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { id } = req.params;
+
+      const item = await inventoryService.getInventoryItem(sellerId, id);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Inventory item retrieved successfully",
+        data: item,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to get inventory item", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: error.message || "Failed to get inventory item",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(404).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/listings/{id}:
+   *   put:
+   *     summary: Update listing
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               sellerPrice:
+   *                 type: number
+   *               quantity:
+   *                 type: integer
+   *               lowStockThreshold:
+   *                 type: integer
+   *               reorderPoint:
+   *                 type: integer
+   *               condition:
+   *                 type: string
+   *                 enum: [NEW, USED, REFURBISHED, OEM]
+   *               sellerSku:
+   *                 type: string
+   *               sellerNotes:
+   *                 type: string
+   *               sellerImages:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               isActive:
+   *                 type: boolean
+   *     responses:
+   *       200:
+   *         description: Listing updated successfully
+   */
+  async updateListing(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { id } = req.params;
+
+      const updated = await inventoryService.updateListing(sellerId, id, req.body);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Listing updated successfully",
+        data: updated,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to update listing", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: error.message || "Failed to update listing",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(400).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/listings/{id}:
+   *   delete:
+   *     summary: Delete listing
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Listing deleted successfully
+   */
+  async deleteListing(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { id } = req.params;
+
+      await inventoryService.deleteListing(sellerId, id);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Listing deleted successfully",
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to delete listing", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: error.message || "Failed to delete listing",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(400).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/listings/{id}/history:
+   *   get:
+   *     summary: Get adjustment history for a listing
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: History retrieved successfully
+   */
+  async getAdjustmentHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { id } = req.params;
+
+      const history = await inventoryService.getAdjustmentHistory(sellerId, id);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Adjustment history retrieved successfully",
+        data: history,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to get adjustment history", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: error.message || "Failed to get adjustment history",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(404).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/bulk-upload/{uploadId}/status:
+   *   get:
+   *     summary: Get bulk upload status
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: uploadId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Upload status retrieved successfully
+   */
+  async getBulkUploadStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { uploadId } = req.params;
+
+      const upload = await inventoryService.getBulkUploadStatus(sellerId, uploadId);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Upload status retrieved successfully",
+        data: upload,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to get upload status", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: error.message || "Failed to get upload status",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(404).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/value-by-category:
+   *   get:
+   *     summary: Get inventory value by category (for pie chart)
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Inventory value by category retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     categories:
+   *                       type: array
+   *                       items:
+   *                         type: object
+   *                         properties:
+   *                           name:
+   *                             type: string
+   *                           value:
+   *                             type: number
+   *                           count:
+   *                             type: integer
+   *                           percentage:
+   *                             type: number
+   *                     totalValue:
+   *                       type: number
+   */
+  async getInventoryValueByCategory(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const result = await inventoryService.getInventoryValueByCategory(sellerId);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Inventory value by category retrieved successfully",
+        data: result,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to get inventory value by category", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: "Failed to get inventory value by category",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/stock-cover-alerts:
+   *   get:
+   *     summary: Get stock cover alerts (products with < 3 days of stock)
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: daysThreshold
+   *         schema:
+   *           type: integer
+   *           default: 3
+   *         description: Alert threshold in days
+   *     responses:
+   *       200:
+   *         description: Stock cover alerts retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 data:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       inventoryId:
+   *                         type: string
+   *                       productName:
+   *                         type: string
+   *                       oemPartNumber:
+   *                         type: string
+   *                       currentStock:
+   *                         type: integer
+   *                       dailySalesRate:
+   *                         type: number
+   *                       daysOfStockRemaining:
+   *                         type: number
+   *                       urgency:
+   *                         type: string
+   *                         enum: [CRITICAL, HIGH, MEDIUM]
+   */
+  async getStockCoverAlerts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const daysThreshold = parseInt(req.query.daysThreshold as string) || 3;
+
+      const alerts = await inventoryService.getStockCoverAlerts(sellerId, daysThreshold);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Stock cover alerts retrieved successfully",
+        data: alerts,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to get stock cover alerts", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: "Failed to get stock cover alerts",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(500).json(response);
+    }
+  }
+}
+

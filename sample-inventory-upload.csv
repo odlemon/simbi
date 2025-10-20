@@ -1,0 +1,9 @@
+masterPartId,sellerPrice,quantity,condition,sellerSku,reorderPoint,sellerNotes
+MP-001,89.99,50,NEW,SKU-BRAKE-001,10,Premium brake pads - fast delivery
+MP-002,45.50,100,NEW,SKU-FILTER-001,20,OEM quality oil filter
+MP-003,120.00,25,NEW,SKU-ROTOR-001,5,High performance brake rotors
+MP-004,35.00,75,REFURBISHED,SKU-PUMP-001,15,Refurbished fuel pump - tested
+MP-005,200.00,10,NEW,SKU-ALTERN-001,3,Heavy duty alternator
+
+
+

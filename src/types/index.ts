@@ -2,7 +2,7 @@
 import { Request } from "express";
 import { UserRole } from "@prisma/client";
 
-// Extend Express Request to include authenticated admin
+// Extend Express Request to include authenticated admin, seller, or staff
 export interface AuthenticatedRequest extends Request {
   admin?: {
     id: string;
@@ -10,6 +10,23 @@ export interface AuthenticatedRequest extends Request {
     role: UserRole;
     firstName: string;
     lastName: string;
+  };
+  seller?: {
+    id: string;
+    email: string;
+    businessName: string;
+  };
+  staff?: {
+    id: string;
+    sellerId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    department: string;
+    position: string;
+    role: string;
+    status: string;
+    isActive: boolean;
   };
 }
 

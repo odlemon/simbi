@@ -63,6 +63,14 @@ app.get("/", (req, res) => {
 import adminRoutes from "./routes/admin/index";
 app.use("/api/admin", adminRoutes);
 
+// Seller routes
+import sellerRoutes from "./routes/seller/index";
+app.use("/api/seller", sellerRoutes);
+
+// Staff routes
+import staffAuthRoutes from "./routes/staff/auth.routes";
+app.use("/api/staff", staffAuthRoutes);
+
 // Webhook routes (public endpoints for external systems)
 import logisticsWebhooks from "./routes/webhooks/logisticsWebhooks";
 app.use("/api/webhooks/logistics", logisticsWebhooks);

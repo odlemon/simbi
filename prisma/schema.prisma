@@ -213,6 +213,13 @@ model Seller {
   payouts               Payout[]
   customProductRequests CustomProductRequest[]
   
+  // ERP Module Relations
+  ledgerEntries         SellerLedger[]
+  expenses              SellerExpense[]
+  staff                 SellerStaff[]
+  loanApplications      LoanApplication[]
+  bulkUploads           BulkUpload[]
+  
   @@map("sellers")
   @@index([email])
   @@index([status])
@@ -283,18 +290,31 @@ enum Currency {
   ZWL
 }
 
+enum ProductCondition {
+  NEW
+  USED
+  REFURBISHED
+}
+
 model SellerInventory {
   id                String   @id @default(uuid())
   sellerId          String
   masterProductId   String
   
   // Pricing
-  sellerPrice       Float    // Pseller in primary currency
+  sellerPrice       Float    // Seller's price in primary currency
   currency          Currency @default(USD)
   
   // Stock
   quantity          Int
   lowStockThreshold Int      @default(5)
+  reorderPoint      Int?     // Alert when stock falls below this
+  
+  // Seller-specific fields
+  condition         ProductCondition @default(NEW)
+  sellerSku         String?  // Seller's internal SKU
+  sellerImages      Json?    // Array of up to 5 image URLs (seller's photos)
+  sellerNotes       String?  @db.Text
   
   // Metadata
   isActive          Boolean  @default(true)
@@ -307,12 +327,442 @@ model SellerInventory {
   seller            Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   masterProduct     MasterProduct @relation(fields: [masterProductId], references: [id])
   orderItems        OrderItem[]
+  adjustmentLogs    InventoryAdjustmentLog[]
   
   @@unique([sellerId, masterProductId])
   @@map("seller_inventory")
   @@index([sellerId])
   @@index([masterProductId])
   @@index([isActive])
+  @@index([condition])
+}
+
+// ============================================================================
+// SELLER ERP MODULE - Inventory Tracking & History
+// ============================================================================
+
+model InventoryAdjustmentLog {
+  id                  String    @id @default(uuid())
+  inventoryId         String
+  sellerId            String
+  
+  // What changed
+  adjustmentType      String    // PRICE_CHANGE, STOCK_INCREASE, STOCK_DECREASE, BULK_UPDATE
+  
+  // Old vs New values
+  oldPrice            Float?
+  newPrice            Float?
+  oldQuantity         Int?
+  newQuantity         Int?
+  quantityChange      Int?      // +/- amount
+  
+  // Who made the change
+  adjustedBy          String?   // Staff ID or Seller ID
+  adjustedByType      String    // SELLER, STAFF
+  adjustedByName      String?   // For display
+  
+  // Why
+  reason              String?   @db.Text
+  notes               String?   @db.Text
+  
+  // Metadata
+  ipAddress           String?
+  userAgent           String?   @db.Text
+  
+  createdAt           DateTime  @default(now())
+
+  inventory           SellerInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  
+  @@map("inventory_adjustment_logs")
+  @@index([inventoryId])
+  @@index([sellerId, createdAt])
+  @@index([adjustmentType])
+}
+
+enum BulkUploadStatus {
+  PENDING           // Upload received, not processed yet
+  PROCESSING        // Currently being processed
+  COMPLETED         // Successfully completed
+  COMPLETED_WITH_ERRORS // Completed but some rows failed
+  FAILED            // Complete failure
+}
+
+model BulkUpload {
+  id                  String            @id @default(uuid())
+  sellerId            String
+  
+  // Upload details
+  fileName            String
+  fileUrl             String?           // S3 URL for the uploaded CSV
+  fileSize            Int?              // File size in bytes
+  totalRows           Int               @default(0)
+  
+  // Processing results
+  status              BulkUploadStatus  @default(PENDING)
+  processedRows       Int               @default(0)
+  successRows         Int               @default(0)
+  failedRows          Int               @default(0)
+  
+  // Validation report
+  validationReport    Json?             // Array of errors/warnings
+  errorSummary        String?           @db.Text
+  
+  // Processing metadata
+  startedAt           DateTime?
+  completedAt         DateTime?
+  processingTime      Int?              // Seconds
+  
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  seller              Seller            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  @@map("bulk_uploads")
+  @@index([sellerId, createdAt])
+  @@index([status])
+}
+
+// ============================================================================
+// SELLER ERP MODULE - Accounting & Finance
+// ============================================================================
+
+enum TransactionType {
+  SALE
+  EXPENSE
+  COMMISSION
+  REFUND
+  PAYOUT
+  ADJUSTMENT
+}
+
+enum ExpenseCategory {
+  RENT
+  UTILITIES
+  WAGES
+  FUEL
+  MARKETING
+  EQUIPMENT
+  SUPPLIES
+  MAINTENANCE
+  INSURANCE
+  OTHER
+}
+
+// Chart of Accounts
+model ChartOfAccount {
+  id          String        @id @default(uuid())
+  code        String        @unique // e.g., "6110", "4000"
+  name        String        // e.g., "Platform Commission", "Sales Revenue"
+  type        AccountType   // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, COGS
+  parentId    String?       // For hierarchical structure
+  isActive    Boolean       @default(true)
+  isSystem    Boolean       @default(true) // System accounts can't be deleted by sellers
+  description String?       @db.Text
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  parent      ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children    ChartOfAccount[] @relation("AccountHierarchy")
+  ledgerEntries SellerLedger[]
+  
+  @@map("chart_of_accounts")
+  @@index([type])
+  @@index([code])
+  @@index([isActive])
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+  COGS
+}
+
+model SellerLedger {
+  id              String          @id @default(uuid())
+  sellerId        String
+  accountId       String?         // Link to Chart of Accounts
+  transactionDate DateTime
+  type            TransactionType
+  category        String?
+  amountUSD       Float
+  amountZWL       Float?
+  description     String          @db.Text
+  referenceId     String?         // Order ID, Expense ID, Payout ID, etc.
+  
+  // Double-entry bookkeeping
+  debit           Float?
+  credit          Float?
+  balance         Float           // Running balance
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  seller          Seller             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  account         ChartOfAccount?    @relation(fields: [accountId], references: [id])
+  
+  @@map("seller_ledger")
+  @@index([sellerId, transactionDate])
+  @@index([type])
+  @@index([referenceId])
+  @@index([accountId])
+}
+
+model SellerExpense {
+  id              String          @id @default(uuid())
+  sellerId        String
+  date            DateTime
+  category        ExpenseCategory
+  amount          Float
+  currency        Currency        @default(USD)
+  description     String          @db.Text
+  receiptUrl      String?         // S3 URL for receipt image/PDF
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  seller          Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  @@map("seller_expenses")
+  @@index([sellerId, date])
+  @@index([category])
+}
+
+// ============================================================================
+// SELLER ERP MODULE - Staff Management
+// ============================================================================
+
+enum StaffRole {
+  STOCK_MANAGER    // Can manage inventory
+  DISPATCHER       // Can update order status only
+  FINANCE_VIEW     // Can view accounting (read-only)
+  FULL_ACCESS      // All permissions except delete seller account
+}
+
+enum StaffStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+  TERMINATED
+}
+
+enum StaffDepartment {
+  SALES
+  WAREHOUSE
+  DELIVERY
+  ADMIN
+  SUPPORT
+}
+
+enum ActivityType {
+  STAFF_CREATED
+  STAFF_UPDATED
+  STAFF_DEACTIVATED
+  STAFF_REACTIVATED
+  STAFF_TERMINATED
+  TIME_LOGGED
+  INVENTORY_UPDATED
+  ORDER_UPDATED
+  OTHER
+}
+
+model SellerStaff {
+  id              String          @id @default(uuid())
+  sellerId        String
+  email           String          @unique
+  passwordHash    String          // Hashed with bcrypt
+  firstName       String
+  lastName        String
+  phone           String
+  
+  // Department & Position
+  department      StaffDepartment
+  position        String
+  
+  // Compensation
+  salary          Float
+  hourlyRate      Float?          // For payroll calculation
+  
+  // Employment
+  startDate       DateTime
+  endDate         DateTime?
+  
+  // Role & Permissions
+  role            StaffRole       @default(DISPATCHER)
+  
+  // Status
+  status          StaffStatus     @default(ACTIVE)
+  isActive        Boolean         @default(true)
+  lastLogin       DateTime?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  seller          Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  timeLogs        StaffTimeLog[]
+  activityLogs    StaffActivityLog[]
+  
+  @@map("seller_staff")
+  @@index([sellerId])
+  @@index([email])
+  @@index([isActive])
+  @@index([status])
+  @@index([department])
+}
+
+model StaffTimeLog {
+  id              String      @id @default(uuid())
+  staffId         String
+  sellerId        String
+  
+  // Time tracking
+  clockIn         DateTime
+  clockOut        DateTime?
+  hoursWorked     Float?      // Calculated when clocked out
+  
+  // Metadata
+  date            DateTime    // Date of shift (for easy querying)
+  notes           String?     @db.Text
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  staff           SellerStaff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  
+  @@map("staff_time_logs")
+  @@index([staffId, date])
+  @@index([sellerId, date])
+}
+
+model StaffActivityLog {
+  id              String        @id @default(uuid())
+  staffId         String
+  sellerId        String
+  
+  // Activity details
+  activityType    ActivityType  // Type of activity
+  action          String?       // e.g., "UPDATED_ORDER_STATUS", "ADDED_PRODUCT"
+  entityType      String?       // e.g., "ORDER", "INVENTORY"
+  entityId        String?       // ID of affected entity
+  description     String        @db.Text
+  metadata        Json?         // Additional data
+  
+  ipAddress       String?
+  userAgent       String?       @db.Text
+  
+  createdAt       DateTime      @default(now())
+
+  staff           SellerStaff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  
+  @@map("staff_activity_logs")
+  @@index([staffId])
+  @@index([activityType])
+  @@index([sellerId, createdAt])
+  @@index([entityType, entityId])
+}
+
+// ============================================================================
+// SELLER ERP MODULE - Loan & Financing
+// ============================================================================
+
+enum LoanStatus {
+  DRAFT           // Application not yet submitted
+  SUBMITTED       // Submitted to partner
+  UNDER_REVIEW    // Partner is reviewing
+  APPROVED        // Loan approved
+  REJECTED        // Application rejected
+  DISBURSED       // Funds have been disbursed
+  ACTIVE          // Loan is active (being repaid)
+  PAID_OFF        // Loan fully paid
+  DEFAULTED       // Loan in default
+}
+
+model FinancialPartner {
+  id              String      @id @default(uuid())
+  name            String
+  slug            String      @unique
+  logo            String?     // Logo URL
+  description     String      @db.Text
+  
+  // Loan terms
+  minAmount       Float
+  maxAmount       Float
+  interestRate    Float       // Annual interest rate (e.g., 0.12 for 12%)
+  termMonths      Int         // Loan term in months
+  
+  // API Integration
+  apiEndpoint     String?
+  apiKey          String?     // Encrypted
+  webhookUrl      String?
+  
+  // Status
+  isActive        Boolean     @default(true)
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  loanApplications LoanApplication[]
+  
+  @@map("financial_partners")
+  @@index([slug])
+  @@index([isActive])
+}
+
+model LoanApplication {
+  id                  String            @id @default(uuid())
+  sellerId            String
+  partnerId           String
+  
+  // Application details
+  requestedAmount     Float
+  currency            Currency          @default(USD)
+  purpose             String            @db.Text
+  status              LoanStatus        @default(DRAFT)
+  
+  // Auto-attached seller data (snapshot at time of application)
+  last6MonthsRevenue  Float?
+  inventoryValue      Float?
+  storeHealthScore    Float?            // SRI score at time of application
+  monthlyOrderCount   Int?
+  
+  // Application form data
+  businessRevenue     Float?             // Last 12 months revenue
+  businessExpenses    Float?             // Last 12 months expenses
+  collateralDescription String?          @db.Text
+  applicationData     Json?             // Additional form fields
+  
+  // Partner responses
+  partnerReferenceId  String?           // Partner's internal loan ID
+  partnerResponse     Json?             // Response from partner API
+  rejectionReason     String?           @db.Text
+  
+  // Loan details (if approved)
+  approvedAmount      Float?
+  interestRate        Float?
+  termMonths          Int?
+  monthlyPayment      Float?
+  
+  // Timestamps
+  submittedAt         DateTime?
+  reviewedAt          DateTime?
+  approvedAt          DateTime?
+  rejectedAt          DateTime?
+  disbursedAt         DateTime?
+  
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  seller              Seller            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  partner             FinancialPartner  @relation(fields: [partnerId], references: [id])
+  
+  @@map("loan_applications")
+  @@index([sellerId, status])
+  @@index([partnerId])
+  @@index([status])
+  @@index([submittedAt])
 }
 
 // ============================================================================

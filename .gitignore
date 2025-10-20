@@ -53,3 +53,6 @@ data/
 *.json.gz
 carparts.json
 
+# Uploaded files
+uploads/
+

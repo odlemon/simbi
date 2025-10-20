@@ -16,7 +16,8 @@ async function importProducts() {
 
   try {
     const importService = new ProductImportService();
-    const filePath = path.join(process.cwd(), "data", "carparts.json");
+    // Use the file from Downloads folder
+    const filePath = "C:\\Users\\lysp\\Downloads\\carparts.json";
 
     console.log(`📁 File path: ${filePath}\n`);
 

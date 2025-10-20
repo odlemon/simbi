@@ -11,11 +11,15 @@ import hrRoutes from "./hr/hrRoutes";
 import settingsRoutes from "./settings/settingsRoutes";
 import complianceRoutes from "./compliance/complianceRoutes";
 import inventoryRoutes from "./inventory/inventoryRoutes";
+import catalogRoutes from "./catalog.routes";
 
 const router = Router();
 
 // Auth routes
 router.use("/auth", authRoutes);
+
+// Catalog routes (Master Products)
+router.use("/catalog", catalogRoutes);
 
 // Product routes
 router.use("/products", productRoutes);
