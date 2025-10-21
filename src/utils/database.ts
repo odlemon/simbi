@@ -1,12 +1,32 @@
 // @ts-nocheck
 import { PrismaClient } from '@prisma/client';
 
+// ✅ SINGLETON PATTERN - Following Prisma docs exactly
+let prisma: PrismaClient;
+
+// Prevent hot reloading from creating new instances in development
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+
+if (process.env.NODE_ENV === 'production') {
+  // Production: Create new instance
+  prisma = new PrismaClient();
+} else {
+  // Development: Reuse global instance to prevent hot reload issues
+  prisma = globalForPrisma.prisma || new PrismaClient();
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = prisma;
+  }
+}
+
+// Export the SINGLE instance
+export { prisma };
+
+// Legacy compatibility - but now uses the same instance
 export class DatabaseConnection {
   private static instance: DatabaseConnection;
-  private prisma: PrismaClient;
   
   private constructor() {
-    this.prisma = new PrismaClient();
+    // Use the same prisma instance
   }
   
   public static getInstance(): DatabaseConnection {
@@ -18,11 +38,10 @@ export class DatabaseConnection {
   
   public async connect(): Promise<void> {
     try {
-      await this.prisma.$connect();
+      await prisma.$connect();
       console.log('✅ Connected to MySQL database successfully');
     } catch (error) {
       console.error('❌ MySQL connection error:', error);
-      // Don't exit process in serverless environment
       if (process.env.NODE_ENV !== 'production') {
         process.exit(1);
       }
@@ -31,7 +50,7 @@ export class DatabaseConnection {
   
   public async disconnect(): Promise<void> {
     try {
-      await this.prisma.$disconnect();
+      await prisma.$disconnect();
       console.log('📤 Disconnected from MySQL database');
     } catch (error) {
       console.error('❌ Error disconnecting from MySQL:', error);
@@ -39,9 +58,9 @@ export class DatabaseConnection {
   }
   
   public getPrismaClient(): PrismaClient {
-    return this.prisma;
+    return prisma; // Return the SAME instance
   }
 }
 
-// Export a singleton instance
+// Export singleton instance for backward compatibility
 export const dbConnection = DatabaseConnection.getInstance();

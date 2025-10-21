@@ -3,11 +3,12 @@ import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { LogisticsManagementService } from "../../services/admin/logistics/LogisticsManagementService";
 import { logger } from "../../utils/logger";
-import { dbConnection } from "../../utils/database";
+
+import { prisma } from "../../utils/database";
 
 const router = Router();
 const logisticsService = new LogisticsManagementService();
-const prisma = dbConnection.getPrismaClient();
+
 
 /**
  * Middleware to verify webhook signature

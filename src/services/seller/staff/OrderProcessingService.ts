@@ -1,9 +1,10 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 export class OrderProcessingService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Track order processing time for a staff member (dispatcher)

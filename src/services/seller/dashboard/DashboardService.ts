@@ -1,10 +1,11 @@
 // @ts-nocheck
 import { OrderStatus, TransactionType } from "@prisma/client";
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 export class DashboardService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get dashboard stats
@@ -56,16 +57,18 @@ export class DashboardService {
       },
     });
 
-    // Financial stats
-    const totalRevenue = await this.prisma.sellerLedger.aggregate({
-      where: {
+    // Financial stats - Calculate from actual orders
+    const revenueData = await this.prisma.order.aggregate({
+      where: { 
         sellerId,
-        type: TransactionType.SALE,
+        status: { in: ['PROCESSING', 'SHIPPED', 'DELIVERED'] }
       },
       _sum: {
-        amountUSD: true,
-      },
+        totalAmount: true
+      }
     });
+
+    const totalRevenue = revenueData._sum.totalAmount || 0;
 
     const totalExpenses = await this.prisma.sellerExpense.aggregate({
       where: { sellerId },
@@ -74,7 +77,7 @@ export class DashboardService {
       },
     });
 
-    const currentBalance = (totalRevenue._sum.amountUSD || 0) - (totalExpenses._sum.amount || 0);
+    const currentBalance = totalRevenue - (totalExpenses._sum.amount || 0);
 
     // Staff count
     const activeStaff = await this.prisma.sellerStaff.count({
@@ -95,7 +98,7 @@ export class DashboardService {
         pendingOrders,
       },
       financial: {
-        totalRevenue: totalRevenue._sum.amountUSD || 0,
+        totalRevenue,
         totalExpenses: totalExpenses._sum.amount || 0,
         currentBalance,
       },

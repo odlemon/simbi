@@ -1,12 +1,13 @@
 // @ts-nocheck
 import { TransactionType, ExpenseCategory } from "@prisma/client";
-import { dbConnection } from "../../../utils/database";
+
+import { prisma } from "../../../utils/database";
 
 /**
  * Service to map transaction types and categories to Chart of Accounts codes
  */
 export class AccountMappingService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
   private accountCache = new Map<string, string>(); // code -> id mapping
 
   /**

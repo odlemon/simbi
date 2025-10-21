@@ -4,6 +4,7 @@ import { MasterProductController } from "../../controllers/admin/catalog/MasterP
 import { authenticateAdmin } from "../../middleware/authenticate";
 import { requireRole } from "../../middleware/rbac";
 import { UserRole } from "@prisma/client";
+import { prisma } from "../../utils/database";
 
 const router = Router();
 const controller = new MasterProductController();

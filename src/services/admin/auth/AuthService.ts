@@ -2,7 +2,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { UserRole, UserStatus, Admin } from "@prisma/client";
-import { dbConnection } from "../../../utils/database";
+import { prisma } from "../../../utils/database";
 import { envConfig } from "../../../utils/env";
 import { logger } from "../../../utils/logger";
 
@@ -21,7 +21,7 @@ interface CreateAdminData {
 }
 
 export class AuthService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Create a new admin user

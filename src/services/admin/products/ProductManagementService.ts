@@ -1,8 +1,9 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { Prisma, MasterProduct, MeasurementUnit } from "@prisma/client";
 import { PaginatedResponse, PaginationParams } from "../../../types";
+import { prisma } from "../../../utils/database";
 
 interface ProductFilters {
   search?: string;
@@ -39,7 +40,7 @@ interface CreateProductData {
 }
 
 export class ProductManagementService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get all products with pagination and filters

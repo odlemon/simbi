@@ -1,6 +1,7 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 interface PriceUpdateViolation {
   sellerId: string;
@@ -10,7 +11,7 @@ interface PriceUpdateViolation {
 }
 
 export class AntiSnipingService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
   
   private readonly MAX_UPDATES_PER_HOUR = 3;
   private readonly COOLING_PERIOD_HOURS = 24;

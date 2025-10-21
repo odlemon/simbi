@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { AccountType } from "@prisma/client";
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 interface CreateAccountDTO {
   code: string;
@@ -18,7 +19,7 @@ interface UpdateAccountDTO {
 }
 
 export class ChartOfAccountsService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get all accounts (with optional filtering)

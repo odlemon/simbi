@@ -1,10 +1,11 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { SellerDocument, DocumentType, DocumentStatus } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 export class DocumentManagementService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get all documents for a seller

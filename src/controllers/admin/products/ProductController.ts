@@ -6,6 +6,7 @@ import { ProductImportService } from "../../../services/admin/products/ProductIm
 import { CustomProductRequestService } from "../../../services/admin/products/CustomProductRequestService";
 import { logger } from "../../../utils/logger";
 import { CustomProductRequestStatus } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 export class ProductController {
   private productService: ProductManagementService;

@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { ActivityType } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 interface ClockInDTO {
   notes?: string;
@@ -12,7 +13,7 @@ interface ClockOutDTO {
 }
 
 export class StaffTimeTrackingService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Clock in - staff member starts their shift

@@ -3,6 +3,7 @@ import { Response, NextFunction } from "express";
 import { UserRole } from "@prisma/client";
 import { AuthenticatedRequest } from "../types";
 import { logger } from "../utils/logger";
+import { prisma } from "../utils/database";
 
 /**
  * Role-Based Access Control Middleware

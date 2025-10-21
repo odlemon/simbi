@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { ProductCondition, Currency } from "@prisma/client";
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 interface CreateListingDTO {
   masterProductId: string;
@@ -17,7 +18,7 @@ interface CreateListingDTO {
 }
 
 export class InventoryService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Browse master catalog products

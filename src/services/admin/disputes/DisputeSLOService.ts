@@ -1,10 +1,11 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { DisputeStatus, DisputeType } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 export class DisputeSLOService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   // SLO targets (in hours) based on dispute priority
   private readonly SLO_TARGETS = {

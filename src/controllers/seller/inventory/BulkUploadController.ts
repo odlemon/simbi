@@ -3,12 +3,11 @@ import { Response } from "express";
 import { AuthenticatedRequest, ApiResponse } from "../../../types";
 import { logger } from "../../../utils/logger";
 import { BulkUploadService } from "../../../services/seller/inventory/BulkUploadService";
-import { dbConnection } from "../../../utils/database";
 import * as csv from "csv-parser";
 import * as fs from "fs";
+import { prisma } from "../../../utils/database";
 
 const bulkUploadService = new BulkUploadService();
-const prisma = dbConnection.getPrismaClient();
 
 export class BulkUploadController {
   /**

@@ -1,9 +1,10 @@
 // @ts-nocheck
 import { Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { dbConnection } from "../utils/database";
+
 import { ApiResponse, AuthenticatedRequest } from "../types";
 import { logger } from "../utils/logger";
+import { prisma } from "../utils/database";
 
 interface StaffJwtPayload {
   staffId: string;
@@ -58,7 +59,7 @@ export const authenticateStaff = async (
     }
 
     // Get staff from database
-    const prisma = dbConnection.getPrismaClient();
+    
     const staff = await prisma.sellerStaff.findUnique({
       where: { id: decoded.staffId },
       select: {

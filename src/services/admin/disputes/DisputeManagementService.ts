@@ -1,10 +1,11 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { Dispute, DisputeStatus, DisputeType } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 export class DisputeManagementService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   async getAllDisputes(status?: DisputeStatus): Promise<Dispute[]> {
     try {

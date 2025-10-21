@@ -1,6 +1,7 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 interface AnomalyDetectionResult {
   isAnomaly: boolean;
@@ -10,7 +11,7 @@ interface AnomalyDetectionResult {
 }
 
 export class SecurityAnomalyService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Check for multiple login attempts from different IPs

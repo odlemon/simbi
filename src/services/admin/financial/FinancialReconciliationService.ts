@@ -1,11 +1,12 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { Currency, PayoutStatus, Prisma } from "@prisma/client";
 import { ReconciliationRecord } from "../../../types";
+import { prisma } from "../../../utils/database";
 
 export class FinancialReconciliationService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get daily reconciliation report

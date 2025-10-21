@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { Request } from "express";
 import { UserRole } from "@prisma/client";
+import { prisma } from "../utils/database";
 
 // Extend Express Request to include authenticated admin, seller, or staff
 export interface AuthenticatedRequest extends Request {

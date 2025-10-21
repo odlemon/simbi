@@ -1,9 +1,10 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { Seller, SellerStatus, Prisma } from "@prisma/client";
 import { PaginatedResponse, PaginationParams } from "../../../types";
 import { SRICalculationService } from "./SRICalculationService";
+import { prisma } from "../../../utils/database";
 
 interface SellerFilters {
   search?: string;
@@ -29,7 +30,7 @@ interface CreateSellerData {
 }
 
 export class SellerManagementService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
   private sriService = new SRICalculationService();
 
   /**
@@ -205,7 +206,7 @@ export class SellerManagementService {
       const bcrypt = require("bcryptjs");
       const hashedPassword = await bcrypt.hash(data.password, 12);
 
-      // Create seller
+      // Create seller with auto-approval
       const seller = await this.prisma.seller.create({
         data: {
           email: data.email,
@@ -219,9 +220,9 @@ export class SellerManagementService {
           bankAccountName: data.bankAccountName,
           bankAccountNumber: data.bankAccountNumber,
           bankName: data.bankName,
-          status: SellerStatus.PENDING_APPROVAL,
-          sriScore: 0,
-          isEligible: false,
+          status: SellerStatus.ACTIVE,
+          sriScore: 70, // Start with minimum eligible score
+          isEligible: true, // Auto-approve and make eligible
           isShadowBanned: false,
         },
       });

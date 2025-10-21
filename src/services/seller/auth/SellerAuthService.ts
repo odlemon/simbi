@@ -2,9 +2,10 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { SellerStatus } from "@prisma/client";
-import { dbConnection } from "../../../utils/database";
+
 import { envConfig } from "../../../utils/env";
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 interface RegisterSellerDTO {
   email: string;
@@ -21,7 +22,7 @@ interface RegisterSellerDTO {
 }
 
 export class SellerAuthService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Register a new seller
@@ -41,7 +42,7 @@ export class SellerAuthService {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create seller
+    // Create seller with auto-approval
     const seller = await this.prisma.seller.create({
       data: {
         email,
@@ -55,9 +56,9 @@ export class SellerAuthService {
         bankAccountName: sellerData.bankAccountName,
         bankAccountNumber: sellerData.bankAccountNumber,
         bankName: sellerData.bankName,
-        status: SellerStatus.PENDING_APPROVAL,
-        sriScore: 0,
-        isEligible: false,
+        status: SellerStatus.ACTIVE,
+        sriScore: 70, // Start with minimum eligible score
+        isEligible: true, // Auto-approve and make eligible
       },
     });
 

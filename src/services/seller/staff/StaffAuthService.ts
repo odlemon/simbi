@@ -1,8 +1,9 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { prisma } from "../../../utils/database";
 
 interface StaffLoginDTO {
   email: string;
@@ -10,7 +11,7 @@ interface StaffLoginDTO {
 }
 
 export class StaffAuthService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Staff login

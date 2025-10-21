@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { ProductCondition, Currency } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 interface CSVRow {
   masterProductId: string;
@@ -23,7 +24,7 @@ interface ValidationError {
 }
 
 export class BulkUploadService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Process bulk upload CSV

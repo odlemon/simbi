@@ -1,10 +1,11 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { StaffStatus, StaffDepartment, ActivityType } from "@prisma/client";
 import { logger } from "../../../utils/logger";
 import bcrypt from "bcryptjs";
 import { emailService } from "../../EmailService";
 import crypto from "crypto";
+import { prisma } from "../../../utils/database";
 
 interface CreateStaffDTO {
   firstName: string;
@@ -27,7 +28,7 @@ interface LogTimeDTO {
 }
 
 export class StaffService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Create staff member

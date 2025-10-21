@@ -4,6 +4,7 @@ import { chartOfAccountsService } from "../../../services/seller/accounting/Char
 import { ApiResponse, AuthenticatedRequest } from "../../../types";
 import { logger } from "../../../utils/logger";
 import { AccountType } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 export class ChartOfAccountsController {
   /**

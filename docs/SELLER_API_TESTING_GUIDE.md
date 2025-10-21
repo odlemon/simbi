@@ -1,8 +1,8 @@
 # 🧪 Seller Module - Complete API Documentation
 
-**Version:** 2.0  
+**Version:** 3.0  
 **Base URL:** `http://localhost:3000/api/seller`  
-**Last Updated:** October 20, 2025  
+**Last Updated:** October 21, 2025  
 **Status:** ✅ **PRODUCTION READY - 100% COMPLETE**
 
 ## 🎯 **For Frontend Developers**
@@ -10,10 +10,10 @@
 This document provides complete API documentation for the Seller Module. All endpoints are implemented, tested, and production-ready. Use this guide to integrate the frontend with the backend APIs.
 
 ### **📊 Implementation Summary**
-- **Total Endpoints:** 48
+- **Total Endpoints:** 53
 - **Authentication:** JWT-based with refresh tokens
 - **Database:** 11 seller-specific tables
-- **Features:** Complete ERP system (Inventory, Accounting, HR, Loans)
+- **Features:** Complete ERP system (Inventory, Order Management, Accounting, HR, Loans)
 - **Status:** 100% functional and production-ready
 
 ---
@@ -23,13 +23,14 @@ This document provides complete API documentation for the Seller Module. All end
 1. [Setup](#setup)
 2. [Authentication Tests](#authentication-tests)
 3. [Inventory Management Tests](#inventory-management-tests)
-4. [Dashboard Tests](#dashboard-tests)
-5. [Accounting Tests](#accounting-tests)
-6. [Staff Management Tests](#staff-management-tests)
-7. [Loan Application Tests](#loan-application-tests)
-8. [Advanced Features](#advanced-features)
-9. [End-to-End Workflow Tests](#end-to-end-workflow-tests)
-10. [Frontend Integration Guide](#frontend-integration-guide)
+4. [Order Management Tests](#order-management-tests)
+5. [Dashboard Tests](#dashboard-tests)
+6. [Accounting Tests](#accounting-tests)
+7. [Staff Management Tests](#staff-management-tests)
+8. [Loan Application Tests](#loan-application-tests)
+9. [Advanced Features](#advanced-features)
+10. [End-to-End Workflow Tests](#end-to-end-workflow-tests)
+11. [Frontend Integration Guide](#frontend-integration-guide)
 
 ---
 
@@ -551,9 +552,407 @@ master-789,79.99,20,REFURBISHED,SKU-003
 
 ---
 
-## 3️⃣ **Dashboard Tests**
+## 3️⃣ **Order Management Tests**
 
-### **Test 3.1: Dashboard Overview**
+> **🔄 Buyer-Seller Integration:** These endpoints allow sellers to manage orders created by buyers. When a buyer creates an order, it automatically appears in the seller's order management system. Sellers can view, accept, reject, and fulfill orders through these endpoints.
+
+### **📋 Order Management Overview**
+
+**Order Flow:**
+1. **Buyer creates order** → Order appears in seller's system
+2. **Seller views orders** → See all orders for their products  
+3. **Seller accepts/rejects** → Order status changes to `PROCESSING` or `SELLER_REJECTED`
+4. **Seller ships order** → Status changes to `SHIPPED`
+5. **Seller marks delivered** → Status changes to `DELIVERED`
+
+**Order Status Progression:**
+```
+PENDING_PAYMENT → AWAITING_SELLER_ACCEPTANCE → PROCESSING → SHIPPED → DELIVERED
+                     ↓
+                 SELLER_REJECTED (if rejected)
+```
+
+### **Test 3.1: Get All Orders**
+
+**Endpoint:** `GET /api/seller/orders`  
+**Auth:** Bearer Token
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20)
+
+**Expected Response: 200 OK**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "order-123",
+      "orderNumber": "ORD-2024-001",
+      "buyerId": "buyer-456",
+      "sellerId": "seller-789",
+      "addressId": "address-101",
+      "poNumber": "PO-2024-001",
+      "costCenter": "MAINTENANCE",
+      "subtotal": 89.99,
+      "shippingCost": 10.00,
+      "platformCommission": 8.999,
+      "totalAmount": 108.989,
+      "currency": "USD",
+      "status": "PENDING_PAYMENT",
+      "paymentStatus": "PENDING",
+      "sellerAcceptedAt": null,
+      "sellerRejectedAt": null,
+      "rejectionReason": null,
+      "estimatedDeliveryDate": null,
+      "actualDeliveryDate": null,
+      "createdAt": "2024-10-21T10:00:00.000Z",
+      "updatedAt": "2024-10-21T10:00:00.000Z",
+      "buyer": {
+        "id": "buyer-456",
+        "email": "buyer@company.com",
+        "firstName": "John",
+        "lastName": "Doe",
+        "companyName": "ABC Motors"
+      },
+      "shippingAddress": {
+        "id": "address-101",
+        "fullName": "John Doe",
+        "addressLine1": "123 Main St",
+        "addressLine2": "Unit 5",
+        "city": "Harare",
+        "province": "Harare",
+        "postalCode": "00263"
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1
+  }
+}
+```
+
+---
+
+### **Test 3.2: Get Order Details**
+
+**Endpoint:** `GET /api/seller/orders/:id`  
+**Auth:** Bearer Token
+
+**Expected Response: 200 OK**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "order-123",
+    "orderNumber": "ORD-2024-001",
+    "buyerId": "buyer-456",
+    "sellerId": "seller-789",
+    "addressId": "address-101",
+    "poNumber": "PO-2024-001",
+    "costCenter": "MAINTENANCE",
+    "subtotal": 89.99,
+    "shippingCost": 10.00,
+    "platformCommission": 8.999,
+    "totalAmount": 108.989,
+    "currency": "USD",
+    "status": "PENDING_PAYMENT",
+    "paymentStatus": "PENDING",
+    "sellerAcceptedAt": null,
+    "sellerRejectedAt": null,
+    "rejectionReason": null,
+    "estimatedDeliveryDate": null,
+    "actualDeliveryDate": null,
+    "createdAt": "2024-10-21T10:00:00.000Z",
+    "updatedAt": "2024-10-21T10:00:00.000Z",
+    "buyer": {
+      "id": "buyer-456",
+      "email": "buyer@company.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "companyName": "ABC Motors"
+    },
+    "shippingAddress": {
+      "id": "address-101",
+      "fullName": "John Doe",
+      "addressLine1": "123 Main St",
+      "addressLine2": "Unit 5",
+      "city": "Harare",
+      "province": "Harare",
+      "postalCode": "00263"
+    },
+    "items": [
+      {
+        "id": "order-item-123",
+        "quantity": 2,
+        "unitPrice": 44.995,
+        "displayPrice": 49.495,
+        "commission": 4.5,
+        "inventory": {
+          "id": "inventory-456",
+          "sellerSku": "BMW-BP-001",
+          "masterProduct": {
+            "id": "master-789",
+            "name": "BMW Brake Pads Front",
+            "oemPartNumber": "34116858047",
+            "manufacturer": "BMW"
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+### **Test 3.3: Accept Order**
+
+**Endpoint:** `PATCH /api/seller/orders/:id/status`  
+**Auth:** Bearer Token
+
+**Request Body:**
+```json
+{
+  "status": "ACCEPTED"
+}
+```
+
+**Expected Response: 200 OK**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "order-123",
+    "orderNumber": "ORD-2024-001",
+    "status": "PROCESSING",
+    "sellerAcceptedAt": "2024-10-21T10:30:00.000Z",
+    "updatedAt": "2024-10-21T10:30:00.000Z"
+  },
+  "message": "Order accepted successfully"
+}
+```
+
+---
+
+### **Test 3.4: Reject Order**
+
+**Endpoint:** `PATCH /api/seller/orders/:id/status`  
+**Auth:** Bearer Token
+
+**Request Body:**
+```json
+{
+  "status": "REJECTED",
+  "rejectionReason": "Out of stock - item unavailable"
+}
+```
+
+**Expected Response: 200 OK**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "order-123",
+    "orderNumber": "ORD-2024-001",
+    "status": "SELLER_REJECTED",
+    "sellerRejectedAt": "2024-10-21T10:30:00.000Z",
+    "rejectionReason": "Out of stock - item unavailable",
+    "updatedAt": "2024-10-21T10:30:00.000Z"
+  },
+  "message": "Order rejected successfully"
+}
+```
+
+---
+
+### **Test 3.5: Mark Order as Shipped**
+
+**Endpoint:** `PATCH /api/seller/orders/:id/fulfillment`  
+**Auth:** Bearer Token
+
+**Request Body:**
+```json
+{
+  "status": "SHIPPED",
+  "estimatedDeliveryDate": "2024-10-25T00:00:00.000Z"  // Optional - defaults to 7 days
+}
+```
+
+**Or simply:**
+```json
+{
+  "status": "SHIPPED"
+}
+```
+
+> **Note:** Tracking number is auto-generated when status is `SHIPPED`
+
+**Expected Response: 200 OK**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "order-123",
+    "orderNumber": "ORD-2024-001",
+    "status": "SHIPPED",
+    "estimatedDeliveryDate": "2024-10-25T00:00:00.000Z",
+    "updatedAt": "2024-10-21T11:00:00.000Z"
+  },
+  "message": "Order marked as shipped with tracking number TRK12345678ABCD"
+}
+```
+
+---
+
+### **Test 3.6: Mark Order as Delivered**
+
+**Endpoint:** `PATCH /api/seller/orders/:id/fulfillment`  
+**Auth:** Bearer Token
+
+**Request Body:**
+```json
+{
+  "status": "DELIVERED"
+}
+```
+
+**Expected Response: 200 OK**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "order-123",
+    "orderNumber": "ORD-2024-001",
+    "status": "DELIVERED",
+    "actualDeliveryDate": "2024-10-21T12:00:00.000Z",
+    "updatedAt": "2024-10-21T12:00:00.000Z"
+  },
+  "message": "Order marked as delivered"
+}
+```
+
+---
+
+### **Test 3.7: Get Order Statistics**
+
+**Endpoint:** `GET /api/seller/orders/statistics`  
+**Auth:** Bearer Token
+
+**Expected Response: 200 OK**
+```json
+{
+  "success": true,
+  "data": {
+    "totalOrders": 45,
+    "pendingOrders": 3,
+    "confirmedOrders": 15,
+    "shippedOrders": 12,
+    "deliveredOrders": 10,
+    "cancelledOrders": 5,
+    "totalRevenue": 12500.50,
+    "averageOrderValue": 277.79
+  }
+}
+```
+
+---
+
+### **🔄 Complete Buyer-Seller Order Integration**
+
+**How Orders Flow Between Buyer and Seller:**
+
+#### **Step 1: Buyer Creates Order**
+```bash
+POST /api/buyer/orders
+Authorization: Bearer <buyer-token>
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "productId": "seller-inventory-id",
+      "quantity": 2
+    }
+  ],
+  "shippingAddressId": "buyer-address-id"
+}
+```
+
+**Result:** Order created with `sellerId` automatically detected from product
+
+#### **Step 2: Seller Views New Orders**
+```bash
+GET /api/seller/orders
+Authorization: Bearer <seller-token>
+```
+
+**Result:** Seller sees the new order with buyer information
+
+#### **Step 3: Seller Accepts Order**
+```bash
+PATCH /api/seller/orders/{order-id}/status
+Authorization: Bearer <seller-token>
+Content-Type: application/json
+
+{
+  "status": "ACCEPTED"
+}
+```
+
+**Result:** Order status changes to `CONFIRMED`
+
+#### **Step 4: Seller Ships Order**
+```bash
+PATCH /api/seller/orders/{order-id}/fulfillment
+Authorization: Bearer <seller-token>
+Content-Type: application/json
+
+{
+  "status": "SHIPPED",
+  "trackingNumber": "TRK123456789",
+  "estimatedDeliveryDate": "2024-10-25T00:00:00.000Z"
+}
+```
+
+**Result:** Order status changes to `SHIPPED`
+
+#### **Step 5: Seller Marks as Delivered**
+```bash
+PATCH /api/seller/orders/{order-id}/fulfillment
+Authorization: Bearer <seller-token>
+Content-Type: application/json
+
+{
+  "status": "DELIVERED"
+}
+```
+
+**Result:** Order status changes to `DELIVERED`
+
+### **📊 Order Data Includes:**
+
+- **Buyer Information:** Name, email, company
+- **Shipping Address:** Full delivery details
+- **Order Items:** Product details, quantities, pricing
+- **Financial Data:** Subtotal, commission, total amount
+- **Status Tracking:** Complete order lifecycle
+- **Timestamps:** Creation, acceptance, shipping, delivery dates
+
+### **🔐 Security Features:**
+
+- **Seller Authentication:** All endpoints require valid seller JWT
+- **Order Ownership:** Sellers can only manage their own orders
+- **Status Validation:** Orders follow proper status progression
+- **Data Integrity:** All foreign key relationships validated
+
+---
+
+## 4️⃣ **Dashboard Tests**
+
+### **Test 4.1: Dashboard Overview**
 
 **Endpoint:** `GET /api/seller/dashboard/stats`  
 **Auth:** Bearer Token
@@ -1992,6 +2391,13 @@ setInterval(async () => {
 - `POST /api/seller/staff/order-processing/track`
 - `GET /api/seller/staff/order-processing/performance`
 
+### **Order Management (5 endpoints)**
+- `GET /api/seller/orders`
+- `GET /api/seller/orders/:id`
+- `PATCH /api/seller/orders/:id/status`
+- `PATCH /api/seller/orders/:id/fulfillment`
+- `GET /api/seller/orders/statistics`
+
 ### **Loan Applications (5 endpoints)**
 - `GET /api/seller/loans/partners`
 - `POST /api/seller/loans/applications`
@@ -1999,7 +2405,64 @@ setInterval(async () => {
 - `GET /api/seller/loans/applications/:id`
 - `POST /api/seller/loans/applications/:id/cancel`
 
-**Total: 48 Endpoints** ✅
+**Total: 53 Endpoints** ✅
+
+---
+
+## 🚀 **Order Management Quick Reference**
+
+### **Essential Order Endpoints**
+```bash
+# Get all orders
+GET /api/seller/orders
+Authorization: Bearer <seller-token>
+
+# Get order details
+GET /api/seller/orders/{order-id}
+Authorization: Bearer <seller-token>
+
+# Accept order
+PATCH /api/seller/orders/{order-id}/status
+Authorization: Bearer <seller-token>
+Content-Type: application/json
+{"status": "ACCEPTED"}
+
+# Reject order
+PATCH /api/seller/orders/{order-id}/status
+Authorization: Bearer <seller-token>
+Content-Type: application/json
+{"status": "REJECTED", "rejectionReason": "Out of stock"}
+
+# Ship order (tracking number auto-generated)
+PATCH /api/seller/orders/{order-id}/fulfillment
+Authorization: Bearer <seller-token>
+Content-Type: application/json
+{"status": "SHIPPED"}
+
+# Mark as delivered
+PATCH /api/seller/orders/{order-id}/fulfillment
+Authorization: Bearer <seller-token>
+Content-Type: application/json
+{"status": "DELIVERED"}
+
+# Get order statistics
+GET /api/seller/orders/statistics
+Authorization: Bearer <seller-token>
+```
+
+### **Order Status Flow**
+```
+PENDING_PAYMENT → AWAITING_SELLER_ACCEPTANCE → PROCESSING → SHIPPED → DELIVERED
+                     ↓
+                 SELLER_REJECTED (if rejected)
+```
+
+### **Order Data Includes**
+- ✅ Buyer information (name, email, company)
+- ✅ Shipping address details
+- ✅ Order items with product information
+- ✅ Financial data (subtotal, commission, total)
+- ✅ Status tracking and timestamps
 
 ---
 

@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { LoanStatus } from "@prisma/client";
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 interface CreateLoanApplicationDTO {
   partnerId: string;
@@ -13,7 +14,7 @@ interface CreateLoanApplicationDTO {
 }
 
 export class LoanService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get available financial partners

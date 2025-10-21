@@ -1,8 +1,9 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { Currency, TransactionType, ExpenseCategory } from "@prisma/client";
 import { logger } from "../../../utils/logger";
 import { accountMappingService } from "./AccountMappingService";
+import { prisma } from "../../../utils/database";
 
 interface CreateExpenseDTO {
   date?: Date | string; // Accept both Date object and ISO string
@@ -15,7 +16,7 @@ interface CreateExpenseDTO {
 }
 
 export class AccountingService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get ledger entries

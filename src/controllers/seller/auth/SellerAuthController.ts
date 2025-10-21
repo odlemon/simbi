@@ -15,7 +15,7 @@ export class SellerAuthController {
 
       res.status(201).json({
         success: true,
-        message: "Seller registered successfully. Awaiting admin approval.",
+        message: "Seller registered successfully and auto-approved.",
         data: result,
       });
     } catch (error: any) {

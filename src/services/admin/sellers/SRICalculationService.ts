@@ -1,8 +1,9 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { Prisma } from "@prisma/client";
 import { SRIComponents } from "../../../types";
+import { prisma } from "../../../utils/database";
 
 /**
  * Seller Reliability Index (SRI) Calculation Service
@@ -13,7 +14,7 @@ import { SRIComponents } from "../../../types";
  * - Document Compliance: 5%
  */
 export class SRICalculationService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
   
   // SRI component weights (as per SRD)
   private readonly WEIGHTS = {

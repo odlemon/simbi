@@ -2,9 +2,10 @@
 import { createReadStream } from "fs";
 import { pipeline } from "stream/promises";
 import { Transform } from "stream";
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { MeasurementUnit, Prisma } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 interface CarPartRecord {
   Name: string;
@@ -21,7 +22,7 @@ interface CarPartRecord {
 }
 
 export class ProductImportService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
   private batchSize = 1000;
   private categoryCache: Map<string, string> = new Map();
 

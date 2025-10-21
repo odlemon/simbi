@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { SellerEmployee, EmployeeShift, Payslip } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 interface CreateEmployeeData {
   sellerId: string;
@@ -27,7 +28,7 @@ interface ClockInData {
 }
 
 export class HRManagementService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   // Geofence settings (in meters)
   private readonly GEOFENCE_RADIUS = 100; // 100 meters

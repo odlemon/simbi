@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { Carrier, CarrierStatus, Shipment, ShipmentStatus, Prisma } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 interface CreateCarrierData {
   name: string;
@@ -24,7 +25,7 @@ interface CreateShipmentData {
 }
 
 export class LogisticsManagementService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get all carriers

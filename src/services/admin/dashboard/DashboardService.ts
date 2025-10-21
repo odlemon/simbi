@@ -1,10 +1,11 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
 import { AdminAlert, AlertTier, AlertStatus } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 export class DashboardService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * Get SRI violations KPI (hourly monitoring)

@@ -6,6 +6,7 @@ import dashboardRoutes from "./dashboard.routes";
 import accountingRoutes from "./accounting.routes";
 import staffRoutes from "./staff.routes";
 import loansRoutes from "./loans.routes";
+import ordersRoutes from "./orders.routes";
 
 const router = Router();
 
@@ -26,6 +27,9 @@ router.use("/staff", staffRoutes);
 
 // Loan Applications
 router.use("/loans", loansRoutes);
+
+// Order Management
+router.use("/orders", ordersRoutes);
 
 export default router;
 

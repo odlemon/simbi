@@ -1,9 +1,10 @@
 // @ts-nocheck
 import { Request, Response } from "express";
-import { dbConnection } from "../../../utils/database";
+
+import { prisma } from "../../../utils/database";
 
 export class MasterProductController {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   /**
    * GET /api/admin/catalog/products

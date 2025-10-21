@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from "../../../types";
 import { AuthService } from "../../../services/admin/auth/AuthService";
 import { logger } from "../../../utils/logger";
 import { UserRole } from "@prisma/client";
+import { prisma } from "../../../utils/database";
 
 export class AuthController {
   private authService: AuthService;

@@ -1,6 +1,7 @@
 // @ts-nocheck
-import { dbConnection } from "../../../utils/database";
+
 import { logger } from "../../../utils/logger";
+import { prisma } from "../../../utils/database";
 
 interface StockVarianceData {
   inventoryId: string;
@@ -14,7 +15,7 @@ interface StockVarianceData {
 }
 
 export class StockVarianceService {
-  private prisma = dbConnection.getPrismaClient();
+  private prisma = prisma;
 
   private readonly VARIANCE_THRESHOLD = 0.15; // 15%
 

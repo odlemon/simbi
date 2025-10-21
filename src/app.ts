@@ -75,11 +75,9 @@ app.use("/api/staff", staffAuthRoutes);
 import logisticsWebhooks from "./routes/webhooks/logisticsWebhooks";
 app.use("/api/webhooks/logistics", logisticsWebhooks);
 
-// TODO: Add Buyer and Seller routes
-// import buyerRoutes from "./routes/buyer/index";
-// import sellerRoutes from "./routes/seller/index";
-// app.use("/api/buyer", buyerRoutes);
-// app.use("/api/seller", sellerRoutes);
+// Buyer routes
+import buyerRoutes from "./routes/buyer/index";
+app.use("/api/buyer", buyerRoutes);
 
 // Load Swagger spec with fallback
 let specs: any = {
