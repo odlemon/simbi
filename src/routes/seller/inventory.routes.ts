@@ -3,7 +3,7 @@ import { Router } from "express";
 import { InventoryController } from "../../controllers/seller/inventory/InventoryController";
 import { BulkUploadController } from "../../controllers/seller/inventory/BulkUploadController";
 import { authenticateSeller } from "../../middleware/authenticateSeller";
-import { upload } from "../../middleware/upload";
+// import { upload } from "../../middleware/upload"; // Temporarily disabled for serverless deployment
 
 const router = Router();
 const controller = new InventoryController();
@@ -25,8 +25,8 @@ router.delete("/listings/:id", (req, res) => controller.deleteListing(req, res))
 // Adjustment history
 router.get("/listings/:id/history", (req, res) => controller.getAdjustmentHistory(req, res));
 
-// Bulk upload endpoints
-router.post("/bulk-upload", upload.single("file"), (req, res) => bulkUploadController.uploadCSV(req, res));
+// Bulk upload endpoints - temporarily disabled for serverless deployment
+// router.post("/bulk-upload", upload.single("file"), (req, res) => bulkUploadController.uploadCSV(req, res));
 router.get("/bulk-upload/template", (req, res) => bulkUploadController.downloadTemplate(req, res));
 router.get("/bulk-upload/:uploadId/status", (req, res) => controller.getBulkUploadStatus(req, res));
 

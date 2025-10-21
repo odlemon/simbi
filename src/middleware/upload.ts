@@ -1,4 +1,9 @@
 // @ts-nocheck
+// TEMPORARILY DISABLED FOR SERVERLESS DEPLOYMENT
+// This middleware causes ENOENT errors in serverless environments
+// TODO: Re-implement with proper serverless file handling
+
+/*
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -29,7 +34,9 @@ const storage = isServerless
         },
       });
     })();
+*/
 
+/*
 // File filter - only allow CSV files
 const fileFilter = (req: any, file: any, cb: any) => {
   if (file.mimetype === "text/csv" || file.originalname.toLowerCase().endsWith(".csv")) {
@@ -47,6 +54,10 @@ export const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB max file size
   },
 });
+*/
+
+// Temporary placeholder - upload functionality disabled
+export const upload = null;
 
 
 
