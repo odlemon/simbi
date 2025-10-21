@@ -76,8 +76,10 @@ export class BulkUploadController {
 
       // Validate file type
       if (!file.originalname.toLowerCase().endsWith(".csv")) {
-        // Clean up uploaded file
-        fs.unlinkSync(file.path);
+        // Clean up uploaded file (only if using disk storage)
+        if (file.path) {
+          fs.unlinkSync(file.path);
+        }
         
         const response: ApiResponse = {
           success: false,
@@ -106,7 +108,7 @@ export class BulkUploadController {
       });
 
       // Parse CSV and process asynchronously
-      this.processCSVFile(sellerId, upload.id, file.path).catch((error) => {
+      this.processCSVFile(sellerId, upload.id, file).catch((error) => {
         logger.error("CSV processing error", {
           sellerId,
           uploadId: upload.id,
@@ -133,8 +135,8 @@ export class BulkUploadController {
         error: error.message,
       });
 
-      // Clean up file if it exists
-      if (req.file && fs.existsSync(req.file.path)) {
+      // Clean up file if it exists (only for disk storage)
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
 
@@ -154,12 +156,17 @@ export class BulkUploadController {
   private async processCSVFile(
     sellerId: string,
     uploadId: string,
-    filePath: string
+    file: Express.Multer.File
   ): Promise<void> {
     const rows: any[] = [];
 
     return new Promise((resolve, reject) => {
-      fs.createReadStream(filePath)
+      // Handle both memory and disk storage
+      const stream = file.buffer 
+        ? require('stream').Readable.from(file.buffer) // Memory storage
+        : fs.createReadStream(file.path); // Disk storage
+      
+      stream
         .pipe(csv())
         .on("data", (row) => {
           // Convert CSV row to proper types
@@ -183,8 +190,10 @@ export class BulkUploadController {
             // Process all rows
             await bulkUploadService.processBulkUpload(sellerId, uploadId, rows);
 
-            // Clean up file
-            fs.unlinkSync(filePath);
+            // Clean up file (only for disk storage)
+            if (file.path) {
+              fs.unlinkSync(file.path);
+            }
 
             resolve();
           } catch (error) {
@@ -192,9 +201,9 @@ export class BulkUploadController {
           }
         })
         .on("error", (error) => {
-          // Clean up file
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
+          // Clean up file (only for disk storage)
+          if (file.path && fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
           }
           reject(error);
         });
