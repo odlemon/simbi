@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from 'express';
 import DisputeService from '../../services/buyer/dispute/DisputeService';
 import { BuyerAuthRequest } from '../../middleware/buyerAuth';

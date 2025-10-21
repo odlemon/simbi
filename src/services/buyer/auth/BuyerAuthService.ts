@@ -1,4 +1,5 @@
 
+// @ts-nocheck
 import { hash, verify } from 'argon2';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';

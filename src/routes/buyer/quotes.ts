@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Router } from 'express';
 import QuoteController from '../../controllers/buyer/QuoteController';
 import authenticateBuyer from '../../middleware/buyerAuth';

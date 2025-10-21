@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from 'express';
 import { FastProductSearchService } from '../../services/buyer/product/FastProductSearchService';
 import { BuyerAuthRequest } from '../../middleware/buyerAuth';

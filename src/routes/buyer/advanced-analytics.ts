@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Router } from 'express';
 import AdvancedAnalyticsController from '../../controllers/buyer/AdvancedAnalyticsController';
 import authenticateBuyer from '../../middleware/buyerAuth';

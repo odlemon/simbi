@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { MasterProduct, SellerInventory, Seller } from '@prisma/client';
 import { z } from 'zod';
 

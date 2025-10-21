@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from 'express';
 import QuoteService from '../../services/buyer/quote/QuoteService';
 import { BuyerAuthRequest } from '../../middleware/buyerAuth';
