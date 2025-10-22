@@ -20,7 +20,7 @@ const options: swaggerJsdoc.Options = {
         description: "Development server",
       },
       {
-        url: "https://api.simbi.market",
+        url: "https://simbi-three.vercel.app",
         description: "Production server",
       },
     ],

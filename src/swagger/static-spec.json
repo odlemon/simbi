@@ -15,7 +15,7 @@
       "description": "Development server"
     },
     {
-      "url": "https://api.simbi.market",
+      "url": "https://simbi-three.vercel.app",
       "description": "Production server"
     }
   ],
@@ -181,6 +181,62 @@
         }
       }
     },
+    "/api/admin/products": {
+      "get": {
+        "tags": ["Admin - Products"],
+        "summary": "Get all products",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 20 } },
+          { "in": "query", "name": "search", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Products retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Admin - Products"],
+        "summary": "Create new product",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["oemPartNumber", "partName", "categoryId"],
+                "properties": {
+                  "oemPartNumber": { "type": "string" },
+                  "partName": { "type": "string" },
+                  "categoryId": { "type": "string" },
+                  "description": { "type": "string" },
+                  "imageUrls": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Product created successfully" }
+        }
+      }
+    },
+    "/api/admin/sellers": {
+      "get": {
+        "tags": ["Admin - Sellers"],
+        "summary": "Get all sellers",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 20 } },
+          { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "PENDING_APPROVAL"] } }
+        ],
+        "responses": {
+          "200": { "description": "Sellers retrieved successfully" }
+        }
+      }
+    },
     "/api/buyer/auth/register": {
       "post": {
         "tags": ["Buyer - Authentication"],
@@ -258,6 +314,69 @@
         }
       }
     },
+    "/api/buyer/products": {
+      "get": {
+        "tags": ["Buyer - Products"],
+        "summary": "Get all products",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 20 } },
+          { "in": "query", "name": "search", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Products retrieved successfully" }
+        }
+      }
+    },
+    "/api/buyer/orders": {
+      "get": {
+        "tags": ["Buyer - Orders"],
+        "summary": "Get buyer orders",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["PENDING_PAYMENT", "AWAITING_SELLER_ACCEPTANCE", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED", "SELLER_REJECTED"] } },
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } }
+        ],
+        "responses": {
+          "200": { "description": "Orders retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Buyer - Orders"],
+        "summary": "Create new order",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["items", "shippingAddressId"],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["productId", "quantity"],
+                      "properties": {
+                        "productId": { "type": "string" },
+                        "quantity": { "type": "integer", "minimum": 1 }
+                      }
+                    }
+                  },
+                  "shippingAddressId": { "type": "string" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Order created successfully" }
+        }
+      }
+    },
     "/api/seller/auth/register": {
       "post": {
         "tags": ["Seller - Authentication"],
@@ -332,6 +451,61 @@
             }
           },
           "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/api/seller/orders": {
+      "get": {
+        "tags": ["Seller - Orders"],
+        "summary": "Get seller orders",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["PENDING_PAYMENT", "AWAITING_SELLER_ACCEPTANCE", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED", "SELLER_REJECTED"] } },
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } }
+        ],
+        "responses": {
+          "200": { "description": "Orders retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/inventory/products": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Get seller products",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["ACTIVE", "INACTIVE", "OUT_OF_STOCK"] } }
+        ],
+        "responses": {
+          "200": { "description": "Products retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Create new product",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productId", "price", "quantity", "condition"],
+                "properties": {
+                  "productId": { "type": "string" },
+                  "price": { "type": "number", "minimum": 0 },
+                  "quantity": { "type": "integer", "minimum": 0 },
+                  "condition": { "type": "string", "enum": ["NEW", "USED", "REFURBISHED"] },
+                  "description": { "type": "string" },
+                  "images": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Product created successfully" }
         }
       }
     }
