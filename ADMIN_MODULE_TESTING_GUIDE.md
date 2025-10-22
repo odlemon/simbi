@@ -149,11 +149,14 @@ Use this checklist to systematically test all admin modules:
     "gmv": 0,
     "activeSellers": 0,
     "activeBuyers": 0,
+    "totalProducts": 0,
     "avgSRI": 0,
     "pendingOrders": 0,
     "completedOrders": 0,
     "openDisputes": 0,
-    "revenue30Days": 0
+    "revenue30Days": 0,
+    "totalOrders": 0,
+    "avgOrderValue": 0
   }
 }
 ```

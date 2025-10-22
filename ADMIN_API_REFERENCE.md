@@ -312,11 +312,14 @@ Response:
     "gmv": 2500000.00,
     "activeSellers": 245,
     "activeBuyers": 12450,
+    "totalProducts": 15680,
     "avgSRI": 87,
     "pendingOrders": 34,
     "completedOrders": 8920,
     "openDisputes": 12,
-    "revenue30Days": 45000.00
+    "revenue30Days": 45000.00,
+    "totalOrders": 12500,
+    "avgOrderValue": 280.45
   }
 }
 ```

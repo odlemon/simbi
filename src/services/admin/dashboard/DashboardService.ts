@@ -348,11 +348,14 @@ export class DashboardService {
     gmv: number; // Gross Merchandise Value
     activeSellers: number;
     activeBuyers: number;
+    totalProducts: number; // Total products on marketplace
     avgSRI: number;
     pendingOrders: number;
     completedOrders: number;
     openDisputes: number;
     revenue30Days: number;
+    totalOrders: number; // Total orders ever created
+    avgOrderValue: number; // Average order value
   }> {
     try {
       const thirtyDaysAgo = new Date();
@@ -362,11 +365,14 @@ export class DashboardService {
         gmvResult,
         activeSellers,
         activeBuyers,
+        totalProducts,
         avgSRIResult,
         pendingOrders,
         completedOrders,
         openDisputes,
         recentOrders,
+        totalOrders,
+        avgOrderValueResult,
       ] = await Promise.all([
         this.prisma.order.aggregate({
           _sum: { totalAmount: true },
@@ -374,6 +380,7 @@ export class DashboardService {
         }),
         this.prisma.seller.count({ where: { status: "ACTIVE" } }),
         this.prisma.buyer.count({ where: { status: "ACTIVE" } }),
+        this.prisma.product.count({ where: { status: "ACTIVE" } }),
         this.prisma.seller.aggregate({
           _avg: { sriScore: true },
           where: { status: "ACTIVE" },
@@ -390,6 +397,11 @@ export class DashboardService {
           },
           select: { platformCommission: true },
         }),
+        this.prisma.order.count(),
+        this.prisma.order.aggregate({
+          _avg: { totalAmount: true },
+          where: { status: "DELIVERED" },
+        }),
       ]);
 
       const revenue30Days = recentOrders.reduce((sum, o) => sum + o.platformCommission, 0);
@@ -398,11 +410,14 @@ export class DashboardService {
         gmv: gmvResult._sum.totalAmount || 0,
         activeSellers,
         activeBuyers,
+        totalProducts,
         avgSRI: Math.round(avgSRIResult._avg.sriScore || 0),
         pendingOrders,
         completedOrders,
         openDisputes,
         revenue30Days,
+        totalOrders,
+        avgOrderValue: Math.round((avgOrderValueResult._avg.totalAmount || 0) * 100) / 100,
       };
     } catch (error: any) {
       logger.error("Error fetching dashboard KPIs", { error: error.message });

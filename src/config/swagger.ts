@@ -6,9 +6,9 @@ const options: swaggerJsdoc.Options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "Simbi Market - Admin API",
+      title: "Simbi Market - Complete API",
       version: "1.0.0",
-      description: "Complete Admin API documentation for Simbi Market - Zimbabwe AutoParts Marketplace",
+      description: "Complete API documentation for Simbi Market - Zimbabwe AutoParts Marketplace. Includes Admin, Buyer, and Seller endpoints with full request/response schemas.",
       contact: {
         name: "Simbi Market Support",
         email: "support@simbi.market",
@@ -250,21 +250,44 @@ const options: swaggerJsdoc.Options = {
       },
     },
     tags: [
-      { name: "Authentication", description: "Admin authentication endpoints" },
-      { name: "Dashboard & KPIs", description: "Dashboard and KPI monitoring endpoints" },
-      { name: "Enhanced KPIs", description: "New enhanced KPI endpoints (Section 9 requirements)" },
-      { name: "Products", description: "Product management endpoints" },
-      { name: "Sellers", description: "Seller management and SRI endpoints" },
-      { name: "Financial", description: "Financial reconciliation and payouts" },
-      { name: "Disputes", description: "Dispute management endpoints" },
-      { name: "Logistics", description: "Logistics and carrier management" },
-      { name: "HR & Payroll", description: "HR and payroll endpoints" },
-      { name: "Settings", description: "System settings and configuration" },
-      { name: "Compliance", description: "Compliance and security monitoring" },
-      { name: "Inventory", description: "Inventory management endpoints" },
+      // Admin tags
+      { name: "Admin - Authentication", description: "Admin authentication endpoints" },
+      { name: "Admin - Dashboard", description: "Admin dashboard and KPI monitoring endpoints" },
+      { name: "Admin - Products", description: "Admin product management endpoints" },
+      { name: "Admin - Sellers", description: "Admin seller management and SRI endpoints" },
+      { name: "Admin - Financial", description: "Admin financial reconciliation and payouts" },
+      { name: "Admin - Disputes", description: "Admin dispute management endpoints" },
+      { name: "Admin - Logistics", description: "Admin logistics and carrier management" },
+      { name: "Admin - Settings", description: "Admin system settings and configuration" },
+      { name: "Admin - Compliance", description: "Admin compliance and security monitoring" },
+      { name: "Admin - Inventory", description: "Admin inventory management endpoints" },
+      { name: "Admin - HR", description: "Admin HR and payroll endpoints" },
+      
+      // Buyer tags
+      { name: "Buyer - Authentication", description: "Buyer authentication endpoints" },
+      { name: "Buyer - Addresses", description: "Buyer address management endpoints" },
+      { name: "Buyer - Products", description: "Buyer product browsing and search endpoints" },
+      { name: "Buyer - Orders", description: "Buyer order management endpoints" },
+      { name: "Buyer - Analytics", description: "Buyer analytics and reporting endpoints" },
+      { name: "Buyer - Disputes", description: "Buyer dispute management endpoints" },
+      { name: "Buyer - Quotes", description: "Buyer quote request endpoints" },
+      { name: "Buyer - Enterprise", description: "Buyer enterprise user management endpoints" },
+      
+      // Seller tags
+      { name: "Seller - Authentication", description: "Seller authentication endpoints" },
+      { name: "Seller - Inventory", description: "Seller inventory management endpoints" },
+      { name: "Seller - Orders", description: "Seller order management endpoints" },
+      { name: "Seller - Dashboard", description: "Seller dashboard and analytics endpoints" },
+      { name: "Seller - Accounting", description: "Seller accounting and financial endpoints" },
+      { name: "Seller - Staff", description: "Seller staff management endpoints" },
+      { name: "Seller - Loans", description: "Seller loan management endpoints" },
     ],
   },
-  apis: ["./src/routes/**/*.ts", "./src/swagger/*.yaml"], // Path to API docs
+  apis: [
+    "./src/routes/**/*.ts", 
+    "./src/swagger/*.yaml",
+    "./src/swagger/comprehensive-api.yaml"
+  ], // Path to API docs
 };
 
 // Generate Swagger spec with fallback strategy

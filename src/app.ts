@@ -186,8 +186,8 @@ app.get("/api-docs", (req, res) => {
     <body>
       <!-- Custom Header -->
       <div class="custom-header">
-        <h1>🚗 Simbi Market - Admin API</h1>
-        <p>Complete API Documentation for Zimbabwe AutoParts Marketplace</p>
+        <h1>🚗 Simbi Market - Complete API</h1>
+        <p>Admin, Buyer & Seller API Documentation for Zimbabwe AutoParts Marketplace</p>
       </div>
       
       <!-- Swagger UI Container -->

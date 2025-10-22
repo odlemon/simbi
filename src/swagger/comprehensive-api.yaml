@@ -1,0 +1,1811 @@
+paths:
+  # ============================================================================
+  # ADMIN ENDPOINTS
+  # ============================================================================
+  
+  # Authentication
+  /api/admin/auth/register:
+    post:
+      tags: [Admin - Authentication]
+      summary: Register new admin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, firstName, lastName, role]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+                firstName: { type: string }
+                lastName: { type: string }
+                role: { type: string, enum: [SUPER_ADMIN, FINOPS_ANALYST, COMPLIANCE_MANAGER, LOGISTICS_COORDINATOR, TECH_SUPPORT] }
+      responses:
+        '201': { description: Admin created successfully }
+        '400': { description: Invalid request data }
+        '409': { description: Email already exists }
+
+  /api/admin/auth/login:
+    post:
+      tags: [Admin - Authentication]
+      summary: Admin login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200': 
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      admin: { type: object }
+                  timestamp: { type: string, format: date-time }
+        '401': { description: Invalid credentials }
+
+  /api/admin/auth/me:
+    get:
+      tags: [Admin - Authentication]
+      summary: Get current admin profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Profile retrieved successfully }
+        '401': { description: Unauthorized }
+
+  # Dashboard & KPIs
+  /api/admin/dashboard/kpis:
+    get:
+      tags: [Admin - Dashboard]
+      summary: Get dashboard KPIs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: KPIs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      gmv: { type: number }
+                      activeSellers: { type: number }
+                      activeBuyers: { type: number }
+                      totalProducts: { type: number }
+                      avgSRI: { type: number }
+                      pendingOrders: { type: number }
+                      completedOrders: { type: number }
+                      openDisputes: { type: number }
+                      revenue30Days: { type: number }
+                      totalOrders: { type: number }
+                      avgOrderValue: { type: number }
+
+  /api/admin/dashboard/kpis/sri-violations:
+    get:
+      tags: [Admin - Dashboard]
+      summary: Get SRI violations KPI
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: SRI violations retrieved successfully }
+
+  /api/admin/dashboard/kpis/document-expiry:
+    get:
+      tags: [Admin - Dashboard]
+      summary: Get document expiry KPI
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Document expiry data retrieved successfully }
+
+  /api/admin/dashboard/kpis/transaction-failures:
+    get:
+      tags: [Admin - Dashboard]
+      summary: Get transaction failures KPI
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Transaction failures retrieved successfully }
+
+  /api/admin/dashboard/kpis/dispute-metrics:
+    get:
+      tags: [Admin - Dashboard]
+      summary: Get dispute metrics KPI
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Dispute metrics retrieved successfully }
+
+  # Products
+  /api/admin/products:
+    get:
+      tags: [Admin - Products]
+      summary: Get all products
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+      responses:
+        '200': { description: Products retrieved successfully }
+
+    post:
+      tags: [Admin - Products]
+      summary: Create new product
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [oemPartNumber, partName, categoryId]
+              properties:
+                oemPartNumber: { type: string }
+                partName: { type: string }
+                categoryId: { type: string }
+                description: { type: string }
+                imageUrls: { type: array, items: { type: string } }
+      responses:
+        '201': { description: Product created successfully }
+
+  /api/admin/products/{id}:
+    get:
+      tags: [Admin - Products]
+      summary: Get product by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Product retrieved successfully }
+
+    put:
+      tags: [Admin - Products]
+      summary: Update product
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Product updated successfully }
+
+    delete:
+      tags: [Admin - Products]
+      summary: Delete product
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Product deleted successfully }
+
+  # Sellers
+  /api/admin/sellers:
+    get:
+      tags: [Admin - Sellers]
+      summary: Get all sellers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: status
+          schema: { type: string, enum: [ACTIVE, SUSPENDED, PENDING_APPROVAL] }
+        - in: query
+          name: minSRI
+          schema: { type: number }
+      responses:
+        '200': { description: Sellers retrieved successfully }
+
+    post:
+      tags: [Admin - Sellers]
+      summary: Create new seller
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, businessName, tin, phone, address]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+                businessName: { type: string }
+                tin: { type: string }
+                phone: { type: string }
+                address: { type: string }
+      responses:
+        '201': { description: Seller created successfully }
+
+  /api/admin/sellers/{id}:
+    get:
+      tags: [Admin - Sellers]
+      summary: Get seller by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Seller retrieved successfully }
+
+    put:
+      tags: [Admin - Sellers]
+      summary: Update seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Seller updated successfully }
+
+  /api/admin/sellers/{id}/approve:
+    post:
+      tags: [Admin - Sellers]
+      summary: Approve seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Seller approved successfully }
+
+  /api/admin/sellers/{id}/suspend:
+    post:
+      tags: [Admin - Sellers]
+      summary: Suspend seller
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200': { description: Seller suspended successfully }
+
+  /api/admin/sellers/{id}/sri:
+    get:
+      tags: [Admin - Sellers]
+      summary: Get seller SRI
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: SRI retrieved successfully }
+
+  /api/admin/sellers/{id}/recalculate-sri:
+    post:
+      tags: [Admin - Sellers]
+      summary: Recalculate seller SRI
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: SRI recalculated successfully }
+
+  # Financial
+  /api/admin/financial/reconciliation/daily:
+    get:
+      tags: [Admin - Financial]
+      summary: Get daily reconciliation
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: date
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: Daily reconciliation retrieved successfully }
+
+  /api/admin/financial/payouts/process-weekly:
+    post:
+      tags: [Admin - Financial]
+      summary: Process weekly payouts
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Weekly payouts processed successfully }
+
+  /api/admin/financial/exchange-rate:
+    get:
+      tags: [Admin - Financial]
+      summary: Get exchange rates
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Exchange rates retrieved successfully }
+
+    post:
+      tags: [Admin - Financial]
+      summary: Create exchange rate
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromCurrency, toCurrency, rate, source]
+              properties:
+                fromCurrency: { type: string }
+                toCurrency: { type: string }
+                rate: { type: number }
+                source: { type: string }
+      responses:
+        '201': { description: Exchange rate created successfully }
+
+  /api/admin/financial/reports/zimra:
+    get:
+      tags: [Admin - Financial]
+      summary: Generate ZIMRA report
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: startDate
+          schema: { type: string, format: date }
+        - in: query
+          name: endDate
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: ZIMRA report generated successfully }
+
+  /api/admin/financial/stats:
+    get:
+      tags: [Admin - Financial]
+      summary: Get financial statistics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, default: 30 }
+      responses:
+        '200': { description: Financial statistics retrieved successfully }
+
+  # Disputes
+  /api/admin/disputes:
+    get:
+      tags: [Admin - Disputes]
+      summary: Get all disputes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: Disputes retrieved successfully }
+
+  /api/admin/disputes/{id}:
+    get:
+      tags: [Admin - Disputes]
+      summary: Get dispute by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Dispute retrieved successfully }
+
+  /api/admin/disputes/{id}/assign:
+    post:
+      tags: [Admin - Disputes]
+      summary: Assign dispute
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adminId]
+              properties:
+                adminId: { type: string }
+      responses:
+        '200': { description: Dispute assigned successfully }
+
+  /api/admin/disputes/{id}/resolve:
+    post:
+      tags: [Admin - Disputes]
+      summary: Resolve dispute
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome, resolution]
+              properties:
+                outcome: { type: string, enum: [BUYER, SELLER] }
+                resolution: { type: string }
+      responses:
+        '200': { description: Dispute resolved successfully }
+
+  # Logistics
+  /api/admin/logistics/carriers:
+    get:
+      tags: [Admin - Logistics]
+      summary: Get all carriers
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Carriers retrieved successfully }
+
+    post:
+      tags: [Admin - Logistics]
+      summary: Create carrier
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, code, contactEmail, contactPhone]
+              properties:
+                name: { type: string }
+                code: { type: string }
+                contactEmail: { type: string, format: email }
+                contactPhone: { type: string }
+                apiEndpoint: { type: string }
+                serviceLevels: { type: object }
+      responses:
+        '201': { description: Carrier created successfully }
+
+  /api/admin/logistics/carriers/{id}:
+    get:
+      tags: [Admin - Logistics]
+      summary: Get carrier by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Carrier retrieved successfully }
+
+    put:
+      tags: [Admin - Logistics]
+      summary: Update carrier
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Carrier updated successfully }
+
+  # Settings
+  /api/admin/settings:
+    get:
+      tags: [Admin - Settings]
+      summary: Get all settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Settings retrieved successfully }
+
+    post:
+      tags: [Admin - Settings]
+      summary: Create setting
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, value, dataType]
+              properties:
+                key: { type: string }
+                value: { type: string }
+                dataType: { type: string, enum: [string, number, boolean, json] }
+                description: { type: string }
+      responses:
+        '201': { description: Setting created successfully }
+
+  /api/admin/settings/{key}:
+    get:
+      tags: [Admin - Settings]
+      summary: Get setting by key
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Setting retrieved successfully }
+
+    put:
+      tags: [Admin - Settings]
+      summary: Update setting
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: { type: string }
+      responses:
+        '200': { description: Setting updated successfully }
+
+    delete:
+      tags: [Admin - Settings]
+      summary: Delete setting
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Setting deleted successfully }
+
+  # ============================================================================
+  # BUYER ENDPOINTS
+  # ============================================================================
+
+  # Authentication
+  /api/buyer/auth/register:
+    post:
+      tags: [Buyer - Authentication]
+      summary: Register new buyer
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, firstName, lastName, phone]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+                firstName: { type: string }
+                lastName: { type: string }
+                phone: { type: string }
+                companyName: { type: string }
+      responses:
+        '201': { description: Buyer registered successfully }
+        '400': { description: Invalid request data }
+        '409': { description: Email already exists }
+
+  /api/buyer/auth/login:
+    post:
+      tags: [Buyer - Authentication]
+      summary: Buyer login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200': 
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      buyer: { type: object }
+                  timestamp: { type: string, format: date-time }
+        '401': { description: Invalid credentials }
+
+  /api/buyer/auth/me:
+    get:
+      tags: [Buyer - Authentication]
+      summary: Get current buyer profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Profile retrieved successfully }
+        '401': { description: Unauthorized }
+
+  # Addresses
+  /api/buyer/addresses:
+    get:
+      tags: [Buyer - Addresses]
+      summary: Get buyer addresses
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Addresses retrieved successfully }
+
+    post:
+      tags: [Buyer - Addresses]
+      summary: Create new address
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullName, phoneNumber, addressLine1, city, province, postalCode]
+              properties:
+                fullName: { type: string }
+                phoneNumber: { type: string }
+                addressLine1: { type: string }
+                addressLine2: { type: string }
+                city: { type: string }
+                province: { type: string }
+                postalCode: { type: string }
+                isDefault: { type: boolean, default: false }
+      responses:
+        '201': { description: Address created successfully }
+
+  /api/buyer/addresses/{id}:
+    get:
+      tags: [Buyer - Addresses]
+      summary: Get address by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Address retrieved successfully }
+
+    put:
+      tags: [Buyer - Addresses]
+      summary: Update address
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Address updated successfully }
+
+    delete:
+      tags: [Buyer - Addresses]
+      summary: Delete address
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Address deleted successfully }
+
+  # Products
+  /api/buyer/products:
+    get:
+      tags: [Buyer - Products]
+      summary: Get all products
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: minPrice
+          schema: { type: number }
+        - in: query
+          name: maxPrice
+          schema: { type: number }
+      responses:
+        '200': { description: Products retrieved successfully }
+
+  /api/buyer/products/search:
+    get:
+      tags: [Buyer - Products]
+      summary: Search products
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: seller
+          schema: { type: string }
+        - in: query
+          name: sortBy
+          schema: { type: string, enum: [price_asc, price_desc, name_asc, name_desc, created_at] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: Search results retrieved successfully }
+
+  /api/buyer/products/search-by-vehicle:
+    post:
+      tags: [Buyer - Products]
+      summary: Search products by vehicle
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [make, model, year]
+              properties:
+                make: { type: string }
+                model: { type: string }
+                year: { type: integer }
+                category: { type: string }
+      responses:
+        '200': { description: Vehicle-specific products retrieved successfully }
+
+  /api/buyer/products/{id}:
+    get:
+      tags: [Buyer - Products]
+      summary: Get product by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Product retrieved successfully }
+
+  # Orders
+  /api/buyer/orders:
+    get:
+      tags: [Buyer - Orders]
+      summary: Get buyer orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [PENDING_PAYMENT, AWAITING_SELLER_ACCEPTANCE, PROCESSING, SHIPPED, DELIVERED, CANCELLED, SELLER_REJECTED] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: Orders retrieved successfully }
+
+    post:
+      tags: [Buyer - Orders]
+      summary: Create new order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, shippingAddressId]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [productId, quantity]
+                    properties:
+                      productId: { type: string }
+                      quantity: { type: integer, minimum: 1 }
+                shippingAddressId: { type: string }
+                notes: { type: string }
+      responses:
+        '201': { description: Order created successfully }
+
+  /api/buyer/orders/{id}:
+    get:
+      tags: [Buyer - Orders]
+      summary: Get order by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Order retrieved successfully }
+
+  /api/buyer/orders/{id}/cancel:
+    post:
+      tags: [Buyer - Orders]
+      summary: Cancel order
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200': { description: Order cancelled successfully }
+
+  # Analytics
+  /api/buyer/analytics/dashboard:
+    get:
+      tags: [Buyer - Analytics]
+      summary: Get buyer dashboard analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: dateFrom
+          schema: { type: string, format: date }
+        - in: query
+          name: dateTo
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: Dashboard analytics retrieved successfully }
+
+  /api/buyer/analytics/spending-trends:
+    get:
+      tags: [Buyer - Analytics]
+      summary: Get spending trends
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: period
+          schema: { type: string, enum: [7d, 30d, 90d, 1y] }
+      responses:
+        '200': { description: Spending trends retrieved successfully }
+
+  /api/buyer/analytics/category-analysis:
+    get:
+      tags: [Buyer - Analytics]
+      summary: Get category analysis
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: dateFrom
+          schema: { type: string, format: date }
+        - in: query
+          name: dateTo
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: Category analysis retrieved successfully }
+
+  # Disputes
+  /api/buyer/disputes:
+    get:
+      tags: [Buyer - Disputes]
+      summary: Get buyer disputes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: Disputes retrieved successfully }
+
+    post:
+      tags: [Buyer - Disputes]
+      summary: Create new dispute
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, reason, description]
+              properties:
+                orderId: { type: string }
+                reason: { type: string, enum: [DEFECTIVE_PRODUCT, WRONG_ITEM, NOT_DELIVERED, LATE_DELIVERY, OTHER] }
+                description: { type: string }
+                evidence: { type: array, items: { type: string } }
+      responses:
+        '201': { description: Dispute created successfully }
+
+  /api/buyer/disputes/{id}:
+    get:
+      tags: [Buyer - Disputes]
+      summary: Get dispute by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Dispute retrieved successfully }
+
+  # Quotes
+  /api/buyer/quotes:
+    get:
+      tags: [Buyer - Quotes]
+      summary: Get buyer quotes
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [PENDING, ACCEPTED, REJECTED, EXPIRED] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: Quotes retrieved successfully }
+
+    post:
+      tags: [Buyer - Quotes]
+      summary: Create new quote request
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, quantity, maxPrice, deliveryDate]
+              properties:
+                productId: { type: string }
+                quantity: { type: integer, minimum: 1 }
+                maxPrice: { type: number, minimum: 0 }
+                deliveryDate: { type: string, format: date }
+                notes: { type: string }
+      responses:
+        '201': { description: Quote request created successfully }
+
+  /api/buyer/quotes/{id}:
+    get:
+      tags: [Buyer - Quotes]
+      summary: Get quote by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Quote retrieved successfully }
+
+  /api/buyer/quotes/{id}/accept:
+    post:
+      tags: [Buyer - Quotes]
+      summary: Accept quote
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Quote accepted successfully }
+
+  /api/buyer/quotes/{id}/reject:
+    post:
+      tags: [Buyer - Quotes]
+      summary: Reject quote
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200': { description: Quote rejected successfully }
+
+  # Enterprise
+  /api/buyer/enterprise/users:
+    get:
+      tags: [Buyer - Enterprise]
+      summary: Get enterprise users
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Enterprise users retrieved successfully }
+
+    post:
+      tags: [Buyer - Enterprise]
+      summary: Create enterprise user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, firstName, lastName, role]
+              properties:
+                email: { type: string, format: email }
+                firstName: { type: string }
+                lastName: { type: string }
+                role: { type: string, enum: [ADMIN, PURCHASER, VIEWER] }
+                permissions: { type: array, items: { type: string } }
+      responses:
+        '201': { description: Enterprise user created successfully }
+
+  /api/buyer/enterprise/users/{id}:
+    get:
+      tags: [Buyer - Enterprise]
+      summary: Get enterprise user by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Enterprise user retrieved successfully }
+
+    put:
+      tags: [Buyer - Enterprise]
+      summary: Update enterprise user
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Enterprise user updated successfully }
+
+    delete:
+      tags: [Buyer - Enterprise]
+      summary: Delete enterprise user
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Enterprise user deleted successfully }
+
+  # ============================================================================
+  # SELLER ENDPOINTS
+  # ============================================================================
+
+  # Authentication
+  /api/seller/auth/register:
+    post:
+      tags: [Seller - Authentication]
+      summary: Register new seller
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, businessName, tin, phone, address]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+                businessName: { type: string }
+                tin: { type: string }
+                phone: { type: string }
+                address: { type: string }
+      responses:
+        '201': { description: Seller registered successfully and auto-approved }
+        '400': { description: Invalid request data }
+        '409': { description: Email already exists }
+
+  /api/seller/auth/login:
+    post:
+      tags: [Seller - Authentication]
+      summary: Seller login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200': 
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      seller: { type: object }
+                  timestamp: { type: string, format: date-time }
+        '401': { description: Invalid credentials }
+
+  /api/seller/auth/me:
+    get:
+      tags: [Seller - Authentication]
+      summary: Get current seller profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Profile retrieved successfully }
+        '401': { description: Unauthorized }
+
+  # Inventory
+  /api/seller/inventory/products:
+    get:
+      tags: [Seller - Inventory]
+      summary: Get seller products
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: status
+          schema: { type: string, enum: [ACTIVE, INACTIVE, OUT_OF_STOCK] }
+        - in: query
+          name: search
+          schema: { type: string }
+      responses:
+        '200': { description: Products retrieved successfully }
+
+    post:
+      tags: [Seller - Inventory]
+      summary: Create new product
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, price, quantity, condition]
+              properties:
+                productId: { type: string }
+                price: { type: number, minimum: 0 }
+                quantity: { type: integer, minimum: 0 }
+                condition: { type: string, enum: [NEW, USED, REFURBISHED] }
+                description: { type: string }
+                images: { type: array, items: { type: string } }
+                isActive: { type: boolean, default: true }
+      responses:
+        '201': { description: Product created successfully }
+
+  /api/seller/inventory/products/{id}:
+    get:
+      tags: [Seller - Inventory]
+      summary: Get product by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Product retrieved successfully }
+
+    put:
+      tags: [Seller - Inventory]
+      summary: Update product
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Product updated successfully }
+
+    delete:
+      tags: [Seller - Inventory]
+      summary: Delete product
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Product deleted successfully }
+
+  /api/seller/inventory/products/{id}/stock:
+    patch:
+      tags: [Seller - Inventory]
+      summary: Update product stock
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 0 }
+                reason: { type: string }
+      responses:
+        '200': { description: Stock updated successfully }
+
+  # Orders
+  /api/seller/orders:
+    get:
+      tags: [Seller - Orders]
+      summary: Get seller orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [PENDING_PAYMENT, AWAITING_SELLER_ACCEPTANCE, PROCESSING, SHIPPED, DELIVERED, CANCELLED, SELLER_REJECTED] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: Orders retrieved successfully }
+
+  /api/seller/orders/{id}:
+    get:
+      tags: [Seller - Orders]
+      summary: Get order by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Order retrieved successfully }
+
+  /api/seller/orders/{id}/status:
+    patch:
+      tags: [Seller - Orders]
+      summary: Update order status
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [accept, reject] }
+                rejectionReason: { type: string }
+      responses:
+        '200': { description: Order status updated successfully }
+
+  /api/seller/orders/{id}/fulfillment:
+    patch:
+      tags: [Seller - Orders]
+      summary: Update order fulfillment
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [shipped, delivered] }
+                trackingNumber: { type: string }
+                carrierId: { type: string }
+                notes: { type: string }
+      responses:
+        '200': { description: Order fulfillment updated successfully }
+
+  /api/seller/orders/statistics:
+    get:
+      tags: [Seller - Orders]
+      summary: Get order statistics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: dateFrom
+          schema: { type: string, format: date }
+        - in: query
+          name: dateTo
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: Order statistics retrieved successfully }
+
+  # Dashboard
+  /api/seller/dashboard/stats:
+    get:
+      tags: [Seller - Dashboard]
+      summary: Get seller dashboard statistics
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Dashboard statistics retrieved successfully }
+
+  /api/seller/dashboard/revenue:
+    get:
+      tags: [Seller - Dashboard]
+      summary: Get revenue analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: period
+          schema: { type: string, enum: [7d, 30d, 90d, 1y] }
+      responses:
+        '200': { description: Revenue analytics retrieved successfully }
+
+  /api/seller/dashboard/orders:
+    get:
+      tags: [Seller - Dashboard]
+      summary: Get order analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: period
+          schema: { type: string, enum: [7d, 30d, 90d, 1y] }
+      responses:
+        '200': { description: Order analytics retrieved successfully }
+
+  # Accounting
+  /api/seller/accounting/ledger:
+    get:
+      tags: [Seller - Accounting]
+      summary: Get seller ledger
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: type
+          schema: { type: string, enum: [CREDIT, DEBIT] }
+        - in: query
+          name: dateFrom
+          schema: { type: string, format: date }
+        - in: query
+          name: dateTo
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: Ledger retrieved successfully }
+
+  /api/seller/accounting/balance:
+    get:
+      tags: [Seller - Accounting]
+      summary: Get account balance
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Account balance retrieved successfully }
+
+  /api/seller/accounting/payouts:
+    get:
+      tags: [Seller - Accounting]
+      summary: Get payout history
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: status
+          schema: { type: string, enum: [PENDING, PROCESSING, COMPLETED, FAILED] }
+      responses:
+        '200': { description: Payout history retrieved successfully }
+
+  # Staff
+  /api/seller/staff:
+    get:
+      tags: [Seller - Staff]
+      summary: Get seller staff
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Staff retrieved successfully }
+
+    post:
+      tags: [Seller - Staff]
+      summary: Create staff member
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, firstName, lastName, role]
+              properties:
+                email: { type: string, format: email }
+                firstName: { type: string }
+                lastName: { type: string }
+                role: { type: string, enum: [MANAGER, SALES, INVENTORY, ACCOUNTING] }
+                permissions: { type: array, items: { type: string } }
+      responses:
+        '201': { description: Staff member created successfully }
+
+  /api/seller/staff/{id}:
+    get:
+      tags: [Seller - Staff]
+      summary: Get staff member by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Staff member retrieved successfully }
+
+    put:
+      tags: [Seller - Staff]
+      summary: Update staff member
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Staff member updated successfully }
+
+    delete:
+      tags: [Seller - Staff]
+      summary: Delete staff member
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Staff member deleted successfully }
+
+  # Loans
+  /api/seller/loans:
+    get:
+      tags: [Seller - Loans]
+      summary: Get seller loans
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [PENDING, APPROVED, ACTIVE, COMPLETED, DEFAULTED] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200': { description: Loans retrieved successfully }
+
+    post:
+      tags: [Seller - Loans]
+      summary: Apply for loan
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, purpose, repaymentPeriod]
+              properties:
+                amount: { type: number, minimum: 100 }
+                purpose: { type: string }
+                repaymentPeriod: { type: integer, minimum: 1, maximum: 24 }
+                collateral: { type: string }
+      responses:
+        '201': { description: Loan application submitted successfully }
+
+  /api/seller/loans/{id}:
+    get:
+      tags: [Seller - Loans]
+      summary: Get loan by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Loan retrieved successfully }
+
+  /api/seller/loans/{id}/repay:
+    post:
+      tags: [Seller - Loans]
+      summary: Make loan repayment
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: number, minimum: 1 }
+                paymentMethod: { type: string, enum: [BANK_TRANSFER, MOBILE_MONEY, CASH] }
+      responses:
+        '200': { description: Loan repayment processed successfully }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Enter your JWT token
