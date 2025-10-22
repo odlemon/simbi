@@ -296,17 +296,33 @@ let specs: any;
 try {
   specs = swaggerJsdoc(options);
   
-  // Check if specs has paths - if not, use minimal fallback
+  // Check if specs has paths - if not, try to load static spec
   if (!specs || !specs.paths || Object.keys(specs.paths).length === 0) {
-    console.log('⚠️  Swagger-jsdoc returned empty spec, using fallback');
-    specs = options.definition;
-    specs.paths = {};
+    console.log('⚠️  Swagger-jsdoc returned empty spec, trying static fallback');
+    try {
+      const staticSpec = require("../swagger/static-spec.json");
+      specs = staticSpec;
+      console.log('✅ Static Swagger spec loaded successfully');
+    } catch (staticError) {
+      console.log('⚠️  Static spec failed, using minimal fallback');
+      specs = options.definition;
+      specs.paths = {};
+    }
+  } else {
+    console.log(`✅ Swagger spec generated with ${Object.keys(specs.paths).length} endpoints`);
   }
 } catch (error) {
   console.error('❌ Error generating Swagger spec:', error);
-  // Fallback to definition only
-  specs = options.definition;
-  specs.paths = {};
+  // Try static spec as fallback
+  try {
+    const staticSpec = require("../swagger/static-spec.json");
+    specs = staticSpec;
+    console.log('✅ Static Swagger spec loaded as fallback');
+  } catch (staticError) {
+    console.log('⚠️  Static spec failed, using minimal fallback');
+    specs = options.definition;
+    specs.paths = {};
+  }
 }
 
 export { specs };

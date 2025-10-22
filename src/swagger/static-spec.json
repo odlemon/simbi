@@ -1,0 +1,339 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Simbi Market - Complete API",
+    "version": "1.0.0",
+    "description": "Complete API documentation for Simbi Market - Zimbabwe AutoParts Marketplace. Includes Admin, Buyer, and Seller endpoints with full request/response schemas.",
+    "contact": {
+      "name": "Simbi Market Support",
+      "email": "support@simbi.market"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Development server"
+    },
+    {
+      "url": "https://api.simbi.market",
+      "description": "Production server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter your JWT token"
+      }
+    },
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" },
+          "data": { "type": "object" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PaginatedResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "type": "array", "items": { "type": "object" } },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "total": { "type": "number" },
+              "page": { "type": "number" },
+              "limit": { "type": "number" },
+              "totalPages": { "type": "number" }
+            }
+          },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Admin - Authentication", "description": "Admin authentication endpoints" },
+    { "name": "Admin - Dashboard", "description": "Admin dashboard and KPI monitoring endpoints" },
+    { "name": "Admin - Products", "description": "Admin product management endpoints" },
+    { "name": "Admin - Sellers", "description": "Admin seller management and SRI endpoints" },
+    { "name": "Admin - Financial", "description": "Admin financial reconciliation and payouts" },
+    { "name": "Admin - Disputes", "description": "Admin dispute management endpoints" },
+    { "name": "Admin - Logistics", "description": "Admin logistics and carrier management" },
+    { "name": "Admin - Settings", "description": "Admin system settings and configuration" },
+    { "name": "Admin - Compliance", "description": "Admin compliance and security monitoring" },
+    { "name": "Admin - Inventory", "description": "Admin inventory management endpoints" },
+    { "name": "Admin - HR", "description": "Admin HR and payroll endpoints" },
+    { "name": "Buyer - Authentication", "description": "Buyer authentication endpoints" },
+    { "name": "Buyer - Addresses", "description": "Buyer address management endpoints" },
+    { "name": "Buyer - Products", "description": "Buyer product browsing and search endpoints" },
+    { "name": "Buyer - Orders", "description": "Buyer order management endpoints" },
+    { "name": "Buyer - Analytics", "description": "Buyer analytics and reporting endpoints" },
+    { "name": "Buyer - Disputes", "description": "Buyer dispute management endpoints" },
+    { "name": "Buyer - Quotes", "description": "Buyer quote request endpoints" },
+    { "name": "Buyer - Enterprise", "description": "Buyer enterprise user management endpoints" },
+    { "name": "Seller - Authentication", "description": "Seller authentication endpoints" },
+    { "name": "Seller - Inventory", "description": "Seller inventory management endpoints" },
+    { "name": "Seller - Orders", "description": "Seller order management endpoints" },
+    { "name": "Seller - Dashboard", "description": "Seller dashboard and analytics endpoints" },
+    { "name": "Seller - Accounting", "description": "Seller accounting and financial endpoints" },
+    { "name": "Seller - Staff", "description": "Seller staff management endpoints" },
+    { "name": "Seller - Loans", "description": "Seller loan management endpoints" }
+  ],
+  "paths": {
+    "/api/admin/auth/login": {
+      "post": {
+        "tags": ["Admin - Authentication"],
+        "summary": "Admin login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "admin@simbi.com" },
+                  "password": { "type": "string", "format": "password", "example": "admin123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "token": { "type": "string" },
+                        "admin": { "type": "object" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/api/admin/auth/me": {
+      "get": {
+        "tags": ["Admin - Authentication"],
+        "summary": "Get current admin profile",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Profile retrieved successfully" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/admin/dashboard/kpis": {
+      "get": {
+        "tags": ["Admin - Dashboard"],
+        "summary": "Get dashboard KPIs",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "KPIs retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "gmv": { "type": "number" },
+                        "activeSellers": { "type": "number" },
+                        "activeBuyers": { "type": "number" },
+                        "totalProducts": { "type": "number" },
+                        "avgSRI": { "type": "number" },
+                        "pendingOrders": { "type": "number" },
+                        "completedOrders": { "type": "number" },
+                        "openDisputes": { "type": "number" },
+                        "revenue30Days": { "type": "number" },
+                        "totalOrders": { "type": "number" },
+                        "avgOrderValue": { "type": "number" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/buyer/auth/register": {
+      "post": {
+        "tags": ["Buyer - Authentication"],
+        "summary": "Register new buyer",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password", "firstName", "lastName", "phone"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" },
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "companyName": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Buyer registered successfully" },
+          "400": { "description": "Invalid request data" },
+          "409": { "description": "Email already exists" }
+        }
+      }
+    },
+    "/api/buyer/auth/login": {
+      "post": {
+        "tags": ["Buyer - Authentication"],
+        "summary": "Buyer login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "token": { "type": "string" },
+                        "buyer": { "type": "object" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/api/seller/auth/register": {
+      "post": {
+        "tags": ["Seller - Authentication"],
+        "summary": "Register new seller",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password", "businessName", "tin", "phone", "address"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" },
+                  "businessName": { "type": "string" },
+                  "tin": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "address": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Seller registered successfully and auto-approved" },
+          "400": { "description": "Invalid request data" },
+          "409": { "description": "Email already exists" }
+        }
+      }
+    },
+    "/api/seller/auth/login": {
+      "post": {
+        "tags": ["Seller - Authentication"],
+        "summary": "Seller login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "token": { "type": "string" },
+                        "seller": { "type": "object" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    }
+  }
+}

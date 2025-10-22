@@ -86,18 +86,77 @@ app.use("/api/buyer", buyerRoutes);
 // Load Swagger spec with fallback
 let specs: any = {
   openapi: "3.0.0",
-  info: { title: "Simbi Market Admin API", version: "1.0.0" },
+  info: { 
+    title: "Simbi Market - Complete API", 
+    version: "1.0.0",
+    description: "Complete API documentation for Simbi Market - Zimbabwe AutoParts Marketplace. Includes Admin, Buyer, and Seller endpoints with full request/response schemas."
+  },
   paths: {},
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+        description: "Enter your JWT token"
+      }
+    }
+  },
+  tags: [
+    { name: "Admin - Authentication", description: "Admin authentication endpoints" },
+    { name: "Admin - Dashboard", description: "Admin dashboard and KPI monitoring endpoints" },
+    { name: "Admin - Products", description: "Admin product management endpoints" },
+    { name: "Admin - Sellers", description: "Admin seller management and SRI endpoints" },
+    { name: "Admin - Financial", description: "Admin financial reconciliation and payouts" },
+    { name: "Admin - Disputes", description: "Admin dispute management endpoints" },
+    { name: "Admin - Logistics", description: "Admin logistics and carrier management" },
+    { name: "Admin - Settings", description: "Admin system settings and configuration" },
+    { name: "Admin - Compliance", description: "Admin compliance and security monitoring" },
+    { name: "Admin - Inventory", description: "Admin inventory management endpoints" },
+    { name: "Admin - HR", description: "Admin HR and payroll endpoints" },
+    { name: "Buyer - Authentication", description: "Buyer authentication endpoints" },
+    { name: "Buyer - Addresses", description: "Buyer address management endpoints" },
+    { name: "Buyer - Products", description: "Buyer product browsing and search endpoints" },
+    { name: "Buyer - Orders", description: "Buyer order management endpoints" },
+    { name: "Buyer - Analytics", description: "Buyer analytics and reporting endpoints" },
+    { name: "Buyer - Disputes", description: "Buyer dispute management endpoints" },
+    { name: "Buyer - Quotes", description: "Buyer quote request endpoints" },
+    { name: "Buyer - Enterprise", description: "Buyer enterprise user management endpoints" },
+    { name: "Seller - Authentication", description: "Seller authentication endpoints" },
+    { name: "Seller - Inventory", description: "Seller inventory management endpoints" },
+    { name: "Seller - Orders", description: "Seller order management endpoints" },
+    { name: "Seller - Dashboard", description: "Seller dashboard and analytics endpoints" },
+    { name: "Seller - Accounting", description: "Seller accounting and financial endpoints" },
+    { name: "Seller - Staff", description: "Seller staff management endpoints" },
+    { name: "Seller - Loans", description: "Seller loan management endpoints" }
+  ]
 };
 
 try {
   const swagger = require("./config/swagger");
-  if (swagger?.specs) {
+  if (swagger?.specs && Object.keys(swagger.specs.paths || {}).length > 0) {
     specs = swagger.specs;
     logger.info(`Swagger spec loaded: ${Object.keys(specs.paths || {}).length} endpoints`);
+  } else {
+    // Try to load static spec as fallback
+    try {
+      const staticSpec = require("./swagger/static-spec.json");
+      specs = staticSpec;
+      logger.info(`Static Swagger spec loaded: ${Object.keys(specs.paths || {}).length} endpoints`);
+    } catch (staticError: any) {
+      logger.warn("Failed to load static spec, using minimal fallback", { error: staticError.message });
+    }
   }
 } catch (e: any) {
-  logger.warn("Failed to load swagger spec, using fallback", { error: e.message });
+  logger.warn("Failed to load swagger spec, trying static fallback", { error: e.message });
+  // Try to load static spec as fallback
+  try {
+    const staticSpec = require("./swagger/static-spec.json");
+    specs = staticSpec;
+    logger.info(`Static Swagger spec loaded: ${Object.keys(specs.paths || {}).length} endpoints`);
+  } catch (staticError: any) {
+    logger.warn("Failed to load static spec, using minimal fallback", { error: staticError.message });
+  }
 }
 
 // Swagger UI endpoint (CDN-based, Vercel-compatible)

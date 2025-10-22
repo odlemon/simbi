@@ -4,29 +4,6 @@ paths:
   # ============================================================================
   
   # Authentication
-  /api/admin/auth/register:
-    post:
-      tags: [Admin - Authentication]
-      summary: Register new admin
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email, password, firstName, lastName, role]
-              properties:
-                email: { type: string, format: email }
-                password: { type: string, format: password }
-                firstName: { type: string }
-                lastName: { type: string }
-                role: { type: string, enum: [SUPER_ADMIN, FINOPS_ANALYST, COMPLIANCE_MANAGER, LOGISTICS_COORDINATOR, TECH_SUPPORT] }
-      responses:
-        '201': { description: Admin created successfully }
-        '400': { description: Invalid request data }
-        '409': { description: Email already exists }
-
   /api/admin/auth/login:
     post:
       tags: [Admin - Authentication]
@@ -40,8 +17,8 @@ paths:
               type: object
               required: [email, password]
               properties:
-                email: { type: string, format: email }
-                password: { type: string, format: password }
+                email: { type: string, format: email, example: "admin@simbi.com" }
+                password: { type: string, format: password, example: "admin123" }
       responses:
         '200': 
           description: Login successful
