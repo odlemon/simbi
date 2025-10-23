@@ -256,9 +256,6 @@ const options: swaggerJsdoc.Options = {
       { name: "Admin - Products", description: "Admin product management endpoints" },
       { name: "Admin - Sellers", description: "Admin seller management and SRI endpoints" },
       { name: "Admin - Financial", description: "Admin financial reconciliation and payouts" },
-      { name: "Admin - Disputes", description: "Admin dispute management endpoints" },
-      { name: "Admin - Logistics", description: "Admin logistics and carrier management" },
-      { name: "Admin - Settings", description: "Admin system settings and configuration" },
       { name: "Admin - Compliance", description: "Admin compliance and security monitoring" },
       { name: "Admin - Inventory", description: "Admin inventory management endpoints" },
       
