@@ -23,7 +23,14 @@ app.use(helmet({
 // CORS configuration
 app.use(cors({
   origin: [
-   "*"
+    "http://localhost:3000",
+    "172.20.20.10.9:3001",
+    "172.20.20.10.9:3000",
+    "http://localhost:3001",
+    "https://car-parts-hub.vercel.app",
+    "https://simbi-admin.vercel.app",
+    "https://simbi-seller.vercel.app",
+    "https://carspain.vercel.app"
   ],
   credentials: true
 }));
