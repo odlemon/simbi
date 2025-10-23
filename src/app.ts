@@ -27,6 +27,8 @@ app.use(cors({
     "172.20.20.10.9:3001",
     "172.20.20.10.9:3000",
     "http://localhost:3001",
+    "http://localhost:5001",
+    "http://172.20.20.10.9:5001",
     "https://car-parts-hub.vercel.app",
     "https://simbi-admin.vercel.app",
     "https://simbi-seller.vercel.app",
