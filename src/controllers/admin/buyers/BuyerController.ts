@@ -70,9 +70,8 @@ export class BuyerController {
             firstName: true,
             lastName: true,
             companyName: true,
-            phone: true,
+            phoneNumber: true,
             status: true,
-            isVerified: true,
             createdAt: true,
             updatedAt: true,
             _count: {
@@ -101,7 +100,7 @@ export class BuyerController {
         
         // Verified buyers
         this.prisma.buyer.count({
-          where: { isVerified: true }
+          where: { status: 'ACTIVE' }
         }),
         
         // Enterprise buyers (with company name)
@@ -230,7 +229,6 @@ export class BuyerController {
           companyName: true,
           phone: true,
           status: true,
-          isVerified: true,
           createdAt: true,
           updatedAt: true,
           _count: {
@@ -287,7 +285,6 @@ export class BuyerController {
           companyName: true,
           phone: true,
           status: true,
-          isVerified: true,
           createdAt: true,
           updatedAt: true,
           addresses: {
@@ -378,7 +375,7 @@ export class BuyerController {
         
         // Verified buyers
         this.prisma.buyer.count({
-          where: { isVerified: true }
+          where: { status: 'ACTIVE' }
         }),
         
         // Enterprise buyers (with company name)

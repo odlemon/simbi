@@ -25,20 +25,20 @@ export class ComplianceController {
         securityAlerts,
       ] = await Promise.all([
         // Anti-sniping violations (if sellerId provided)
-        sellerId ? this.antiSnipingService.getViolations(sellerId as string) : Promise.resolve({ data: [] }),
+        sellerId ? this.antiSnipingService.getViolationHistory(sellerId as string) : Promise.resolve([]),
         
         // Security alerts
-        this.securityAnomalyService.getSecurityAlerts(),
+        this.securityAnomalyService.getSecurityAlerts({}),
       ]);
 
       res.status(200).json({
         success: true,
         data: {
           antiSniping: {
-            violations: antiSnipingViolations.data || [],
+            violations: antiSnipingViolations || [],
           },
           security: {
-            alerts: securityAlerts.data || [],
+            alerts: securityAlerts || [],
           },
           lastUpdated: new Date().toISOString()
         },

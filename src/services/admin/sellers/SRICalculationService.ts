@@ -456,6 +456,41 @@ export class SRICalculationService {
       throw error;
     }
   }
+
+  /**
+   * Get SRI violations (sellers with low SRI scores)
+   */
+  async getSRIViolations(): Promise<{ data: any[] }> {
+    try {
+      const violations = await this.prisma.seller.findMany({
+        where: {
+          sriScore: {
+            lt: 50 // SRI score below 50 is considered a violation
+          }
+        },
+        select: {
+          id: true,
+          businessName: true,
+          email: true,
+          sriScore: true,
+          isEligible: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: {
+          sriScore: 'asc'
+        },
+        take: 50
+      });
+
+      return { data: violations };
+    } catch (error: any) {
+      logger.error("Error fetching SRI violations", {
+        error: error.message,
+      });
+      return { data: [] };
+    }
+  }
 }
 
 
