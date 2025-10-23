@@ -635,6 +635,155 @@ export class OrderService {
       }
     ];
   }
+
+  /**
+   * Sync payment status between buyer and seller
+   * This method checks if a seller has recorded a cash payment
+   */
+  async syncPaymentStatus(orderId: string): Promise<OrderResult> {
+    try {
+      // Get order with payment details
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          payment: true,
+          buyer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      if (!order) {
+        return {
+          success: false,
+          message: "Order not found",
+          error: "ORDER_NOT_FOUND"
+        };
+      }
+
+      // If payment exists and is completed, update order status
+      if (order.payment && order.payment.status === 'COMPLETED') {
+        // Update order status to AWAITING_SELLER_ACCEPTANCE if it's still PENDING_PAYMENT
+        if (order.status === 'PENDING_PAYMENT') {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: {
+              status: 'AWAITING_SELLER_ACCEPTANCE',
+              updatedAt: new Date()
+            }
+          });
+
+          // Create activity log for buyer
+          await prisma.activityLog.create({
+            data: {
+              userId: order.buyerId,
+              userType: "BUYER",
+              action: "PAYMENT_RECORDED",
+              details: `Payment of $${order.payment.amount} recorded by seller for order ${order.orderNumber}`,
+              metadata: {
+                orderId: orderId,
+                paymentId: order.payment.id,
+                amount: order.payment.amount,
+                paymentMethod: order.payment.paymentMethod
+              }
+            }
+          });
+
+          return {
+            success: true,
+            message: "Payment status synced successfully",
+            data: {
+              ...order,
+              status: 'AWAITING_SELLER_ACCEPTANCE'
+            }
+          };
+        }
+      }
+
+      return {
+        success: true,
+        message: "Payment status is up to date",
+        data: order
+      };
+
+    } catch (error: any) {
+      return {
+        success: false,
+        message: "Failed to sync payment status",
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get order with payment status for buyer
+   */
+  async getOrderWithPaymentStatus(orderId: string, buyerId: string): Promise<OrderResult> {
+    try {
+      const order = await prisma.order.findFirst({
+        where: {
+          id: orderId,
+          buyerId: buyerId
+        },
+        include: {
+          payment: true,
+          orderItems: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  seller: {
+                    select: {
+                      id: true,
+                      businessName: true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          shippingAddress: true
+        }
+      });
+
+      if (!order) {
+        return {
+          success: false,
+          message: "Order not found",
+          error: "ORDER_NOT_FOUND"
+        };
+      }
+
+      // Sync payment status
+      const syncResult = await this.syncPaymentStatus(orderId);
+      if (syncResult.success && syncResult.data) {
+        return {
+          success: true,
+          message: "Order retrieved successfully",
+          data: syncResult.data
+        };
+      }
+
+      return {
+        success: true,
+        message: "Order retrieved successfully",
+        data: order
+      };
+
+    } catch (error: any) {
+      return {
+        success: false,
+        message: "Failed to get order with payment status",
+        error: error.message
+      };
+    }
+  }
 }
 
 export default OrderService;

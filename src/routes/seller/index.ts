@@ -7,6 +7,7 @@ import accountingRoutes from "./accounting.routes";
 import staffRoutes from "./staff.routes";
 import loansRoutes from "./loans.routes";
 import ordersRoutes from "./orders.routes";
+import paymentsRoutes from "./payments.routes";
 
 const router = Router();
 
@@ -30,6 +31,9 @@ router.use("/loans", loansRoutes);
 
 // Order Management
 router.use("/orders", ordersRoutes);
+
+// Payment Management
+router.use("/payments", paymentsRoutes);
 
 export default router;
 

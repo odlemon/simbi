@@ -478,5 +478,221 @@ export class AccountingService {
       entriesCount: entries.length,
     };
   }
+
+  /**
+   * Create accounting entries for cash payment received
+   */
+  async createPaymentAccountingEntries(
+    sellerId: string,
+    orderId: string,
+    paymentAmount: number,
+    commission: number = 0.1 // 10% default commission
+  ) {
+    try {
+      const transactionDate = new Date();
+      const netAmount = paymentAmount * (1 - commission);
+      const commissionAmount = paymentAmount * commission;
+
+      // Get seller's current balance
+      const lastEntry = await this.prisma.sellerLedger.findFirst({
+        where: { sellerId },
+        orderBy: { transactionDate: 'desc' },
+        select: { balance: true }
+      });
+
+      const currentBalance = lastEntry?.balance || 0;
+
+      // Create accounting entries
+      const entries = [];
+
+      // 1. Record the full payment as SALE (Debit: Cash/Revenue)
+      const saleEntry = await this.prisma.sellerLedger.create({
+        data: {
+          sellerId,
+          transactionDate,
+          type: 'SALE',
+          category: 'CASH_PAYMENT',
+          amountUSD: paymentAmount,
+          amountZWL: paymentAmount * 1, // Assuming 1:1 for now
+          description: `Cash payment received for order ${orderId}`,
+          referenceId: orderId,
+          debit: paymentAmount,
+          credit: 0,
+          balance: currentBalance + paymentAmount
+        }
+      });
+      entries.push(saleEntry);
+
+      // 2. Record commission deduction (Credit: Commission Expense)
+      const commissionEntry = await this.prisma.sellerLedger.create({
+        data: {
+          sellerId,
+          transactionDate,
+          type: 'COMMISSION',
+          category: 'PLATFORM_COMMISSION',
+          amountUSD: commissionAmount,
+          amountZWL: commissionAmount * 1,
+          description: `Platform commission for order ${orderId}`,
+          referenceId: orderId,
+          debit: 0,
+          credit: commissionAmount,
+          balance: currentBalance + paymentAmount - commissionAmount
+        }
+      });
+      entries.push(commissionEntry);
+
+      // 3. Record net amount to seller account (Credit: Seller Revenue)
+      const netEntry = await this.prisma.sellerLedger.create({
+        data: {
+          sellerId,
+          transactionDate,
+          type: 'SALE',
+          category: 'NET_REVENUE',
+          amountUSD: netAmount,
+          amountZWL: netAmount * 1,
+          description: `Net revenue after commission for order ${orderId}`,
+          referenceId: orderId,
+          debit: 0,
+          credit: netAmount,
+          balance: currentBalance + netAmount
+        }
+      });
+      entries.push(netEntry);
+
+      logger.info('Payment accounting entries created successfully', {
+        sellerId,
+        orderId,
+        paymentAmount,
+        commissionAmount,
+        netAmount,
+        entriesCount: entries.length
+      });
+
+      return {
+        success: true,
+        message: 'Accounting entries created successfully',
+        data: {
+          entries,
+          summary: {
+            totalPayment: paymentAmount,
+            commission: commissionAmount,
+            netRevenue: netAmount,
+            newBalance: currentBalance + netAmount
+          }
+        }
+      };
+
+    } catch (error: any) {
+      logger.error('Error creating payment accounting entries', {
+        error: error.message,
+        sellerId,
+        orderId,
+        paymentAmount
+      });
+
+      return {
+        success: false,
+        message: 'Failed to create accounting entries',
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get payment accounting summary for seller
+   */
+  async getPaymentAccountingSummary(sellerId: string, days: number = 30) {
+    try {
+      const dateFrom = new Date();
+      dateFrom.setDate(dateFrom.getDate() - days);
+
+      const [
+        totalSales,
+        totalCommission,
+        netRevenue,
+        recentPayments
+      ] = await Promise.all([
+        // Total sales (cash payments)
+        this.prisma.sellerLedger.aggregate({
+          where: {
+            sellerId,
+            type: 'SALE',
+            category: 'CASH_PAYMENT',
+            transactionDate: { gte: dateFrom }
+          },
+          _sum: { amountUSD: true },
+          _count: { id: true }
+        }),
+
+        // Total commission paid
+        this.prisma.sellerLedger.aggregate({
+          where: {
+            sellerId,
+            type: 'COMMISSION',
+            category: 'PLATFORM_COMMISSION',
+            transactionDate: { gte: dateFrom }
+          },
+          _sum: { amountUSD: true },
+          _count: { id: true }
+        }),
+
+        // Net revenue
+        this.prisma.sellerLedger.aggregate({
+          where: {
+            sellerId,
+            type: 'SALE',
+            category: 'NET_REVENUE',
+            transactionDate: { gte: dateFrom }
+          },
+          _sum: { amountUSD: true }
+        }),
+
+        // Recent payment entries
+        this.prisma.sellerLedger.findMany({
+          where: {
+            sellerId,
+            type: 'SALE',
+            category: 'CASH_PAYMENT',
+            transactionDate: { gte: dateFrom }
+          },
+          orderBy: { transactionDate: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            transactionDate: true,
+            amountUSD: true,
+            description: true,
+            referenceId: true
+          }
+        })
+      ]);
+
+      return {
+        success: true,
+        data: {
+          period: `${days} days`,
+          totalSales: totalSales._sum.amountUSD || 0,
+          totalSalesCount: totalSales._count.id || 0,
+          totalCommission: totalCommission._sum.amountUSD || 0,
+          totalCommissionCount: totalCommission._count.id || 0,
+          netRevenue: netRevenue._sum.amountUSD || 0,
+          recentPayments
+        }
+      };
+
+    } catch (error: any) {
+      logger.error('Error getting payment accounting summary', {
+        error: error.message,
+        sellerId,
+        days
+      });
+
+      return {
+        success: false,
+        message: 'Failed to get payment accounting summary',
+        error: error.message
+      };
+    }
+  }
 }
 

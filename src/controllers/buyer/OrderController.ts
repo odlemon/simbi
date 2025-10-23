@@ -75,7 +75,7 @@ export class OrderController {
         return;
       }
 
-      const result = await this.orderService.getOrderById(orderId, buyerId);
+      const result = await this.orderService.getOrderWithPaymentStatus(orderId, buyerId);
       
       if (result.success) {
         res.status(200).json({

@@ -80,7 +80,8 @@
     { "name": "Seller - Dashboard", "description": "Seller dashboard and analytics endpoints" },
     { "name": "Seller - Accounting", "description": "Seller accounting and financial endpoints" },
     { "name": "Seller - Staff", "description": "Seller staff management endpoints" },
-    { "name": "Seller - Loans", "description": "Seller loan management endpoints" }
+    { "name": "Seller - Loans", "description": "Seller loan management endpoints" },
+    { "name": "Seller - Payments", "description": "Seller payment management endpoints" }
   ],
   "paths": {
     "/api/admin/auth/login": {
@@ -776,6 +777,1489 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/seller/payments/record-cash": {
+      "post": {
+        "tags": ["Seller - Payments"],
+        "summary": "Record cash payment for an order",
+        "description": "Record a cash payment received for an order, updating order status to AWAITING_SELLER_ACCEPTANCE",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["orderId", "amount"],
+                "properties": {
+                  "orderId": { "type": "string", "description": "Order ID to record payment for" },
+                  "amount": { "type": "number", "description": "Payment amount (must match order total)" },
+                  "notes": { "type": "string", "description": "Optional payment notes" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cash payment recorded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "payment": { "type": "object" },
+                        "order": { "type": "object" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Bad request - validation errors" },
+          "404": { "description": "Order not found" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/payments/history": {
+      "get": {
+        "tags": ["Seller - Payments"],
+        "summary": "Get payment history for seller's orders",
+        "description": "Get paginated list of payments for orders containing seller's products",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 },
+            "description": "Page number for pagination"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20 },
+            "description": "Number of items per page"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["PENDING", "COMPLETED", "FAILED", "REFUNDED"] },
+            "description": "Filter by payment status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment history retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "payments": { "type": "array" },
+                        "pagination": { "type": "object" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/payments/summary": {
+      "get": {
+        "tags": ["Seller - Payments"],
+        "summary": "Get payment summary for seller",
+        "description": "Get payment statistics and summary for the seller",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": { "type": "integer", "default": 30 },
+            "description": "Number of days to include in summary"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment summary retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "totalPayments": { "type": "number" },
+                        "totalAmount": { "type": "number" },
+                        "cashPayments": { "type": "number" },
+                        "averagePayment": { "type": "number" },
+                        "recentPayments": { "type": "number" },
+                        "period": { "type": "string" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/payments/accounting-summary": {
+      "get": {
+        "tags": ["Seller - Payments"],
+        "summary": "Get payment accounting summary for seller",
+        "description": "Get detailed accounting summary including sales, commissions, and net revenue",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": { "type": "integer", "default": 30 },
+            "description": "Number of days to include in summary"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment accounting summary retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "period": { "type": "string" },
+                        "totalSales": { "type": "number" },
+                        "totalSalesCount": { "type": "number" },
+                        "totalCommission": { "type": "number" },
+                        "totalCommissionCount": { "type": "number" },
+                        "netRevenue": { "type": "number" },
+                        "recentPayments": { "type": "array" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/auth/register": {
+      "post": {
+        "tags": ["Seller - Authentication"],
+        "summary": "Register a new seller",
+        "description": "Register a new seller account with business information",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password", "businessName", "tin", "phone", "address", "city", "contactPerson"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 8 },
+                  "businessName": { "type": "string" },
+                  "tin": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "address": { "type": "string" },
+                  "city": { "type": "string" },
+                  "country": { "type": "string", "default": "Zimbabwe" },
+                  "contactPerson": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Seller registered successfully" },
+          "400": { "description": "Bad request - validation errors" }
+        }
+      }
+    },
+    "/api/seller/auth/login": {
+      "post": {
+        "tags": ["Seller - Authentication"],
+        "summary": "Login seller",
+        "description": "Authenticate seller and get access token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful" },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/api/seller/auth/profile": {
+      "get": {
+        "tags": ["Seller - Authentication"],
+        "summary": "Get seller profile",
+        "description": "Get current seller profile information",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Profile retrieved successfully" },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "patch": {
+        "tags": ["Seller - Authentication"],
+        "summary": "Update seller profile",
+        "description": "Update seller profile information",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "businessName": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "address": { "type": "string" },
+                  "city": { "type": "string" },
+                  "contactPerson": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Profile updated successfully" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/inventory/catalog": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Browse master catalog",
+        "description": "Browse available products in the master catalog for listing",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Catalog retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/inventory/listings": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Get all inventory listings",
+        "description": "Get paginated list of seller's inventory listings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Listings retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Create new listing",
+        "description": "Create a new inventory listing",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productId", "quantity", "unitPrice"],
+                "properties": {
+                  "productId": { "type": "string" },
+                  "quantity": { "type": "number", "minimum": 1 },
+                  "unitPrice": { "type": "number", "minimum": 0 },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Listing created successfully" }
+        }
+      }
+    },
+    "/api/seller/inventory/listings/{id}": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Get specific listing",
+        "description": "Get details of a specific inventory listing",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Listing retrieved successfully" },
+          "404": { "description": "Listing not found" }
+        }
+      },
+      "put": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Update listing",
+        "description": "Update an existing inventory listing",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "quantity": { "type": "number", "minimum": 1 },
+                  "unitPrice": { "type": "number", "minimum": 0 },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Listing updated successfully" },
+          "404": { "description": "Listing not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Delete listing",
+        "description": "Delete an inventory listing",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Listing deleted successfully" },
+          "404": { "description": "Listing not found" }
+        }
+      }
+    },
+    "/api/seller/inventory/listings/{id}/history": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Get adjustment history",
+        "description": "Get adjustment history for a specific listing",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "History retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/inventory/bulk-upload/template": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Download CSV template",
+        "description": "Download CSV template for bulk inventory upload",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Template downloaded successfully" }
+        }
+      }
+    },
+    "/api/seller/inventory/bulk-upload/{uploadId}/status": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Get upload status",
+        "description": "Get status of bulk upload process",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "uploadId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Status retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/inventory/value-by-category": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Get inventory value by category",
+        "description": "Get inventory value breakdown by category",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Value breakdown retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/inventory/stock-cover-alerts": {
+      "get": {
+        "tags": ["Seller - Inventory"],
+        "summary": "Get stock cover alerts",
+        "description": "Get alerts for low stock levels",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Alerts retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/dashboard/stats": {
+      "get": {
+        "tags": ["Seller - Dashboard"],
+        "summary": "Get dashboard statistics",
+        "description": "Get comprehensive dashboard statistics for seller",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Statistics retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/dashboard/activity": {
+      "get": {
+        "tags": ["Seller - Dashboard"],
+        "summary": "Get recent activity",
+        "description": "Get recent activity feed for seller",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Activity retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/dashboard/trends": {
+      "get": {
+        "tags": ["Seller - Dashboard"],
+        "summary": "Get sales trends",
+        "description": "Get sales trends and analytics",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Trends retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/dashboard/top-products": {
+      "get": {
+        "tags": ["Seller - Dashboard"],
+        "summary": "Get top selling products",
+        "description": "Get list of top selling products",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Top products retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/dashboard/health-score": {
+      "get": {
+        "tags": ["Seller - Dashboard"],
+        "summary": "Get seller health score",
+        "description": "Get seller health score and metrics",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Health score retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/orders": {
+      "get": {
+        "tags": ["Seller - Orders"],
+        "summary": "Get all seller orders",
+        "description": "Get paginated list of orders for the seller",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Orders retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/orders/statistics": {
+      "get": {
+        "tags": ["Seller - Orders"],
+        "summary": "Get order statistics",
+        "description": "Get order statistics and metrics for seller",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Statistics retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/orders/{id}": {
+      "get": {
+        "tags": ["Seller - Orders"],
+        "summary": "Get order details",
+        "description": "Get detailed information about a specific order",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Order details retrieved successfully" },
+          "404": { "description": "Order not found" }
+        }
+      }
+    },
+    "/api/seller/orders/{id}/status": {
+      "patch": {
+        "tags": ["Seller - Orders"],
+        "summary": "Update order status",
+        "description": "Update order status (accept/reject order)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "type": "string", "enum": ["PROCESSING", "SELLER_REJECTED"] },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Order status updated successfully" },
+          "404": { "description": "Order not found" }
+        }
+      }
+    },
+    "/api/seller/orders/{id}/fulfillment": {
+      "patch": {
+        "tags": ["Seller - Orders"],
+        "summary": "Update fulfillment status",
+        "description": "Update order fulfillment status (shipped/delivered)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "type": "string", "enum": ["SHIPPED", "DELIVERED"] },
+                  "trackingNumber": { "type": "string" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Fulfillment status updated successfully" },
+          "404": { "description": "Order not found" }
+        }
+      }
+    },
+    "/api/seller/payments/record-cash": {
+      "post": {
+        "tags": ["Seller - Payments"],
+        "summary": "Record cash payment for an order",
+        "description": "Record a cash payment received for an order, updating order status to AWAITING_SELLER_ACCEPTANCE",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["orderId", "amount"],
+                "properties": {
+                  "orderId": { "type": "string", "description": "Order ID to record payment for" },
+                  "amount": { "type": "number", "description": "Payment amount (must match order total)" },
+                  "notes": { "type": "string", "description": "Optional payment notes" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cash payment recorded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "payment": { "type": "object" },
+                        "order": { "type": "object" },
+                        "accounting": { "type": "object" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Bad request - validation errors" },
+          "404": { "description": "Order not found" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/payments/history": {
+      "get": {
+        "tags": ["Seller - Payments"],
+        "summary": "Get payment history for seller's orders",
+        "description": "Get paginated list of payments for orders containing seller's products",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 },
+            "description": "Page number for pagination"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20 },
+            "description": "Number of items per page"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["PENDING", "COMPLETED", "FAILED", "REFUNDED"] },
+            "description": "Filter by payment status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment history retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "payments": { "type": "array" },
+                        "pagination": { "type": "object" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/payments/summary": {
+      "get": {
+        "tags": ["Seller - Payments"],
+        "summary": "Get payment summary for seller",
+        "description": "Get payment statistics and summary for the seller",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": { "type": "integer", "default": 30 },
+            "description": "Number of days to include in summary"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment summary retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "totalPayments": { "type": "number" },
+                        "totalAmount": { "type": "number" },
+                        "cashPayments": { "type": "number" },
+                        "averagePayment": { "type": "number" },
+                        "recentPayments": { "type": "number" },
+                        "period": { "type": "string" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/payments/accounting-summary": {
+      "get": {
+        "tags": ["Seller - Payments"],
+        "summary": "Get payment accounting summary for seller",
+        "description": "Get detailed accounting summary including sales, commissions, and net revenue",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": { "type": "integer", "default": 30 },
+            "description": "Number of days to include in summary"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment accounting summary retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "period": { "type": "string" },
+                        "totalSales": { "type": "number" },
+                        "totalSalesCount": { "type": "number" },
+                        "totalCommission": { "type": "number" },
+                        "totalCommissionCount": { "type": "number" },
+                        "netRevenue": { "type": "number" },
+                        "recentPayments": { "type": "array" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/seller/accounting/ledger": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get ledger entries",
+        "description": "Get accounting ledger entries for seller",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Ledger entries retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/accounting/expenses": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get all expenses",
+        "description": "Get paginated list of seller expenses",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Expenses retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Create expense",
+        "description": "Create a new expense entry",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["category", "amount", "description"],
+                "properties": {
+                  "category": { "type": "string", "enum": ["RENT", "UTILITIES", "WAGES", "FUEL", "MARKETING", "EQUIPMENT"] },
+                  "amount": { "type": "number", "minimum": 0 },
+                  "description": { "type": "string" },
+                  "receiptUrl": { "type": "string" },
+                  "paidTo": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Expense created successfully" }
+        }
+      }
+    },
+    "/api/seller/accounting/expenses/{id}": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get specific expense",
+        "description": "Get details of a specific expense",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Expense retrieved successfully" },
+          "404": { "description": "Expense not found" }
+        }
+      },
+      "put": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Update expense",
+        "description": "Update an existing expense",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "category": { "type": "string" },
+                  "amount": { "type": "number" },
+                  "description": { "type": "string" },
+                  "receiptUrl": { "type": "string" },
+                  "paidTo": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Expense updated successfully" },
+          "404": { "description": "Expense not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Delete expense",
+        "description": "Delete an expense entry",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Expense deleted successfully" },
+          "404": { "description": "Expense not found" }
+        }
+      }
+    },
+    "/api/seller/accounting/expenses/breakdown": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get expense breakdown",
+        "description": "Get expense breakdown by category",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Breakdown retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/accounting/summary": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get financial summary",
+        "description": "Get comprehensive financial summary for seller",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Summary retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/accounting/export/sage-pastel": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Export to Sage Pastel",
+        "description": "Export accounting data to Sage Pastel format",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Export generated successfully" }
+        }
+      }
+    },
+    "/api/seller/accounting/chart-of-accounts": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get all accounts",
+        "description": "Get chart of accounts for seller",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Accounts retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Create account",
+        "description": "Create a new account in chart of accounts",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "type", "code"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": "string", "enum": ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] },
+                  "code": { "type": "string" },
+                  "parentId": { "type": "string" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Account created successfully" }
+        }
+      }
+    },
+    "/api/seller/accounting/chart-of-accounts/tree": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get account tree",
+        "description": "Get hierarchical chart of accounts tree",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Account tree retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/accounting/chart-of-accounts/{id}": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get specific account",
+        "description": "Get details of a specific account",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Account retrieved successfully" },
+          "404": { "description": "Account not found" }
+        }
+      },
+      "put": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Update account",
+        "description": "Update an existing account",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": "string" },
+                  "code": { "type": "string" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Account updated successfully" },
+          "404": { "description": "Account not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Delete account",
+        "description": "Delete an account from chart of accounts",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Account deleted successfully" },
+          "404": { "description": "Account not found" }
+        }
+      }
+    },
+    "/api/seller/accounting/chart-of-accounts/{id}/balance": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get account balance",
+        "description": "Get current balance for a specific account",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Balance retrieved successfully" },
+          "404": { "description": "Account not found" }
+        }
+      }
+    },
+    "/api/seller/accounting/reports/trial-balance": {
+      "get": {
+        "tags": ["Seller - Accounting"],
+        "summary": "Get trial balance",
+        "description": "Get trial balance report",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Trial balance retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/staff": {
+      "get": {
+        "tags": ["Seller - Staff"],
+        "summary": "Get all staff",
+        "description": "Get paginated list of seller's staff members",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Staff retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Seller - Staff"],
+        "summary": "Create staff member",
+        "description": "Create a new staff member",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["firstName", "lastName", "email", "role"],
+                "properties": {
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "role": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "department": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Staff member created successfully" }
+        }
+      }
+    },
+    "/api/seller/staff/{id}": {
+      "get": {
+        "tags": ["Seller - Staff"],
+        "summary": "Get specific staff member",
+        "description": "Get details of a specific staff member",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Staff member retrieved successfully" },
+          "404": { "description": "Staff member not found" }
+        }
+      },
+      "put": {
+        "tags": ["Seller - Staff"],
+        "summary": "Update staff member",
+        "description": "Update an existing staff member",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": { "type": "string" },
+                  "lastName": { "type": "string" },
+                  "email": { "type": "string" },
+                  "role": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "department": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Staff member updated successfully" },
+          "404": { "description": "Staff member not found" }
+        }
+      }
+    },
+    "/api/seller/staff/{id}/deactivate": {
+      "post": {
+        "tags": ["Seller - Staff"],
+        "summary": "Deactivate staff member",
+        "description": "Deactivate a staff member",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Staff member deactivated successfully" },
+          "404": { "description": "Staff member not found" }
+        }
+      }
+    },
+    "/api/seller/staff/time-logs": {
+      "get": {
+        "tags": ["Seller - Staff"],
+        "summary": "Get time logs",
+        "description": "Get time tracking logs for staff",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Time logs retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Seller - Staff"],
+        "summary": "Log staff time",
+        "description": "Log time for staff member",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["staffId", "hours", "date"],
+                "properties": {
+                  "staffId": { "type": "string" },
+                  "hours": { "type": "number", "minimum": 0 },
+                  "date": { "type": "string", "format": "date" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Time logged successfully" }
+        }
+      }
+    },
+    "/api/seller/staff/activity-logs": {
+      "get": {
+        "tags": ["Seller - Staff"],
+        "summary": "Get activity logs",
+        "description": "Get activity logs for staff",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Activity logs retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/staff/payroll": {
+      "get": {
+        "tags": ["Seller - Staff"],
+        "summary": "Get payroll summary",
+        "description": "Get payroll summary for staff",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Payroll summary retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/staff/order-processing/track": {
+      "post": {
+        "tags": ["Seller - Staff"],
+        "summary": "Track order processing",
+        "description": "Track order processing by staff member",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["staffId", "orderId", "action"],
+                "properties": {
+                  "staffId": { "type": "string" },
+                  "orderId": { "type": "string" },
+                  "action": { "type": "string" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Processing tracked successfully" }
+        }
+      }
+    },
+    "/api/seller/staff/order-processing/performance": {
+      "get": {
+        "tags": ["Seller - Staff"],
+        "summary": "Get staff performance",
+        "description": "Get order processing performance metrics for staff",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Performance metrics retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/staff/order-processing/dispatcher-rankings": {
+      "get": {
+        "tags": ["Seller - Staff"],
+        "summary": "Get dispatcher rankings",
+        "description": "Get dispatcher performance rankings",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Rankings retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/staff/order-processing/order-history/{orderId}": {
+      "get": {
+        "tags": ["Seller - Staff"],
+        "summary": "Get order processing history",
+        "description": "Get processing history for a specific order",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Order history retrieved successfully" },
+          "404": { "description": "Order not found" }
+        }
+      }
+    },
+    "/api/seller/loans/partners": {
+      "get": {
+        "tags": ["Seller - Loans"],
+        "summary": "Get financial partners",
+        "description": "Get list of available financial partners for loans",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Partners retrieved successfully" }
+        }
+      }
+    },
+    "/api/seller/loans/applications": {
+      "get": {
+        "tags": ["Seller - Loans"],
+        "summary": "Get loan applications",
+        "description": "Get paginated list of seller's loan applications",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": { "description": "Applications retrieved successfully" }
+        }
+      },
+      "post": {
+        "tags": ["Seller - Loans"],
+        "summary": "Apply for loan",
+        "description": "Submit a new loan application",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["partnerId", "amount", "purpose"],
+                "properties": {
+                  "partnerId": { "type": "string" },
+                  "amount": { "type": "number", "minimum": 0 },
+                  "purpose": { "type": "string" },
+                  "term": { "type": "number" },
+                  "collateral": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Loan application submitted successfully" }
+        }
+      }
+    },
+    "/api/seller/loans/applications/{id}": {
+      "get": {
+        "tags": ["Seller - Loans"],
+        "summary": "Get specific loan application",
+        "description": "Get details of a specific loan application",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Application retrieved successfully" },
+          "404": { "description": "Application not found" }
+        }
+      }
+    },
+    "/api/seller/loans/applications/{id}/cancel": {
+      "post": {
+        "tags": ["Seller - Loans"],
+        "summary": "Cancel loan application",
+        "description": "Cancel a pending loan application",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Application cancelled successfully" },
+          "404": { "description": "Application not found" }
         }
       }
     }
