@@ -1,9 +1,9 @@
 // @ts-nocheck
 import { Response } from "express";
-import { SellerAuthRequest } from "../../../types";
+import { AuthenticatedRequest } from "../../../types";
 import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
-import { AccountingService } from "../../services/seller/accounting/AccountingService";
+import { AccountingService } from "../../../services/seller/accounting/AccountingService";
 
 export class PaymentController {
   private accountingService: AccountingService;
@@ -15,10 +15,10 @@ export class PaymentController {
    * Record cash payment for an order
    * POST /api/seller/payments/record-cash
    */
-  async recordCashPayment(req: SellerAuthRequest, res: Response): Promise<void> {
+  async recordCashPayment(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { orderId, amount, notes } = req.body;
-      const sellerId = req.user?.sellerId;
+      const sellerId = req.seller?.id;
 
       if (!sellerId) {
         res.status(401).json({
@@ -43,9 +43,9 @@ export class PaymentController {
       const order = await prisma.order.findFirst({
         where: {
           id: orderId,
-          orderItems: {
+          items: {
             some: {
-              product: {
+              inventory: {
                 sellerId: sellerId
               }
             }
@@ -53,9 +53,13 @@ export class PaymentController {
         },
         include: {
           payment: true,
-          orderItems: {
+          items: {
             include: {
-              product: true
+              inventory: {
+                include: {
+                  masterProduct: true
+                }
+              }
             }
           }
         }
@@ -194,9 +198,9 @@ export class PaymentController {
    * Get payment history for seller's orders
    * GET /api/seller/payments/history
    */
-  async getPaymentHistory(req: SellerAuthRequest, res: Response): Promise<void> {
+  async getPaymentHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const sellerId = req.user?.sellerId;
+      const sellerId = req.seller?.id;
       const { page = 1, limit = 20, status } = req.query;
 
       if (!sellerId) {
@@ -213,9 +217,9 @@ export class PaymentController {
       // Build where clause
       const where: any = {
         order: {
-          orderItems: {
+          items: {
             some: {
-              product: {
+              inventory: {
                 sellerId: sellerId
               }
             }
@@ -288,9 +292,9 @@ export class PaymentController {
    * Get payment summary for seller
    * GET /api/seller/payments/summary
    */
-  async getPaymentSummary(req: SellerAuthRequest, res: Response): Promise<void> {
+  async getPaymentSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const sellerId = req.user?.sellerId;
+      const sellerId = req.seller?.id;
       const { days = 30 } = req.query;
 
       if (!sellerId) {
@@ -317,11 +321,11 @@ export class PaymentController {
         prisma.payment.count({
           where: {
             order: {
-              orderItems: {
+              items: {
                 some: {
-                  product: {
-                    sellerId: sellerId
-                  }
+                inventory: {
+                  sellerId: sellerId
+                }
                 }
               }
             }
@@ -332,11 +336,11 @@ export class PaymentController {
         prisma.payment.aggregate({
           where: {
             order: {
-              orderItems: {
+              items: {
                 some: {
-                  product: {
-                    sellerId: sellerId
-                  }
+                inventory: {
+                  sellerId: sellerId
+                }
                 }
               }
             },
@@ -351,11 +355,11 @@ export class PaymentController {
         prisma.payment.count({
           where: {
             order: {
-              orderItems: {
+              items: {
                 some: {
-                  product: {
-                    sellerId: sellerId
-                  }
+                inventory: {
+                  sellerId: sellerId
+                }
                 }
               }
             },
@@ -368,11 +372,11 @@ export class PaymentController {
         prisma.payment.aggregate({
           where: {
             order: {
-              orderItems: {
+              items: {
                 some: {
-                  product: {
-                    sellerId: sellerId
-                  }
+                inventory: {
+                  sellerId: sellerId
+                }
                 }
               }
             },
@@ -387,11 +391,11 @@ export class PaymentController {
         prisma.payment.count({
           where: {
             order: {
-              orderItems: {
+              items: {
                 some: {
-                  product: {
-                    sellerId: sellerId
-                  }
+                inventory: {
+                  sellerId: sellerId
+                }
                 }
               }
             },
@@ -431,9 +435,9 @@ export class PaymentController {
    * Get payment accounting summary for seller
    * GET /api/seller/payments/accounting-summary
    */
-  async getPaymentAccountingSummary(req: SellerAuthRequest, res: Response): Promise<void> {
+  async getPaymentAccountingSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const sellerId = req.user?.sellerId;
+      const sellerId = req.seller?.id;
       const { days = 30 } = req.query;
 
       if (!sellerId) {
