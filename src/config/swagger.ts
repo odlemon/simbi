@@ -261,7 +261,6 @@ const options: swaggerJsdoc.Options = {
       { name: "Admin - Settings", description: "Admin system settings and configuration" },
       { name: "Admin - Compliance", description: "Admin compliance and security monitoring" },
       { name: "Admin - Inventory", description: "Admin inventory management endpoints" },
-      { name: "Admin - HR", description: "Admin HR and payroll endpoints" },
       
       // Buyer tags
       { name: "Buyer - Authentication", description: "Buyer authentication endpoints" },
