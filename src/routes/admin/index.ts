@@ -3,6 +3,8 @@ import { Router } from "express";
 import authRoutes from "./auth/authRoutes";
 import productRoutes from "./products/productRoutes";
 import sellerRoutes from "./sellers/sellerRoutes";
+import buyerRoutes from "./buyers/buyerRoutes";
+import orderRoutes from "./orders/orderRoutes";
 import financialRoutes from "./financial/financialRoutes";
 import disputeRoutes from "./disputes/disputeRoutes";
 import dashboardRoutes from "./dashboard/dashboardRoutes";
@@ -26,6 +28,12 @@ router.use("/products", productRoutes);
 
 // Seller routes
 router.use("/sellers", sellerRoutes);
+
+// Buyer routes
+router.use("/buyers", buyerRoutes);
+
+// Order routes
+router.use("/orders", orderRoutes);
 
 // Financial routes
 router.use("/financial", financialRoutes);

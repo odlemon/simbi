@@ -11,6 +11,51 @@ export class FinancialController {
     this.financialService = new FinancialReconciliationService();
   }
 
+  // GET /api/admin/financial/comprehensive - All financial data in one endpoint
+  getComprehensiveFinancialData = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { days = 30 } = req.query;
+      
+      // Fetch all financial data in parallel
+      const [
+        dailyReconciliation,
+        financialStats,
+        chargebacks,
+        refunds,
+        zimraReport
+      ] = await Promise.all([
+        this.financialService.getDailyReconciliation(new Date()),
+        this.financialService.getFinancialStats(Number(days)),
+        this.financialService.getAllChargebacks(),
+        this.financialService.getAllRefunds(),
+        this.financialService.generateZIMRAReport(
+          new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000),
+          new Date()
+        )
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          reconciliation: dailyReconciliation,
+          stats: financialStats,
+          chargebacks: chargebacks,
+          refunds: refunds,
+          zimraReport: zimraReport,
+          lastUpdated: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getComprehensiveFinancialData", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch comprehensive financial data",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
   // GET /api/admin/financial/reconciliation/daily
   getDailyReconciliation = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {

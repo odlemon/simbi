@@ -17,6 +17,94 @@ export class SellerController {
     this.documentService = new DocumentManagementService();
   }
 
+  // GET /api/admin/sellers/comprehensive - All seller data in one endpoint
+  getComprehensiveSellerData = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const {
+        page = 1,
+        limit = 50,
+        sortBy = "createdAt",
+        sortOrder = "desc",
+        search,
+        status,
+        minSRI,
+        maxSRI,
+        isEligible,
+        isShadowBanned,
+      } = req.query;
+
+      const pagination = {
+        page: Number(page),
+        limit: Number(limit),
+        sortBy: sortBy as string,
+        sortOrder: sortOrder as "asc" | "desc",
+      };
+
+      const filters = {
+        search: search as string | undefined,
+        status: status as any,
+        minSRI: minSRI ? Number(minSRI) : undefined,
+        maxSRI: maxSRI ? Number(maxSRI) : undefined,
+        isEligible: isEligible === "true" ? true : isEligible === "false" ? false : undefined,
+        isShadowBanned: isShadowBanned === "true" ? true : isShadowBanned === "false" ? false : undefined,
+      };
+
+      // Fetch all seller data in parallel
+      const [
+        sellersResult,
+        statsResult,
+        pendingDocuments,
+        expiringDocuments,
+        expiredDocuments,
+        sriViolations,
+      ] = await Promise.all([
+        // Sellers with pagination
+        this.sellerService.getAllSellers(pagination, filters),
+        
+        // Seller statistics
+        this.sellerService.getSellerStats(),
+        
+        // Pending documents
+        this.documentService.getPendingDocuments(),
+        
+        // Expiring documents
+        this.documentService.getExpiringDocuments(),
+        
+        // Expired documents
+        this.documentService.getExpiredDocuments(),
+        
+        // SRI violations
+        this.sriService.getSRIViolations(),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          sellers: sellersResult.data,
+          pagination: sellersResult.pagination,
+          statistics: statsResult.data,
+          documents: {
+            pending: pendingDocuments.data,
+            expiring: expiringDocuments.data,
+            expired: expiredDocuments.data,
+          },
+          compliance: {
+            sriViolations: sriViolations.data,
+          },
+          lastUpdated: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getComprehensiveSellerData", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch comprehensive seller data",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
   // GET /api/admin/sellers
   getAllSellers = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {

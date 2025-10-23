@@ -30,6 +30,25 @@ export class DashboardController {
     }
   };
 
+  getComprehensiveDashboard = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const dashboardData = await this.dashboardService.getComprehensiveDashboard();
+
+      res.status(200).json({
+        success: true,
+        data: dashboardData,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getComprehensiveDashboard", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch comprehensive dashboard data",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
   getAlerts = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { tier, status } = req.query;

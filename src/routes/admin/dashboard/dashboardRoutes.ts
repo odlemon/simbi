@@ -10,6 +10,9 @@ const controller = new DashboardController();
 // Basic KPIs
 router.get("/kpis", authenticateAdmin, requireAnyAdmin, controller.getKPIs);
 
+// Comprehensive Dashboard (all admin data in one endpoint)
+router.get("/comprehensive", authenticateAdmin, requireAnyAdmin, controller.getComprehensiveDashboard);
+
 // Enhanced KPI Endpoints (admin.md Section 9 requirements)
 router.get("/kpis/sri-violations", authenticateAdmin, requireAnyAdmin, controller.getSRIViolationsKPI);
 router.get("/kpis/document-expiry", authenticateAdmin, requireAnyAdmin, controller.getDocumentExpiryKPI);

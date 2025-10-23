@@ -62,6 +62,8 @@
     { "name": "Admin - Dashboard", "description": "Admin dashboard and KPI monitoring endpoints" },
     { "name": "Admin - Products", "description": "Admin product management endpoints" },
     { "name": "Admin - Sellers", "description": "Admin seller management and SRI endpoints" },
+    { "name": "Admin - Buyers", "description": "Admin buyer management endpoints" },
+    { "name": "Admin - Orders", "description": "Admin order management endpoints" },
     { "name": "Admin - Financial", "description": "Admin financial reconciliation and payouts" },
     { "name": "Admin - Disputes", "description": "Admin dispute management endpoints" },
     { "name": "Admin - Logistics", "description": "Admin logistics and carrier management" },
@@ -234,6 +236,91 @@
         ],
         "responses": {
           "200": { "description": "Sellers retrieved successfully" }
+        }
+      }
+    },
+    "/api/admin/buyers": {
+      "get": {
+        "tags": ["Admin - Buyers"],
+        "summary": "Get all buyers with pagination and filters",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 20 } },
+          { "in": "query", "name": "search", "schema": { "type": "string" } },
+          { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "BANNED"] } },
+          { "in": "query", "name": "companyName", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Buyers retrieved successfully" }
+        }
+      }
+    },
+    "/api/admin/buyers/stats": {
+      "get": {
+        "tags": ["Admin - Buyers"],
+        "summary": "Get buyer statistics",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Buyer statistics retrieved successfully" }
+        }
+      }
+    },
+    "/api/admin/buyers/{id}": {
+      "get": {
+        "tags": ["Admin - Buyers"],
+        "summary": "Get buyer by ID",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Buyer retrieved successfully" },
+          "404": { "description": "Buyer not found" }
+        }
+      }
+    },
+    "/api/admin/orders": {
+      "get": {
+        "tags": ["Admin - Orders"],
+        "summary": "Get all orders with pagination and filters",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "query", "name": "page", "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 20 } },
+          { "in": "query", "name": "search", "schema": { "type": "string" } },
+          { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["PENDING_PAYMENT", "AWAITING_SELLER_ACCEPTANCE", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED", "SELLER_REJECTED"] } },
+          { "in": "query", "name": "dateFrom", "schema": { "type": "string", "format": "date" } },
+          { "in": "query", "name": "dateTo", "schema": { "type": "string", "format": "date" } },
+          { "in": "query", "name": "sellerId", "schema": { "type": "string" } },
+          { "in": "query", "name": "buyerId", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Orders retrieved successfully" }
+        }
+      }
+    },
+    "/api/admin/orders/stats": {
+      "get": {
+        "tags": ["Admin - Orders"],
+        "summary": "Get order statistics",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Order statistics retrieved successfully" }
+        }
+      }
+    },
+    "/api/admin/orders/{id}": {
+      "get": {
+        "tags": ["Admin - Orders"],
+        "summary": "Get order by ID",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Order retrieved successfully" },
+          "404": { "description": "Order not found" }
         }
       }
     },
@@ -506,6 +593,332 @@
         },
         "responses": {
           "201": { "description": "Product created successfully" }
+        }
+      }
+    },
+    "/api/admin/dashboard/comprehensive": {
+      "get": {
+        "tags": ["Admin - Dashboard"],
+        "summary": "Get comprehensive dashboard data",
+        "description": "Get all admin dashboard data in one request including KPIs, financial, compliance, disputes, logistics, security, performance, regulatory, monitoring, currency, staff, and audit data",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Comprehensive dashboard data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "totalSellers": { "type": "number" },
+                        "totalBuyers": { "type": "number" },
+                        "totalProducts": { "type": "number" },
+                        "totalOrders": { "type": "number" },
+                        "avgOrderValue": { "type": "number" },
+                        "gmv": { "type": "number" },
+                        "revenue30Days": { "type": "number" },
+                        "financial": { "type": "object" },
+                        "compliance": { "type": "object" },
+                        "disputes": { "type": "object" },
+                        "logistics": { "type": "object" },
+                        "security": { "type": "object" },
+                        "performance": { "type": "object" },
+                        "recentActivity": { "type": "array" },
+                        "regulatory": { "type": "object" },
+                        "monitoring": { "type": "object" },
+                        "currency": { "type": "object" },
+                        "staff": { "type": "object" },
+                        "audit": { "type": "object" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/financial/comprehensive": {
+      "get": {
+        "tags": ["Admin - Financial"],
+        "summary": "Get comprehensive financial data",
+        "description": "Get all financial data in one request including reconciliation, stats, chargebacks, refunds, and ZIMRA reports",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Comprehensive financial data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "reconciliation": { "type": "object" },
+                        "stats": { "type": "object" },
+                        "chargebacks": { "type": "array" },
+                        "refunds": { "type": "array" },
+                        "zimraReport": { "type": "object" },
+                        "lastUpdated": { "type": "string", "format": "date-time" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/comprehensive": {
+      "get": {
+        "tags": ["Admin - Orders"],
+        "summary": "Get comprehensive order data",
+        "description": "Get all order data in one request including orders list, statistics, revenue metrics, and trends",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 },
+            "description": "Page number for pagination"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20 },
+            "description": "Number of items per page"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Search term for filtering orders"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by order status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comprehensive order data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "orders": { "type": "array" },
+                        "pagination": { "type": "object" },
+                        "statistics": { "type": "object" },
+                        "lastUpdated": { "type": "string", "format": "date-time" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/buyers/comprehensive": {
+      "get": {
+        "tags": ["Admin - Buyers"],
+        "summary": "Get comprehensive buyer data",
+        "description": "Get all buyer data in one request including buyers list, statistics, and analytics",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 },
+            "description": "Page number for pagination"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20 },
+            "description": "Number of items per page"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Search term for filtering buyers"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by buyer status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comprehensive buyer data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "buyers": { "type": "array" },
+                        "pagination": { "type": "object" },
+                        "statistics": { "type": "object" },
+                        "lastUpdated": { "type": "string", "format": "date-time" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/sellers/comprehensive": {
+      "get": {
+        "tags": ["Admin - Sellers"],
+        "summary": "Get comprehensive seller data",
+        "description": "Get all seller data in one request including sellers list, statistics, documents, and compliance data",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 },
+            "description": "Page number for pagination"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50 },
+            "description": "Number of items per page"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Search term for filtering sellers"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by seller status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comprehensive seller data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "sellers": { "type": "array" },
+                        "pagination": { "type": "object" },
+                        "statistics": { "type": "object" },
+                        "documents": { "type": "object" },
+                        "compliance": { "type": "object" },
+                        "lastUpdated": { "type": "string", "format": "date-time" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/compliance/comprehensive": {
+      "get": {
+        "tags": ["Admin - Compliance"],
+        "summary": "Get comprehensive compliance data",
+        "description": "Get all compliance data in one request including anti-sniping violations and security alerts",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Comprehensive compliance data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "antiSniping": { "type": "object" },
+                        "security": { "type": "object" },
+                        "lastUpdated": { "type": "string", "format": "date-time" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/inventory/comprehensive": {
+      "get": {
+        "tags": ["Admin - Inventory"],
+        "summary": "Get comprehensive inventory data",
+        "description": "Get all inventory data in one request including variance statistics and reports",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Comprehensive inventory data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "globalVariance": { "type": "object" },
+                        "sellerVariance": { "type": "object" },
+                        "lastUpdated": { "type": "string", "format": "date-time" }
+                      }
+                    },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

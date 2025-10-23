@@ -14,6 +14,46 @@ export class ComplianceController {
     this.securityAnomalyService = new SecurityAnomalyService();
   }
 
+  // GET /api/admin/compliance/comprehensive - All compliance data in one endpoint
+  getComprehensiveComplianceData = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { sellerId } = req.query;
+
+      // Fetch all compliance data in parallel
+      const [
+        antiSnipingViolations,
+        securityAlerts,
+      ] = await Promise.all([
+        // Anti-sniping violations (if sellerId provided)
+        sellerId ? this.antiSnipingService.getViolations(sellerId as string) : Promise.resolve({ data: [] }),
+        
+        // Security alerts
+        this.securityAnomalyService.getSecurityAlerts(),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          antiSniping: {
+            violations: antiSnipingViolations.data || [],
+          },
+          security: {
+            alerts: securityAlerts.data || [],
+          },
+          lastUpdated: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getComprehensiveComplianceData", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch comprehensive compliance data",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
   // GET /api/admin/compliance/anti-sniping/violations
   getAntiSnipingViolations = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {

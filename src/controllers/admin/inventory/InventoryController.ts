@@ -11,6 +11,46 @@ export class InventoryController {
     this.stockVarianceService = new StockVarianceService();
   }
 
+  // GET /api/admin/inventory/comprehensive - All inventory data in one endpoint
+  getComprehensiveInventoryData = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { sellerId, startDate, endDate } = req.query;
+
+      // Fetch all inventory data in parallel
+      const [
+        globalVarianceStats,
+        sellerVarianceReport,
+      ] = await Promise.all([
+        // Global variance statistics
+        this.stockVarianceService.getGlobalVarianceStats(),
+        
+        // Seller-specific variance report (if sellerId provided)
+        sellerId ? this.stockVarianceService.getSellerVarianceReport(
+          sellerId as string,
+          startDate ? new Date(startDate as string) : undefined,
+          endDate ? new Date(endDate as string) : undefined
+        ) : Promise.resolve({ data: null }),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          globalVariance: globalVarianceStats.data,
+          sellerVariance: sellerVarianceReport.data,
+          lastUpdated: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getComprehensiveInventoryData", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch comprehensive inventory data",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
   // GET /api/admin/inventory/variance/seller/:sellerId
   getSellerVarianceReport = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {

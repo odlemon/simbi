@@ -7,10 +7,10 @@ import { requireSuperAdmin, requireCompliance, requireAnyAdmin } from "../../../
 const router = Router();
 const controller = new SellerController();
 
-// Seller CRUD operations
-router.get("/", authenticateAdmin, requireAnyAdmin, controller.getAllSellers);
-router.get("/stats", authenticateAdmin, requireAnyAdmin, controller.getSellerStats);
-router.get("/:id", authenticateAdmin, requireAnyAdmin, controller.getSellerById);
+// Comprehensive Sellers Dashboard - All seller data in one endpoint
+router.get("/comprehensive", authenticateAdmin, requireAnyAdmin, controller.getComprehensiveSellerData.bind(controller));
+
+// Action endpoints (POST/PUT operations)
 router.post("/", authenticateAdmin, requireSuperAdmin, controller.createSeller);
 router.put("/:id", authenticateAdmin, requireSuperAdmin, controller.updateSeller);
 

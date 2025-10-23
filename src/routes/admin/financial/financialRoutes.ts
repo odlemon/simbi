@@ -2,34 +2,20 @@
 import { Router } from "express";
 import { FinancialController } from "../../../controllers/admin/financial/FinancialController";
 import { authenticateAdmin } from "../../../middleware/authenticate";
-import { requireFinOps } from "../../../middleware/rbac";
+import { requireFinOps, requireAnyAdmin } from "../../../middleware/rbac";
 
 const router = Router();
 const controller = new FinancialController();
 
-// Reconciliation
-router.get("/reconciliation/daily", authenticateAdmin, requireFinOps, controller.getDailyReconciliation);
+// Comprehensive Financial Dashboard - All financial data in one endpoint
+router.get("/comprehensive", authenticateAdmin, requireAnyAdmin, controller.getComprehensiveFinancialData.bind(controller));
 
-// Payouts
-router.post("/payouts/process-weekly", authenticateAdmin, requireFinOps, controller.processWeeklyPayouts);
-
-// Exchange rates
-router.post("/exchange-rate", authenticateAdmin, requireFinOps, controller.updateExchangeRate);
-
-// Reports
-router.get("/reports/zimra", authenticateAdmin, requireFinOps, controller.generateZIMRAReport);
-router.get("/stats", authenticateAdmin, requireFinOps, controller.getFinancialStats);
-
-// Chargebacks
-router.post("/chargebacks", authenticateAdmin, requireFinOps, controller.createChargeback);
-router.get("/chargebacks", authenticateAdmin, requireFinOps, controller.getAllChargebacks);
-
-// Refunds
-router.post("/refunds", authenticateAdmin, requireFinOps, controller.processRefund);
-router.get("/refunds", authenticateAdmin, requireFinOps, controller.getAllRefunds);
-
-// Return Labels
-router.post("/disputes/:id/generate-return-label", authenticateAdmin, requireFinOps, controller.generateReturnLabel);
+// Action endpoints (POST/PUT operations)
+router.post("/payouts/process-weekly", authenticateAdmin, requireFinOps, controller.processWeeklyPayouts.bind(controller));
+router.post("/exchange-rate", authenticateAdmin, requireFinOps, controller.updateExchangeRate.bind(controller));
+router.post("/chargebacks", authenticateAdmin, requireFinOps, controller.createChargeback.bind(controller));
+router.post("/refunds", authenticateAdmin, requireFinOps, controller.processRefund.bind(controller));
+router.post("/disputes/:id/generate-return-label", authenticateAdmin, requireFinOps, controller.generateReturnLabel.bind(controller));
 
 export default router;
 

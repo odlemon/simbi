@@ -7,12 +7,11 @@ import { requireCompliance, requireAnyAdmin } from "../../../middleware/rbac";
 const router = Router();
 const controller = new ComplianceController();
 
-// Anti-Sniping Management
-router.get("/anti-sniping/violations", authenticateAdmin, requireAnyAdmin, controller.getAntiSnipingViolations);
-router.post("/anti-sniping/clear-cooling-period", authenticateAdmin, requireCompliance, controller.clearCoolingPeriod);
+// Comprehensive Compliance Dashboard - All compliance data in one endpoint
+router.get("/comprehensive", authenticateAdmin, requireAnyAdmin, controller.getComprehensiveComplianceData.bind(controller));
 
-// Security Anomaly Detection
-router.get("/security/alerts", authenticateAdmin, requireAnyAdmin, controller.getSecurityAlerts);
+// Action endpoints (POST operations)
+router.post("/anti-sniping/clear-cooling-period", authenticateAdmin, requireCompliance, controller.clearCoolingPeriod.bind(controller));
 
 export default router;
 

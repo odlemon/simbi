@@ -7,11 +7,12 @@ import { requireAnyAdmin, requireSuperAdmin } from "../../../middleware/rbac";
 const router = Router();
 const controller = new InventoryController();
 
-// Stock Variance Management
-router.get("/variance/stats", authenticateAdmin, requireAnyAdmin, controller.getGlobalVarianceStats);
-router.get("/variance/seller/:sellerId", authenticateAdmin, requireAnyAdmin, controller.getSellerVarianceReport);
-router.post("/variance/record", authenticateAdmin, requireSuperAdmin, controller.recordStockVariance);
-router.post("/sync/:sellerId", authenticateAdmin, requireSuperAdmin, controller.triggerStockSync);
+// Comprehensive Inventory Dashboard - All inventory data in one endpoint
+router.get("/comprehensive", authenticateAdmin, requireAnyAdmin, controller.getComprehensiveInventoryData.bind(controller));
+
+// Action endpoints (POST operations)
+router.post("/variance/record", authenticateAdmin, requireSuperAdmin, controller.recordStockVariance.bind(controller));
+router.post("/sync/:sellerId", authenticateAdmin, requireSuperAdmin, controller.triggerStockSync.bind(controller));
 
 export default router;
 

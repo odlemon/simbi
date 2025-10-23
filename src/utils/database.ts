@@ -8,11 +8,25 @@ let prisma: PrismaClient;
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 if (process.env.NODE_ENV === 'production') {
-  // Production: Create new instance
-  prisma = new PrismaClient();
+  // Production: Create new instance with optimized connection pooling
+  prisma = new PrismaClient({
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
+    log: ['error', 'warn'],
+  });
 } else {
   // Development: Reuse global instance to prevent hot reload issues
-  prisma = globalForPrisma.prisma || new PrismaClient();
+  prisma = globalForPrisma.prisma || new PrismaClient({
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
+    log: ['error', 'warn'],
+  });
   if (!globalForPrisma.prisma) {
     globalForPrisma.prisma = prisma;
   }
@@ -59,6 +73,16 @@ export class DatabaseConnection {
   
   public getPrismaClient(): PrismaClient {
     return prisma; // Return the SAME instance
+  }
+
+  public async healthCheck(): Promise<boolean> {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return true;
+    } catch (error) {
+      console.error('❌ Database health check failed:', error);
+      return false;
+    }
   }
 }
 
