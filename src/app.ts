@@ -35,7 +35,8 @@ app.use(cors({
     "https://simbi-seller.vercel.app",
     "https://carspain.vercel.app",
     "https://simbi-buyer.vercel.app",
-    
+    "https://simbi-seller-kappa.vercel.app"
+
   ],
   credentials: true
 }));
