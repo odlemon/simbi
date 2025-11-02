@@ -33,7 +33,9 @@ app.use(cors({
     "https://car-parts-hub.vercel.app",
     "https://simbi-admin.vercel.app",
     "https://simbi-seller.vercel.app",
-    "https://carspain.vercel.app"
+    "https://carspain.vercel.app",
+    "https://simbi-buyer.vercel.app",
+    
   ],
   credentials: true
 }));
