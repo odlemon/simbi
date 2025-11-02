@@ -7,6 +7,13 @@ const router = Router();
 const productController = new ProductSearchController();
 
 /**
+ * @route GET /api/buyer/products/marketplace
+ * @desc Get all marketplace products (public - no authentication required)
+ * @access Public
+ */
+router.get('/marketplace', productController.getMarketplaceProducts.bind(productController));
+
+/**
  * @route POST /api/buyer/products/vin-decode
  * @desc Decode VIN and get vehicle information
  * @access Private

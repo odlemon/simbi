@@ -14,8 +14,6 @@ import { prisma } from "../../../utils/database";
  * - Document Compliance: 5%
  */
 export class SRICalculationService {
-  private prisma = prisma;
-  
   // SRI component weights (as per SRD)
   private readonly WEIGHTS = {
     fulfilment: 0.40,
@@ -103,7 +101,7 @@ export class SRICalculationService {
     periodStart: Date
   ): Promise<number> {
     try {
-      const orders = await this.prisma.order.findMany({
+      const orders = await prisma.order.findMany({
         where: {
           sellerId,
           createdAt: { gte: periodStart },
@@ -157,7 +155,7 @@ export class SRICalculationService {
     periodStart: Date
   ): Promise<number> {
     try {
-      const deliveredOrders = await this.prisma.order.findMany({
+      const deliveredOrders = await prisma.order.findMany({
         where: {
           sellerId,
           status: "DELIVERED",
@@ -205,14 +203,14 @@ export class SRICalculationService {
   ): Promise<number> {
     try {
       const [totalDelivered, returns] = await Promise.all([
-        this.prisma.order.count({
+        prisma.order.count({
           where: {
             sellerId,
             status: "DELIVERED",
             createdAt: { gte: periodStart },
           },
         }),
-        this.prisma.order.count({
+        prisma.order.count({
           where: {
             sellerId,
             status: { in: ["RETURNED", "DISPUTED"] },
@@ -243,7 +241,7 @@ export class SRICalculationService {
     try {
       const requiredDocTypes = ["ZIMRA_CERTIFICATE", "TIN_CERTIFICATE", "KYC_DOCUMENT"];
 
-      const documents = await this.prisma.sellerDocument.findMany({
+      const documents = await prisma.sellerDocument.findMany({
         where: {
           sellerId,
           documentType: { in: requiredDocTypes as any },
@@ -288,7 +286,7 @@ export class SRICalculationService {
       const result = await this.calculateSellerSRI(sellerId);
 
       // Update seller record
-      await this.prisma.seller.update({
+      await prisma.seller.update({
         where: { id: sellerId },
         data: {
           sriScore: result.score,
@@ -299,7 +297,7 @@ export class SRICalculationService {
       });
 
       // Save history
-      await this.prisma.sRIHistory.create({
+      await prisma.sRIHistory.create({
         data: {
           sellerId,
           score: result.score,
@@ -310,7 +308,7 @@ export class SRICalculationService {
           calculationDate: new Date(),
           ordersPeriodStart: new Date(Date.now() - this.ANALYSIS_PERIOD_DAYS * 24 * 60 * 60 * 1000),
           ordersPeriodEnd: new Date(),
-          totalOrdersAnalyzed: await this.prisma.order.count({
+          totalOrdersAnalyzed: await prisma.order.count({
             where: {
               sellerId,
               createdAt: {
@@ -351,7 +349,7 @@ export class SRICalculationService {
     try {
       logger.info("Starting batch SRI update for all sellers");
 
-      const sellers = await this.prisma.seller.findMany({
+      const sellers = await prisma.seller.findMany({
         where: {
           status: "ACTIVE",
         },
@@ -399,12 +397,12 @@ export class SRICalculationService {
    */
   private async createSRIAlert(sellerId: string, score: number): Promise<void> {
     try {
-      const seller = await this.prisma.seller.findUnique({
+      const seller = await prisma.seller.findUnique({
         where: { id: sellerId },
         select: { businessName: true, email: true },
       });
 
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: "CRITICAL",
           status: "OPEN",
@@ -441,7 +439,7 @@ export class SRICalculationService {
     limit: number = 30
   ): Promise<any[]> {
     try {
-      const history = await this.prisma.sRIHistory.findMany({
+      const history = await prisma.sRIHistory.findMany({
         where: { sellerId },
         orderBy: { calculationDate: "desc" },
         take: limit,
@@ -462,7 +460,7 @@ export class SRICalculationService {
    */
   async getSRIViolations(): Promise<{ data: any[] }> {
     try {
-      const violations = await this.prisma.seller.findMany({
+      const violations = await prisma.seller.findMany({
         where: {
           sriScore: {
             lt: 50 // SRI score below 50 is considered a violation

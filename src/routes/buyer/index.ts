@@ -9,6 +9,7 @@ import enterpriseRoutes from './enterprise';
 import disputeRoutes from './disputes';
 import quoteRoutes from './quotes';
 import advancedAnalyticsRoutes from './advanced-analytics';
+import cartRoutes from './cart.routes';
 
 const router = Router();
 
@@ -16,6 +17,7 @@ const router = Router();
 router.use('/auth', authRoutes);
 router.use('/addresses', addressRoutes);
 router.use('/products', productRoutes);
+router.use('/cart', cartRoutes);
 router.use('/orders', orderRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/enterprise', enterpriseRoutes);

@@ -7,7 +7,6 @@ import { prisma } from "../../../utils/database";
  * Service to map transaction types and categories to Chart of Accounts codes
  */
 export class AccountMappingService {
-  private prisma = prisma;
   private accountCache = new Map<string, string>(); // code -> id mapping
 
   /**
@@ -20,7 +19,7 @@ export class AccountMappingService {
     }
 
     // Fetch from database
-    const account = await this.prisma.chartOfAccount.findUnique({
+    const account = await prisma.chartOfAccount.findUnique({
       where: { code, isActive: true },
       select: { id: true },
     });
@@ -117,7 +116,7 @@ export class AccountMappingService {
       "1120", // Bank Account
     ];
 
-    const accounts = await this.prisma.chartOfAccount.findMany({
+    const accounts = await prisma.chartOfAccount.findMany({
       where: {
         code: { in: commonCodes },
         isActive: true,

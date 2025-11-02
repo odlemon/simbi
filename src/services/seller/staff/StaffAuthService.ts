@@ -11,14 +11,12 @@ interface StaffLoginDTO {
 }
 
 export class StaffAuthService {
-  private prisma = prisma;
-
   /**
    * Staff login
    */
   async login(data: StaffLoginDTO) {
     // Find staff member
-    const staff = await this.prisma.sellerStaff.findUnique({
+    const staff = await prisma.sellerStaff.findUnique({
       where: { email: data.email },
       include: {
         seller: {
@@ -53,7 +51,7 @@ export class StaffAuthService {
     }
 
     // Update last login
-    await this.prisma.sellerStaff.update({
+    await prisma.sellerStaff.update({
       where: { id: staff.id },
       data: { lastLogin: new Date() },
     });
@@ -104,7 +102,7 @@ export class StaffAuthService {
    * Get staff profile
    */
   async getProfile(staffId: string) {
-    const staff = await this.prisma.sellerStaff.findUnique({
+    const staff = await prisma.sellerStaff.findUnique({
       where: { id: staffId },
       include: {
         seller: {
@@ -145,7 +143,7 @@ export class StaffAuthService {
    * Change password
    */
   async changePassword(staffId: string, oldPassword: string, newPassword: string) {
-    const staff = await this.prisma.sellerStaff.findUnique({
+    const staff = await prisma.sellerStaff.findUnique({
       where: { id: staffId },
     });
 
@@ -163,7 +161,7 @@ export class StaffAuthService {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     // Update password
-    await this.prisma.sellerStaff.update({
+    await prisma.sellerStaff.update({
       where: { id: staffId },
       data: { passwordHash: hashedPassword },
     });

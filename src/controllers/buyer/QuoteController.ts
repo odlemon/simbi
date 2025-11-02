@@ -16,7 +16,7 @@ class QuoteController {
    */
   async createQuoteRequest(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -57,7 +57,7 @@ class QuoteController {
    */
   async getBuyerQuoteRequests(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       
@@ -196,7 +196,7 @@ class QuoteController {
    */
   async acceptQuote(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({

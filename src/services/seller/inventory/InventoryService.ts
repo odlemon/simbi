@@ -18,7 +18,6 @@ interface CreateListingDTO {
 }
 
 export class InventoryService {
-  private prisma = prisma;
 
   /**
    * Browse master catalog products
@@ -49,9 +48,9 @@ export class InventoryService {
       where.categoryId = categoryId;
     }
 
-    const total = await this.prisma.masterProduct.count({ where });
+    const total = await prisma.masterProduct.count({ where });
 
-    const products = await this.prisma.masterProduct.findMany({
+    const products = await prisma.masterProduct.findMany({
       where,
       skip,
       take: limit,
@@ -85,7 +84,7 @@ export class InventoryService {
    */
   async createListing(sellerId: string, data: CreateListingDTO) {
     // Check if master product exists
-    const masterProduct = await this.prisma.masterProduct.findUnique({
+    const masterProduct = await prisma.masterProduct.findUnique({
       where: { id: data.masterProductId },
     });
 
@@ -94,7 +93,7 @@ export class InventoryService {
     }
 
     // Check if seller already listed this product
-    const existing = await this.prisma.sellerInventory.findFirst({
+    const existing = await prisma.sellerInventory.findFirst({
       where: {
         sellerId,
         masterProductId: data.masterProductId,
@@ -105,8 +104,8 @@ export class InventoryService {
       throw new Error("You have already listed this product");
     }
 
-    // Create inventory
-    const inventory = await this.prisma.sellerInventory.create({
+    // Create inventory with master product images
+    const inventory = await prisma.sellerInventory.create({
       data: {
         sellerId,
         masterProductId: data.masterProductId,
@@ -118,7 +117,8 @@ export class InventoryService {
         condition: data.condition,
         sellerSku: data.sellerSku,
         sellerNotes: data.sellerNotes,
-        sellerImages: data.sellerImages || [],
+        // Use master product images as default, allow seller to override
+        sellerImages: data.sellerImages || masterProduct.imageUrls || [],
         isActive: true,
       },
       include: {
@@ -127,13 +127,14 @@ export class InventoryService {
             name: true,
             oemPartNumber: true,
             manufacturer: true,
+            imageUrls: true, // Include master product images
           },
         },
       },
     });
 
     // Create adjustment log
-    await this.prisma.inventoryAdjustmentLog.create({
+    await prisma.inventoryAdjustmentLog.create({
       data: {
         inventoryId: inventory.id,
         sellerId,
@@ -186,34 +187,46 @@ export class InventoryService {
 
     if (filters.lowStock) {
       where.quantity = {
-        lte: this.prisma.sellerInventory.fields.lowStockThreshold,
+        lte: prisma.sellerInventory.fields.lowStockThreshold,
       };
     }
 
-    const total = await this.prisma.sellerInventory.count({ where });
+    // Add timeout handling for database operations
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Database operation timeout')), 30000); // 30 second timeout
+    });
 
-    const inventory = await this.prisma.sellerInventory.findMany({
-      where,
-      skip,
-      take: limit,
-      include: {
-        masterProduct: {
-          select: {
-            name: true,
-            oemPartNumber: true,
-            manufacturer: true,
-            category: {
-              select: {
-                name: true,
+    const total = await Promise.race([
+      prisma.sellerInventory.count({ where }),
+      timeoutPromise
+    ]);
+
+    const inventory = await Promise.race([
+      prisma.sellerInventory.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          masterProduct: {
+            select: {
+              name: true,
+              oemPartNumber: true,
+              manufacturer: true,
+              imageUrls: true, // Include master product images
+              category: {
+                select: {
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        orderBy: {
+          createdAt: "desc",
+        },
+      }),
+      timeoutPromise
+    ]);
 
     return {
       inventory,
@@ -230,7 +243,7 @@ export class InventoryService {
    * Get single inventory item
    */
   async getInventoryItem(sellerId: string, inventoryId: string) {
-    const item = await this.prisma.sellerInventory.findFirst({
+    const item = await prisma.sellerInventory.findFirst({
       where: {
         id: inventoryId,
         sellerId,
@@ -259,7 +272,7 @@ export class InventoryService {
     inventoryId: string,
     data: Partial<CreateListingDTO>
   ) {
-    const existing = await this.prisma.sellerInventory.findFirst({
+    const existing = await prisma.sellerInventory.findFirst({
       where: {
         id: inventoryId,
         sellerId,
@@ -300,7 +313,7 @@ export class InventoryService {
     }
 
     // Update inventory
-    const updated = await this.prisma.sellerInventory.update({
+    const updated = await prisma.sellerInventory.update({
       where: { id: inventoryId },
       data: {
         sellerPrice: data.sellerPrice,
@@ -333,7 +346,7 @@ export class InventoryService {
 
     // Create adjustment logs
     if (logs.length > 0) {
-      await this.prisma.inventoryAdjustmentLog.createMany({
+      await prisma.inventoryAdjustmentLog.createMany({
         data: logs,
       });
     }
@@ -351,7 +364,7 @@ export class InventoryService {
    * Delete listing
    */
   async deleteListing(sellerId: string, inventoryId: string) {
-    const existing = await this.prisma.sellerInventory.findFirst({
+    const existing = await prisma.sellerInventory.findFirst({
       where: {
         id: inventoryId,
         sellerId,
@@ -362,7 +375,7 @@ export class InventoryService {
       throw new Error("Inventory item not found");
     }
 
-    await this.prisma.sellerInventory.delete({
+    await prisma.sellerInventory.delete({
       where: { id: inventoryId },
     });
 
@@ -378,7 +391,7 @@ export class InventoryService {
    * Get adjustment history
    */
   async getAdjustmentHistory(sellerId: string, inventoryId: string) {
-    const inventory = await this.prisma.sellerInventory.findFirst({
+    const inventory = await prisma.sellerInventory.findFirst({
       where: {
         id: inventoryId,
         sellerId,
@@ -389,7 +402,7 @@ export class InventoryService {
       throw new Error("Inventory item not found");
     }
 
-    const history = await this.prisma.inventoryAdjustmentLog.findMany({
+    const history = await prisma.inventoryAdjustmentLog.findMany({
       where: {
         inventoryId,
       },
@@ -405,7 +418,7 @@ export class InventoryService {
    * Create bulk upload record
    */
   async createBulkUpload(sellerId: string, fileName: string, totalRows: number) {
-    const upload = await this.prisma.bulkUpload.create({
+    const upload = await prisma.bulkUpload.create({
       data: {
         sellerId,
         fileName,
@@ -421,7 +434,7 @@ export class InventoryService {
    * Get bulk upload status
    */
   async getBulkUploadStatus(sellerId: string, uploadId: string) {
-    const upload = await this.prisma.bulkUpload.findFirst({
+    const upload = await prisma.bulkUpload.findFirst({
       where: {
         id: uploadId,
         sellerId,
@@ -439,7 +452,7 @@ export class InventoryService {
    * Get inventory value by category (US-S-207)
    */
   async getInventoryValueByCategory(sellerId: string) {
-    const inventory = await this.prisma.sellerInventory.findMany({
+    const inventory = await prisma.sellerInventory.findMany({
       where: {
         sellerId,
         isActive: true,
@@ -492,7 +505,7 @@ export class InventoryService {
    */
   async getStockCoverAlerts(sellerId: string, daysThreshold: number = 3) {
     // Get inventory
-    const inventory = await this.prisma.sellerInventory.findMany({
+    const inventory = await prisma.sellerInventory.findMany({
       where: {
         sellerId,
         isActive: true,
@@ -515,7 +528,7 @@ export class InventoryService {
 
     for (const item of inventory) {
       // Get sales for this product in last 30 days
-      const sales = await this.prisma.orderItem.aggregate({
+      const sales = await prisma.orderItem.aggregate({
         where: {
           inventoryId: item.id,
           order: {

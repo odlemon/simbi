@@ -5,7 +5,6 @@ import { DisputeStatus, DisputeType } from "@prisma/client";
 import { prisma } from "../../../utils/database";
 
 export class DisputeSLOService {
-  private prisma = prisma;
 
   // SLO targets (in hours) based on dispute priority
   private readonly SLO_TARGETS = {
@@ -47,7 +46,7 @@ export class DisputeSLOService {
     sloBreached: boolean;
   }> {
     try {
-      const dispute = await this.prisma.dispute.findUnique({
+      const dispute = await prisma.dispute.findUnique({
         where: { id: disputeId },
       });
 
@@ -92,7 +91,7 @@ export class DisputeSLOService {
       }
 
       // Update dispute
-      await this.prisma.dispute.update({
+      await prisma.dispute.update({
         where: { id: disputeId },
         data: {
           sloStatus,
@@ -115,7 +114,7 @@ export class DisputeSLOService {
    */
   private async createSLOBreachAlert(disputeId: string, dispute: any): Promise<void> {
     try {
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: "HIGH",
           status: "OPEN",
@@ -156,7 +155,7 @@ export class DisputeSLOService {
     breached: number;
   }> {
     try {
-      const openDisputes = await this.prisma.dispute.findMany({
+      const openDisputes = await prisma.dispute.findMany({
         where: {
           status: {
             in: ["OPEN", "UNDER_REVIEW", "AWAITING_EVIDENCE"],
@@ -214,14 +213,14 @@ export class DisputeSLOService {
   }> {
     try {
       const [total, onTime, atRisk, breached] = await Promise.all([
-        this.prisma.dispute.count({
+        prisma.dispute.count({
           where: {
             status: {
               in: ["OPEN", "UNDER_REVIEW", "AWAITING_EVIDENCE"],
             },
           },
         }),
-        this.prisma.dispute.count({
+        prisma.dispute.count({
           where: {
             status: {
               in: ["OPEN", "UNDER_REVIEW", "AWAITING_EVIDENCE"],
@@ -229,7 +228,7 @@ export class DisputeSLOService {
             sloStatus: "ON_TIME",
           },
         }),
-        this.prisma.dispute.count({
+        prisma.dispute.count({
           where: {
             status: {
               in: ["OPEN", "UNDER_REVIEW", "AWAITING_EVIDENCE"],
@@ -237,7 +236,7 @@ export class DisputeSLOService {
             sloStatus: "AT_RISK",
           },
         }),
-        this.prisma.dispute.count({
+        prisma.dispute.count({
           where: {
             status: {
               in: ["OPEN", "UNDER_REVIEW", "AWAITING_EVIDENCE"],
@@ -276,10 +275,10 @@ export class DisputeSLOService {
   }> {
     try {
       const [totalDisputes, faultBased, noFault, allDisputes] = await Promise.all([
-        this.prisma.dispute.count(),
-        this.prisma.dispute.count({ where: { isFaultBased: true } }),
-        this.prisma.dispute.count({ where: { isFaultBased: false } }),
-        this.prisma.dispute.groupBy({
+        prisma.dispute.count(),
+        prisma.dispute.count({ where: { isFaultBased: true } }),
+        prisma.dispute.count({ where: { isFaultBased: false } }),
+        prisma.dispute.groupBy({
           by: ["disputeType", "isFaultBased"],
           _count: true,
         }),
@@ -328,7 +327,7 @@ export class DisputeSLOService {
     reason: string
   ): Promise<void> {
     try {
-      await this.prisma.dispute.update({
+      await prisma.dispute.update({
         where: { id: disputeId },
         data: {
           isFaultBased,

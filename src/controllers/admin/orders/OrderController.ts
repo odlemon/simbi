@@ -4,10 +4,8 @@ import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
 
 export class OrderController {
-  private prisma;
-
   constructor() {
-    this.prisma = prisma;
+    // No need for private prisma property - use imported prisma directly
   }
 
   /**
@@ -79,10 +77,10 @@ export class OrderController {
         ordersByMonth,
       ] = await Promise.all([
         // Total count
-        this.prisma.order.count({ where }),
+        prisma.order.count({ where }),
         
         // Orders with pagination
-        this.prisma.order.findMany({
+        prisma.order.findMany({
           where,
           skip,
           take: limit,
@@ -136,7 +134,7 @@ export class OrderController {
         }),
         
         // Orders by status
-        this.prisma.order.groupBy({
+        prisma.order.groupBy({
           by: ['status'],
           _count: {
             status: true
@@ -144,7 +142,7 @@ export class OrderController {
         }),
         
         // Total revenue (completed orders)
-        this.prisma.order.aggregate({
+        prisma.order.aggregate({
           _sum: {
             totalAmount: true
           },
@@ -154,7 +152,7 @@ export class OrderController {
         }),
         
         // Average order value
-        this.prisma.order.aggregate({
+        prisma.order.aggregate({
           _avg: {
             totalAmount: true
           },
@@ -164,7 +162,7 @@ export class OrderController {
         }),
         
         // Recent orders (last 30 days)
-        this.prisma.order.count({
+        prisma.order.count({
           where: {
             createdAt: {
               gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -173,7 +171,7 @@ export class OrderController {
         }),
         
         // Top buyers by order count
-        this.prisma.buyer.findMany({
+        prisma.buyer.findMany({
           select: {
             id: true,
             firstName: true,
@@ -190,7 +188,7 @@ export class OrderController {
         }),
         
         // Orders by month (last 12 months)
-        this.prisma.$queryRaw`
+        prisma.$queryRaw`
           SELECT 
             DATE_TRUNC('month', "createdAt") as month,
             COUNT(*) as count,
@@ -294,10 +292,10 @@ export class OrderController {
       }
 
       // Get total count
-      const total = await this.prisma.order.count({ where });
+      const total = await prisma.order.count({ where });
 
       // Get orders
-      const orders = await this.prisma.order.findMany({
+      const orders = await prisma.order.findMany({
         where,
         skip,
         take: limit,
@@ -382,7 +380,7 @@ export class OrderController {
     try {
       const { id } = req.params;
 
-      const order = await this.prisma.order.findUnique({
+      const order = await prisma.order.findUnique({
         where: { id },
         include: {
           buyer: {
@@ -475,10 +473,10 @@ export class OrderController {
         ordersByMonth,
       ] = await Promise.all([
         // Total orders
-        this.prisma.order.count(),
+        prisma.order.count(),
         
         // Orders by status
-        this.prisma.order.groupBy({
+        prisma.order.groupBy({
           by: ['status'],
           _count: {
             status: true
@@ -486,7 +484,7 @@ export class OrderController {
         }),
         
         // Total revenue (completed orders)
-        this.prisma.order.aggregate({
+        prisma.order.aggregate({
           _sum: {
             totalAmount: true
           },
@@ -496,7 +494,7 @@ export class OrderController {
         }),
         
         // Average order value
-        this.prisma.order.aggregate({
+        prisma.order.aggregate({
           _avg: {
             totalAmount: true
           },
@@ -506,7 +504,7 @@ export class OrderController {
         }),
         
         // Recent orders (last 30 days)
-        this.prisma.order.count({
+        prisma.order.count({
           where: {
             createdAt: {
               gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -515,7 +513,7 @@ export class OrderController {
         }),
         
         // Top buyers by order count
-        this.prisma.buyer.findMany({
+        prisma.buyer.findMany({
           select: {
             id: true,
             firstName: true,
@@ -532,7 +530,7 @@ export class OrderController {
         }),
         
         // Orders by month (last 12 months)
-        this.prisma.$queryRaw`
+        prisma.$queryRaw`
           SELECT 
             DATE_TRUNC('month', "createdAt") as month,
             COUNT(*) as count,
@@ -595,7 +593,7 @@ export class OrderController {
         });
       }
 
-      const order = await this.prisma.order.update({
+      const order = await prisma.order.update({
         where: { id },
         data: { 
           status,

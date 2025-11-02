@@ -28,14 +28,13 @@ interface LogTimeDTO {
 }
 
 export class StaffService {
-  private prisma = prisma;
 
   /**
    * Create staff member
    */
   async createStaff(sellerId: string, data: CreateStaffDTO) {
     // Check if email already exists
-    const existing = await this.prisma.sellerStaff.findFirst({
+    const existing = await prisma.sellerStaff.findFirst({
       where: {
         email: data.email,
       },
@@ -46,7 +45,7 @@ export class StaffService {
     }
 
     // Get seller information for email
-    const seller = await this.prisma.seller.findUnique({
+    const seller = await prisma.seller.findUnique({
       where: { id: sellerId },
       select: {
         businessName: true,
@@ -62,7 +61,7 @@ export class StaffService {
     const tempPassword = this.generateSecurePassword();
     const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
-    const staff = await this.prisma.sellerStaff.create({
+    const staff = await prisma.sellerStaff.create({
       data: {
         sellerId,
         firstName: data.firstName,
@@ -81,7 +80,7 @@ export class StaffService {
     });
 
     // Log activity
-    await this.prisma.staffActivityLog.create({
+    await prisma.staffActivityLog.create({
       data: {
         staffId: staff.id,
         sellerId,
@@ -156,9 +155,9 @@ export class StaffService {
       where.department = filters.department;
     }
 
-    const total = await this.prisma.sellerStaff.count({ where });
+    const total = await prisma.sellerStaff.count({ where });
 
-    const staff = await this.prisma.sellerStaff.findMany({
+    const staff = await prisma.sellerStaff.findMany({
       where,
       skip,
       take: limit,
@@ -198,7 +197,7 @@ export class StaffService {
    * Get single staff member
    */
   async getStaff(sellerId: string, staffId: string) {
-    const staff = await this.prisma.sellerStaff.findFirst({
+    const staff = await prisma.sellerStaff.findFirst({
       where: {
         id: staffId,
         sellerId,
@@ -235,7 +234,7 @@ export class StaffService {
     staffId: string,
     data: Partial<CreateStaffDTO>
   ) {
-    const existing = await this.prisma.sellerStaff.findFirst({
+    const existing = await prisma.sellerStaff.findFirst({
       where: {
         id: staffId,
         sellerId,
@@ -246,7 +245,7 @@ export class StaffService {
       throw new Error("Staff member not found");
     }
 
-    const updated = await this.prisma.sellerStaff.update({
+    const updated = await prisma.sellerStaff.update({
       where: { id: staffId },
       data: {
         firstName: data.firstName,
@@ -276,7 +275,7 @@ export class StaffService {
     });
 
     // Log activity
-    await this.prisma.staffActivityLog.create({
+    await prisma.staffActivityLog.create({
       data: {
         staffId,
         sellerId,
@@ -297,7 +296,7 @@ export class StaffService {
    * Deactivate staff member
    */
   async deactivateStaff(sellerId: string, staffId: string) {
-    const existing = await this.prisma.sellerStaff.findFirst({
+    const existing = await prisma.sellerStaff.findFirst({
       where: {
         id: staffId,
         sellerId,
@@ -308,7 +307,7 @@ export class StaffService {
       throw new Error("Staff member not found");
     }
 
-    await this.prisma.sellerStaff.update({
+    await prisma.sellerStaff.update({
       where: { id: staffId },
       data: {
         status: StaffStatus.INACTIVE,
@@ -316,7 +315,7 @@ export class StaffService {
     });
 
     // Log activity
-    await this.prisma.staffActivityLog.create({
+    await prisma.staffActivityLog.create({
       data: {
         staffId,
         sellerId,
@@ -338,7 +337,7 @@ export class StaffService {
    */
   async logTime(sellerId: string, data: LogTimeDTO) {
     // Verify staff belongs to seller
-    const staff = await this.prisma.sellerStaff.findFirst({
+    const staff = await prisma.sellerStaff.findFirst({
       where: {
         id: data.staffId,
         sellerId,
@@ -349,7 +348,7 @@ export class StaffService {
       throw new Error("Staff member not found");
     }
 
-    const timeLog = await this.prisma.staffTimeLog.create({
+    const timeLog = await prisma.staffTimeLog.create({
       data: {
         staffId: data.staffId,
         sellerId,
@@ -392,7 +391,7 @@ export class StaffService {
       if (endDate) where.clockIn.lte = endDate;
     }
 
-    const timeLogs = await this.prisma.staffTimeLog.findMany({
+    const timeLogs = await prisma.staffTimeLog.findMany({
       where,
       include: {
         staff: {
@@ -431,7 +430,7 @@ export class StaffService {
       where.activityType = activityType;
     }
 
-    const logs = await this.prisma.staffActivityLog.findMany({
+    const logs = await prisma.staffActivityLog.findMany({
       where,
       include: {
         staff: {
@@ -493,7 +492,7 @@ export class StaffService {
     });
 
     // Get all active staff members
-    const staff = await this.prisma.sellerStaff.findMany({
+    const staff = await prisma.sellerStaff.findMany({
       where: {
         sellerId,
         isActive: true, // Use isActive instead of status for more flexibility
@@ -526,7 +525,7 @@ export class StaffService {
     const payrollSummary = await Promise.all(
       staff.map(async (member) => {
         // Get time logs for the period (check by date, not clockIn time)
-        const timeLogs = await this.prisma.staffTimeLog.findMany({
+        const timeLogs = await prisma.staffTimeLog.findMany({
           where: {
             staffId: member.id,
             date: {

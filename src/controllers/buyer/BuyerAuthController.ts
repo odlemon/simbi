@@ -77,7 +77,7 @@ export class BuyerAuthController {
    */
   async getProfile(req: Request, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -118,7 +118,7 @@ export class BuyerAuthController {
    */
   async updateProfile(req: Request, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -160,7 +160,7 @@ export class BuyerAuthController {
    */
   async changePassword(req: Request, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -262,6 +262,89 @@ export class BuyerAuthController {
       });
     } catch (error) {
       console.error('Logout controller error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Verify email with verification code
+   * POST /api/buyer/auth/verify-email
+   */
+  async verifyEmail(req: Request, res: Response): Promise<void> {
+    try {
+      const { email, code } = req.body;
+
+      if (!email || !code) {
+        res.status(400).json({
+          success: false,
+          message: 'Email and verification code are required',
+          error: 'MISSING_FIELDS'
+        });
+        return;
+      }
+
+      const result = await this.authService.verifyEmail(email, code);
+
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: result.message,
+          data: result.data
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: result.message,
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Verify email controller error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Resend verification email
+   * POST /api/buyer/auth/resend-verification
+   */
+  async resendVerification(req: Request, res: Response): Promise<void> {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        res.status(400).json({
+          success: false,
+          message: 'Email is required',
+          error: 'MISSING_EMAIL'
+        });
+        return;
+      }
+
+      const result = await this.authService.resendVerificationEmail(email);
+
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: result.message
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: result.message,
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Resend verification controller error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error',

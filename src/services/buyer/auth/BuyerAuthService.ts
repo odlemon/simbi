@@ -1,26 +1,72 @@
 
 // @ts-nocheck
-import { hash, verify } from 'argon2';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from "../../../utils/database";
+import { EmailVerificationService } from "../../EmailVerificationService";
 
 
 
-// Validation schemas
-const registerSchema = z.object({
+// Validation schemas: support two flows using discriminated union
+const individualRegistration = z.object({
+  buyerType: z.literal('INDIVIDUAL'),
   email: z.string().email(),
   password: z.string().min(8),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  phoneNumber: z.string().min(10),
-  buyerType: z.enum(['INDIVIDUAL', 'ENTERPRISE']),
-  // Enterprise-specific fields
-  companyName: z.string().optional(),
+  phoneNumber: z.string().min(6),
+  // Optional address fields supplied by the frontend wizard
+  addressLine1: z.string().optional(),
+  city: z.string().optional(),
+  province: z.string().optional(),
+  postalCode: z.string().optional(),
+  country: z.string().optional(),
+});
+
+const commercialRegistration = z.object({
+  buyerType: z.literal('COMMERCIAL'),
+  email: z.string().email(),
+  password: z.string().min(8),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  phoneNumber: z.string().min(6),
+  // Company details
+  companyName: z.string().min(1),
+  registrationNumber: z.string().optional(),
   taxId: z.string().optional(),
+  contactEmail: z.string().email().optional(),
+  contactPhone: z.string().optional(),
+  billingAddress: z.string().optional(),
+  shippingAddress: z.string().optional(),
   creditLimit: z.number().optional(),
   paymentTermDays: z.number().optional(),
+  currency: z.string().optional(),
+  monthlySpendingLimit: z.number().optional(),
+  // Additional commercial fields
+  businessType: z.string().optional(),
+  industry: z.string().optional(),
+  website: z.string().url().optional(),
+  description: z.string().optional(),
+  numberOfEmployees: z.number().optional(),
+  establishedYear: z.number().optional(),
+  // Address details for commercial
+  addressLine1: z.string().optional(),
+  addressLine2: z.string().optional(),
+  city: z.string().optional(),
+  province: z.string().optional(),
+  postalCode: z.string().optional(),
+  country: z.string().optional(),
+  // Contact preferences
+  preferredContactMethod: z.enum(['EMAIL', 'PHONE', 'SMS']).optional(),
+  marketingConsent: z.boolean().optional(),
+  termsAccepted: z.boolean().optional(),
 });
+
+const registerSchema = z.discriminatedUnion('buyerType', [
+  individualRegistration,
+  commercialRegistration,
+]);
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -30,11 +76,47 @@ const loginSchema = z.object({
 const updateProfileSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
-  phoneNumber: z.string().min(10).optional(),
-  companyName: z.string().optional(),
-  taxId: z.string().optional(),
-  creditLimit: z.number().optional(),
-  paymentTermDays: z.number().optional(),
+  phoneNumber: z.string().min(6).optional(),
+  // Commercial-specific fields - use nullish to handle null values
+  companyName: z.string().nullish(),
+  registrationNumber: z.string().nullish(),
+  taxId: z.string().nullish(),
+  contactEmail: z.union([
+    z.string().email(),
+    z.literal(''),
+    z.null(),
+    z.undefined()
+  ]),
+  contactPhone: z.string().nullish(),
+  billingAddress: z.string().nullish(),
+  shippingAddress: z.string().nullish(),
+  creditLimit: z.number().nullish(),
+  paymentTermDays: z.number().nullish(),
+  currency: z.string().nullish(),
+  monthlySpendingLimit: z.number().nullish(),
+  // Additional commercial fields
+  businessType: z.string().nullish(),
+  industry: z.string().nullish(),
+  website: z.union([
+    z.string().url(),
+    z.literal(''),
+    z.null(),
+    z.undefined()
+  ]),
+  description: z.string().nullish(),
+  numberOfEmployees: z.number().nullish(),
+  establishedYear: z.number().nullish(),
+  // Address details
+  addressLine1: z.string().nullish(),
+  addressLine2: z.string().nullish(),
+  city: z.string().nullish(),
+  province: z.string().nullish(),
+  postalCode: z.string().nullish(),
+  country: z.string().nullish(),
+  // Contact preferences
+  preferredContactMethod: z.enum(['EMAIL', 'PHONE', 'SMS']).nullish(),
+  marketingConsent: z.boolean().nullish(),
+  termsAccepted: z.boolean().nullish(),
 });
 
 export interface BuyerAuthResult {
@@ -94,37 +176,95 @@ export class BuyerAuthService {
       }
 
       // Hash password
-      const hashedPassword = await hash(validatedData.password);
+      const hashedPassword = await bcrypt.hash(validatedData.password, 10);
 
-      // Create buyer
+      // Create buyer with conditional fields based on buyerType
+      const buyerData: any = {
+        email: validatedData.email,
+        password: hashedPassword,
+        firstName: validatedData.firstName,
+        lastName: validatedData.lastName,
+        phoneNumber: validatedData.phoneNumber,
+        buyerType: validatedData.buyerType,
+      };
+
+      // Add fields based on buyer type
+      if (validatedData.buyerType === 'COMMERCIAL') {
+        buyerData.companyName = validatedData.companyName;
+        buyerData.registrationNumber = validatedData.registrationNumber;
+        buyerData.taxId = validatedData.taxId;
+        buyerData.contactEmail = validatedData.contactEmail;
+        buyerData.contactPhone = validatedData.contactPhone;
+        buyerData.billingAddress = validatedData.billingAddress;
+        buyerData.shippingAddress = validatedData.shippingAddress;
+        buyerData.creditLimit = validatedData.creditLimit || 0;
+        buyerData.paymentTermDays = validatedData.paymentTermDays;
+        buyerData.currency = validatedData.currency || 'USD';
+        buyerData.monthlySpendingLimit = validatedData.monthlySpendingLimit;
+        buyerData.businessType = validatedData.businessType;
+        buyerData.industry = validatedData.industry;
+        buyerData.website = validatedData.website;
+        buyerData.description = validatedData.description;
+        buyerData.numberOfEmployees = validatedData.numberOfEmployees;
+        buyerData.establishedYear = validatedData.establishedYear;
+        buyerData.preferredContactMethod = validatedData.preferredContactMethod;
+        buyerData.marketingConsent = validatedData.marketingConsent || false;
+        buyerData.termsAccepted = validatedData.termsAccepted || false;
+      }
+
+      // Add address fields (common for both types)
+      buyerData.addressLine1 = validatedData.addressLine1;
+      buyerData.addressLine2 = validatedData.addressLine2;
+      buyerData.city = validatedData.city;
+      buyerData.province = validatedData.province;
+      buyerData.postalCode = validatedData.postalCode;
+      buyerData.country = validatedData.country;
+
       const buyer = await prisma.buyer.create({
+        data: buyerData
+      });
+
+      // Send verification email and store verification code
+      const { pin, expiresAt } = await EmailVerificationService.sendVerificationEmail({
+        email: buyer.email,
+        firstName: buyer.firstName,
+        lastName: buyer.lastName,
+        userType: 'buyer'
+      });
+
+      // Update buyer with verification code
+      await prisma.buyer.update({
+        where: { id: buyer.id },
         data: {
-          email: validatedData.email,
-          password: hashedPassword,
-          firstName: validatedData.firstName,
-          lastName: validatedData.lastName,
-          phoneNumber: validatedData.phoneNumber,
-          buyerType: validatedData.buyerType,
-          companyName: validatedData.companyName,
-          taxId: validatedData.taxId,
-          creditLimit: validatedData.creditLimit || 0,
-          paymentTermDays: validatedData.paymentTermDays,
+          verificationCode: pin,
+          verificationCodeExpiresAt: expiresAt,
+          emailVerified: false
         }
       });
 
-      // Generate tokens
-      const { accessToken, refreshToken } = this.generateTokens(buyer.id);
+      // Create default shipping address: 32 Judosn Road
+      await prisma.buyerAddress.create({
+        data: {
+          buyerId: buyer.id,
+          fullName: `${buyer.firstName} ${buyer.lastName}`,
+          phoneNumber: buyer.phoneNumber,
+          addressLine1: "32 Judosn Road",
+          addressLine2: "",
+          city: buyer.city || "Harare",
+          province: buyer.province || "Harare",
+          postalCode: buyer.postalCode || "",
+          isDefault: true
+        }
+      });
 
-      // Return buyer data (excluding password)
-      const { password, ...buyerData } = buyer;
+      // Return buyer data (excluding password) - NO TOKENS until verified
+      const { password, verificationCode, ...buyerResponse } = buyer;
 
       return {
         success: true,
-        message: 'Buyer registered successfully',
+        message: 'Registration successful! Please check your email for verification code.',
         data: {
-          buyer: buyerData,
-          accessToken,
-          refreshToken
+          buyer: buyerResponse
         }
       };
 
@@ -159,6 +299,15 @@ export class BuyerAuthService {
         };
       }
 
+      // Check if email is verified
+      if (!buyer.emailVerified) {
+        return {
+          success: false,
+          message: 'Please verify your email address before logging in. Check your email for the verification code.',
+          error: 'EMAIL_NOT_VERIFIED'
+        };
+      }
+
       // Check if buyer is active
       if (buyer.status !== 'ACTIVE') {
         return {
@@ -169,7 +318,7 @@ export class BuyerAuthService {
       }
 
       // Verify password
-      const isPasswordValid = await verify(buyer.password, validatedData.password);
+      const isPasswordValid = await bcrypt.compare(validatedData.password, buyer.password);
       if (!isPasswordValid) {
         return {
           success: false,
@@ -179,7 +328,7 @@ export class BuyerAuthService {
       }
 
       // Generate tokens
-      const { accessToken, refreshToken } = this.generateTokens(buyer.id);
+      const { accessToken, refreshToken } = this.generateTokens(buyer);
 
       // Update last login
       await prisma.buyer.update({
@@ -188,13 +337,13 @@ export class BuyerAuthService {
       });
 
       // Return buyer data (excluding password)
-      const { password, ...buyerData } = buyer;
+      const { password, ...buyerResponse } = buyer;
 
       return {
         success: true,
         message: 'Login successful',
         data: {
-          buyer: buyerData,
+          buyer: buyerResponse,
           accessToken,
           refreshToken
         }
@@ -211,9 +360,9 @@ export class BuyerAuthService {
   }
 
   /**
-   * Get buyer profile
+   * Get buyer profile - comprehensive data for commercial buyers
    */
-  async getProfile(buyerId: string): Promise<{ success: boolean; data?: BuyerProfile; error?: string }> {
+  async getProfile(buyerId: string): Promise<{ success: boolean; data?: any; error?: string }> {
     try {
       const buyer = await prisma.buyer.findUnique({
         where: { id: buyerId },
@@ -227,13 +376,59 @@ export class BuyerAuthService {
           status: true,
           loyaltyPoints: true,
           loyaltyTier: true,
+          // Commercial-specific fields
           companyName: true,
+          registrationNumber: true,
           taxId: true,
+          contactEmail: true,
+          contactPhone: true,
+          billingAddress: true,
+          shippingAddress: true,
           creditLimit: true,
           creditUsed: true,
           paymentTermDays: true,
+          currency: true,
+          monthlySpendingLimit: true,
+          // Additional commercial fields
+          businessType: true,
+          industry: true,
+          website: true,
+          description: true,
+          numberOfEmployees: true,
+          establishedYear: true,
+          // Address details
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          province: true,
+          postalCode: true,
+          country: true,
+          // Contact preferences
+          preferredContactMethod: true,
+          marketingConsent: true,
+          termsAccepted: true,
           createdAt: true,
           updatedAt: true,
+          // Include addresses relation
+          addresses: {
+            select: {
+              id: true,
+              fullName: true,
+              phoneNumber: true,
+              addressLine1: true,
+              addressLine2: true,
+              city: true,
+              province: true,
+              postalCode: true,
+              isDefault: true,
+              createdAt: true,
+              updatedAt: true
+            },
+            orderBy: [
+              { isDefault: 'desc' },
+              { createdAt: 'desc' }
+            ]
+          }
         }
       });
 
@@ -273,13 +468,13 @@ export class BuyerAuthService {
       });
 
       // Return updated buyer data (excluding password)
-      const { password, ...buyerData } = buyer;
+      const { password, ...buyerResponse } = buyer;
 
       return {
         success: true,
         message: 'Profile updated successfully',
         data: {
-          buyer: buyerData,
+          buyer: buyerResponse,
           accessToken: '', // No new token needed
           refreshToken: '' // No new token needed
         }
@@ -383,15 +578,23 @@ export class BuyerAuthService {
   /**
    * Generate JWT tokens
    */
-  private generateTokens(buyerId: string): { accessToken: string; refreshToken: string } {
-    const accessToken = jwt.sign(
-      { buyerId, type: 'access' },
-      this.JWT_SECRET,
-      { expiresIn: this.JWT_EXPIRES_IN }
-    );
+  private generateTokens(buyer: any): { accessToken: string; refreshToken: string } {
+    const accessPayload = {
+      buyerId: buyer.id,
+      email: buyer.email,
+      buyerType: buyer.buyerType,
+      status: buyer.status,
+      firstName: buyer.firstName,
+      lastName: buyer.lastName,
+      type: 'access'
+    };
+
+    const accessToken = jwt.sign(accessPayload, this.JWT_SECRET, {
+      expiresIn: this.JWT_EXPIRES_IN
+    });
 
     const refreshToken = jwt.sign(
-      { buyerId, type: 'refresh' },
+      { buyerId: buyer.id, type: 'refresh' },
       this.JWT_SECRET,
       { expiresIn: this.REFRESH_TOKEN_EXPIRES_IN }
     );
@@ -428,8 +631,29 @@ export class BuyerAuthService {
         };
       }
 
+      // Get full buyer data for token generation
+      const fullBuyer = await prisma.buyer.findUnique({
+        where: { id: buyer.id },
+        select: {
+          id: true,
+          email: true,
+          buyerType: true,
+          status: true,
+          firstName: true,
+          lastName: true
+        }
+      });
+
+      if (!fullBuyer) {
+        return {
+          success: false,
+          message: 'Buyer not found',
+          error: 'BUYER_NOT_FOUND'
+        };
+      }
+
       // Generate new tokens
-      const { accessToken, refreshToken: newRefreshToken } = this.generateTokens(buyer.id);
+      const { accessToken, refreshToken: newRefreshToken } = this.generateTokens(fullBuyer);
 
       return {
         success: true,
@@ -446,6 +670,156 @@ export class BuyerAuthService {
         success: false,
         message: 'Token refresh failed',
         error: 'INVALID_REFRESH_TOKEN'
+      };
+    }
+  }
+
+  /**
+   * Verify email with verification code
+   */
+  async verifyEmail(email: string, code: string): Promise<BuyerAuthResult> {
+    try {
+      // Find buyer
+      const buyer = await prisma.buyer.findUnique({
+        where: { email }
+      });
+
+      if (!buyer) {
+        return {
+          success: false,
+          message: 'Buyer not found',
+          error: 'BUYER_NOT_FOUND'
+        };
+      }
+
+      // Check if already verified
+      if (buyer.emailVerified) {
+        return {
+          success: true,
+          message: 'Email already verified',
+          data: {
+            buyer: buyer as any,
+            accessToken: '',
+            refreshToken: ''
+          }
+        };
+      }
+
+      // Check if verification code matches
+      if (!buyer.verificationCode || buyer.verificationCode !== code) {
+        return {
+          success: false,
+          message: 'Invalid verification code',
+          error: 'INVALID_CODE'
+        };
+      }
+
+      // Check if code is expired
+      if (!buyer.verificationCodeExpiresAt || new Date() > buyer.verificationCodeExpiresAt) {
+        return {
+          success: false,
+          message: 'Verification code has expired. Please request a new one.',
+          error: 'CODE_EXPIRED'
+        };
+      }
+
+      // Mark email as verified and clear verification code
+      const updatedBuyer = await prisma.buyer.update({
+        where: { id: buyer.id },
+        data: {
+          emailVerified: true,
+          verificationCode: null,
+          verificationCodeExpiresAt: null
+        }
+      });
+
+      // Send welcome email
+      await EmailVerificationService.sendWelcomeEmail({
+        email: buyer.email,
+        firstName: buyer.firstName,
+        lastName: buyer.lastName,
+        userType: 'buyer'
+      });
+
+      // Generate tokens
+      const { accessToken, refreshToken } = this.generateTokens(updatedBuyer);
+
+      // Return buyer data (excluding password)
+      const { password, verificationCode, ...buyerResponse } = updatedBuyer;
+
+      return {
+        success: true,
+        message: 'Email verified successfully!',
+        data: {
+          buyer: buyerResponse,
+          accessToken,
+          refreshToken
+        }
+      };
+
+    } catch (error) {
+      console.error('Email verification error:', error);
+      return {
+        success: false,
+        message: 'Email verification failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Resend verification email
+   */
+  async resendVerificationEmail(email: string): Promise<{ success: boolean; message: string; error?: string }> {
+    try {
+      const buyer = await prisma.buyer.findUnique({
+        where: { email }
+      });
+
+      if (!buyer) {
+        return {
+          success: false,
+          message: 'Buyer not found',
+          error: 'BUYER_NOT_FOUND'
+        };
+      }
+
+      if (buyer.emailVerified) {
+        return {
+          success: false,
+          message: 'Email already verified',
+          error: 'ALREADY_VERIFIED'
+        };
+      }
+
+      // Send new verification email
+      const { pin, expiresAt } = await EmailVerificationService.sendVerificationEmail({
+        email: buyer.email,
+        firstName: buyer.firstName,
+        lastName: buyer.lastName,
+        userType: 'buyer'
+      });
+
+      // Update verification code
+      await prisma.buyer.update({
+        where: { id: buyer.id },
+        data: {
+          verificationCode: pin,
+          verificationCodeExpiresAt: expiresAt
+        }
+      });
+
+      return {
+        success: true,
+        message: 'Verification code sent to your email'
+      };
+
+    } catch (error) {
+      console.error('Resend verification email error:', error);
+      return {
+        success: false,
+        message: 'Failed to send verification email',
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }

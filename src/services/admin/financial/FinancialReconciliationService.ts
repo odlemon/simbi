@@ -6,7 +6,6 @@ import { ReconciliationRecord } from "../../../types";
 import { prisma } from "../../../utils/database";
 
 export class FinancialReconciliationService {
-  private prisma = prisma;
 
   /**
    * Get daily reconciliation report
@@ -32,7 +31,7 @@ export class FinancialReconciliationService {
       endOfDay.setHours(23, 59, 59, 999);
 
       // Get all completed payments for the day
-      const payments = await this.prisma.payment.findMany({
+      const payments = await prisma.payment.findMany({
         where: {
           status: "COMPLETED",
           paidAt: {
@@ -50,7 +49,7 @@ export class FinancialReconciliationService {
       });
 
       // Get all payouts for the day
-      const payouts = await this.prisma.payout.findMany({
+      const payouts = await prisma.payout.findMany({
         where: {
           processedDate: {
             gte: startOfDay,
@@ -132,7 +131,7 @@ export class FinancialReconciliationService {
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-      const orders = await this.prisma.order.findMany({
+      const orders = await prisma.order.findMany({
         where: {
           status: "DELIVERED",
           actualDeliveryDate: {
@@ -164,7 +163,7 @@ export class FinancialReconciliationService {
           const netAmount = grossAmount - gatewayFee;
 
           // Create payout
-          await this.prisma.payout.create({
+          await prisma.payout.create({
             data: {
               sellerId: order.sellerId,
               orderId: order.id,
@@ -213,7 +212,7 @@ export class FinancialReconciliationService {
     toCurrency: Currency
   ): Promise<number | null> {
     try {
-      const rate = await this.prisma.exchangeRate.findFirst({
+      const rate = await prisma.exchangeRate.findFirst({
         where: {
           fromCurrency,
           toCurrency,
@@ -248,7 +247,7 @@ export class FinancialReconciliationService {
     source: string = "MANUAL_ADMIN"
   ): Promise<void> {
     try {
-      await this.prisma.exchangeRate.create({
+      await prisma.exchangeRate.create({
         data: {
           fromCurrency,
           toCurrency,
@@ -295,7 +294,7 @@ export class FinancialReconciliationService {
     }>;
   }> {
     try {
-      const orders = await this.prisma.order.findMany({
+      const orders = await prisma.order.findMany({
         where: {
           status: "DELIVERED",
           createdAt: {
@@ -385,14 +384,14 @@ export class FinancialReconciliationService {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
 
-      const orders = await this.prisma.order.findMany({
+      const orders = await prisma.order.findMany({
         where: {
           status: "DELIVERED",
           createdAt: { gte: startDate },
         },
       });
 
-      const payouts = await this.prisma.payout.findMany({
+      const payouts = await prisma.payout.findMany({
         where: {
           scheduledDate: { gte: startDate },
         },
@@ -450,7 +449,7 @@ export class FinancialReconciliationService {
   ): Promise<any> {
     try {
       // Get order and payment
-      const order = await this.prisma.order.findUnique({
+      const order = await prisma.order.findUnique({
         where: { id: orderId },
         include: { payment: true, seller: true },
       });
@@ -460,7 +459,7 @@ export class FinancialReconciliationService {
       }
 
       // Create chargeback record (using metadata in Payment model for now)
-      await this.prisma.payment.update({
+      await prisma.payment.update({
         where: { id: order.payment.id },
         data: {
           metadata: {
@@ -477,7 +476,7 @@ export class FinancialReconciliationService {
       });
 
       // Create alert for admin
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: "CRITICAL",
           status: "OPEN",
@@ -526,7 +525,7 @@ export class FinancialReconciliationService {
     adminId: string
   ): Promise<any> {
     try {
-      const order = await this.prisma.order.findUnique({
+      const order = await prisma.order.findUnique({
         where: { id: orderId },
         include: { payment: true },
       });
@@ -545,7 +544,7 @@ export class FinancialReconciliationService {
       }
 
       // Update payment with refund info
-      await this.prisma.payment.update({
+      await prisma.payment.update({
         where: { id: order.payment.id },
         data: {
           status: amount === order.totalAmount ? "REFUNDED" : "PARTIALLY_REFUNDED",
@@ -562,7 +561,7 @@ export class FinancialReconciliationService {
       });
 
       // Update order status
-      await this.prisma.order.update({
+      await prisma.order.update({
         where: { id: orderId },
         data: {
           status: amount === order.totalAmount ? "REFUNDED" : "PARTIALLY_REFUNDED",
@@ -601,7 +600,7 @@ export class FinancialReconciliationService {
     labelUrl: string;
   }> {
     try {
-      const dispute = await this.prisma.dispute.findUnique({
+      const dispute = await prisma.dispute.findUnique({
         where: { id: disputeId },
         include: {
           order: {
@@ -624,7 +623,7 @@ export class FinancialReconciliationService {
       const labelUrl = `https://labels.simbimarket.com/${trackingNumber}.pdf`;
 
       // Update dispute with return info
-      await this.prisma.dispute.update({
+      await prisma.dispute.update({
         where: { id: disputeId },
         data: {
           metadata: {
@@ -665,7 +664,7 @@ export class FinancialReconciliationService {
     try {
       // MySQL doesn't support JSON path queries like PostgreSQL
       // Fetch all payments and filter in code
-      const payments = await this.prisma.payment.findMany({
+      const payments = await prisma.payment.findMany({
         where: {
           metadata: {
             not: Prisma.JsonNull,
@@ -712,7 +711,7 @@ export class FinancialReconciliationService {
    */
   async getAllRefunds(): Promise<any[]> {
     try {
-      const payments = await this.prisma.payment.findMany({
+      const payments = await prisma.payment.findMany({
         where: {
           status: { in: ["REFUNDED", "PARTIALLY_REFUNDED"] },
         },

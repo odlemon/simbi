@@ -11,6 +11,84 @@ export class ProductSearchController {
   }
 
   /**
+   * Get all marketplace products (public endpoint - no authentication required)
+   * GET /api/buyer/products/marketplace
+   */
+  async getMarketplaceProducts(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        category,
+        manufacturer,
+        search,
+        inStock,
+        minPrice,
+        maxPrice,
+        make,
+        model,
+        year,
+        productType,
+        sortBy
+      } = req.query;
+
+      const criteria: any = {
+        page: parseInt(page as string) || 1,
+        limit: parseInt(limit as string) || 20
+      };
+
+      // Basic filters
+      if (category) criteria.category = category;
+      if (manufacturer) criteria.manufacturer = manufacturer;
+      if (search) criteria.q = search; // Use 'q' for search query
+      if (inStock) criteria.inStock = inStock === 'true';
+      
+      // Price range filters
+      if (minPrice) criteria.minPrice = parseFloat(minPrice as string);
+      if (maxPrice) criteria.maxPrice = parseFloat(maxPrice as string);
+      
+      // Vehicle fitment filters
+      if (make) criteria.make = make;
+      if (model) criteria.model = model;
+      if (year) criteria.year = parseInt(year as string);
+      
+      // Product type filter (for future implementation)
+      if (productType) criteria.productType = productType;
+      
+      // Sorting
+      if (sortBy) criteria.sortBy = sortBy;
+
+      // Use FAST search service for marketplace products
+      const result = await this.fastSearchService.fastSearch(criteria);
+      
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: 'Marketplace products retrieved successfully',
+          data: result.data,
+          pagination: result.pagination,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'Failed to fetch marketplace products',
+          error: result.error,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Get marketplace products controller error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
    * Decode VIN and get vehicle information
    * POST /api/buyer/products/vin-decode
    */
@@ -281,7 +359,7 @@ export class ProductSearchController {
    */
   async saveSearch(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -322,7 +400,7 @@ export class ProductSearchController {
    */
   async getSavedSearches(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({

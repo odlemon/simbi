@@ -104,5 +104,64 @@ export class SellerAuthController {
       });
     }
   }
+
+  /**
+   * POST /api/seller/auth/verify-email
+   * Verify email with verification code
+   */
+  async verifyEmail(req: Request, res: Response) {
+    try {
+      const { email, code } = req.body;
+
+      if (!email || !code) {
+        return res.status(400).json({
+          success: false,
+          message: "Email and verification code are required",
+        });
+      }
+
+      const result = await this.service.verifyEmail(email, code);
+
+      res.json({
+        success: true,
+        message: "Email verified successfully",
+        data: result,
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        message: error.message || "Email verification failed",
+      });
+    }
+  }
+
+  /**
+   * POST /api/seller/auth/resend-verification
+   * Resend verification email
+   */
+  async resendVerification(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          message: "Email is required",
+        });
+      }
+
+      await this.service.resendVerificationEmail(email);
+
+      res.json({
+        success: true,
+        message: "Verification code sent to your email",
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to send verification email",
+      });
+    }
+  }
 }
 

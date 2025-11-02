@@ -21,11 +21,11 @@ router.post('/', authenticateBuyer, orderController.createOrder.bind(orderContro
 router.get('/', authenticateBuyer, orderController.getBuyerOrders.bind(orderController));
 
 /**
- * @route GET /api/buyer/orders/:id
- * @desc Get order by ID
+ * @route GET /api/buyer/orders/:id/payment
+ * @desc Get payment details for an order
  * @access Private
  */
-router.get('/:id', authenticateBuyer, orderController.getOrderById.bind(orderController));
+router.get('/:id/payment', authenticateBuyer, orderController.getOrderPaymentDetails.bind(orderController));
 
 /**
  * @route GET /api/buyer/orders/:id/tracking
@@ -33,6 +33,13 @@ router.get('/:id', authenticateBuyer, orderController.getOrderById.bind(orderCon
  * @access Private
  */
 router.get('/:id/tracking', authenticateBuyer, orderController.trackOrder.bind(orderController));
+
+/**
+ * @route GET /api/buyer/orders/:id
+ * @desc Get order by ID
+ * @access Private
+ */
+router.get('/:id', authenticateBuyer, orderController.getOrderById.bind(orderController));
 
 /**
  * @route PUT /api/buyer/orders/:id/status
@@ -54,5 +61,12 @@ router.post('/:id/cancel', authenticateBuyer, orderController.cancelOrder.bind(o
  * @access Private
  */
 router.post('/calculate-commission', authenticateBuyer, orderController.calculateCommission.bind(orderController));
+
+/**
+ * @route POST /api/buyer/orders/from-cart
+ * @desc Create order from cart (automatically groups by seller)
+ * @access Private
+ */
+router.post('/from-cart', authenticateBuyer, orderController.createOrderFromCart.bind(orderController));
 
 export default router;

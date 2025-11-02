@@ -40,8 +40,6 @@ interface CreateProductData {
 }
 
 export class ProductManagementService {
-  private prisma = prisma;
-
   /**
    * Get all products with pagination and filters
    */
@@ -89,7 +87,7 @@ export class ProductManagementService {
 
       // Execute query with pagination
       const [products, total] = await Promise.all([
-        this.prisma.masterProduct.findMany({
+        prisma.masterProduct.findMany({
           where,
           skip,
           take: limit,
@@ -105,7 +103,7 @@ export class ProductManagementService {
             },
           },
         }),
-        this.prisma.masterProduct.count({ where }),
+        prisma.masterProduct.count({ where }),
       ]);
 
       return {
@@ -131,7 +129,7 @@ export class ProductManagementService {
    */
   async getProductById(productId: string): Promise<MasterProduct | null> {
     try {
-      const product = await this.prisma.masterProduct.findUnique({
+      const product = await prisma.masterProduct.findUnique({
         where: { id: productId },
         include: {
           category: true,
@@ -165,7 +163,7 @@ export class ProductManagementService {
    */
   async getProductByOemNumber(oemPartNumber: string): Promise<MasterProduct | null> {
     try {
-      const product = await this.prisma.masterProduct.findFirst({
+      const product = await prisma.masterProduct.findFirst({
         where: { oemPartNumber },
         include: {
           category: true,
@@ -193,7 +191,7 @@ export class ProductManagementService {
       // Generate master part ID
       const masterPartId = `${data.manufacturer.toUpperCase()}-${data.oemPartNumber}`.replace(/\s+/g, "-");
 
-      const product = await this.prisma.masterProduct.create({
+      const product = await prisma.masterProduct.create({
         data: {
           masterPartId,
           oemPartNumber: data.oemPartNumber,
@@ -244,7 +242,7 @@ export class ProductManagementService {
     adminId: string
   ): Promise<MasterProduct> {
     try {
-      const product = await this.prisma.masterProduct.update({
+      const product = await prisma.masterProduct.update({
         where: { id: productId },
         data: {
           ...(data.name && { name: data.name }),
@@ -285,7 +283,7 @@ export class ProductManagementService {
    */
   async deleteProduct(productId: string, adminId: string): Promise<void> {
     try {
-      await this.prisma.masterProduct.update({
+      await prisma.masterProduct.update({
         where: { id: productId },
         data: {
           isActive: false,
@@ -331,7 +329,7 @@ export class ProductManagementService {
       };
 
       const [products, total] = await Promise.all([
-        this.prisma.masterProduct.findMany({
+        prisma.masterProduct.findMany({
           where,
           skip,
           take: limit,
@@ -339,7 +337,7 @@ export class ProductManagementService {
             category: true,
           },
         }),
-        this.prisma.masterProduct.count({ where }),
+        prisma.masterProduct.count({ where }),
       ]);
 
       // Additional filtering in memory for model and year (since JSON queries are limited)
@@ -396,7 +394,7 @@ export class ProductManagementService {
     adminId: string
   ): Promise<{ updated: number }> {
     try {
-      const result = await this.prisma.masterProduct.updateMany({
+      const result = await prisma.masterProduct.updateMany({
         where: {
           id: { in: productIds },
         },

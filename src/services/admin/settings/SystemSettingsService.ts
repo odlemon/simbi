@@ -5,14 +5,13 @@ import { SystemSetting } from "@prisma/client";
 import { prisma } from "../../../utils/database";
 
 export class SystemSettingsService {
-  private prisma = prisma;
 
   /**
    * Get all settings
    */
   async getAllSettings(): Promise<SystemSetting[]> {
     try {
-      return await this.prisma.systemSetting.findMany({
+      return await prisma.systemSetting.findMany({
         orderBy: { key: "asc" },
       });
     } catch (error: any) {
@@ -26,7 +25,7 @@ export class SystemSettingsService {
    */
   async getSettingByKey(key: string): Promise<SystemSetting | null> {
     try {
-      return await this.prisma.systemSetting.findUnique({
+      return await prisma.systemSetting.findUnique({
         where: { key },
       });
     } catch (error: any) {
@@ -46,7 +45,7 @@ export class SystemSettingsService {
     adminId: string
   ): Promise<SystemSetting> {
     try {
-      const setting = await this.prisma.systemSetting.upsert({
+      const setting = await prisma.systemSetting.upsert({
         where: { key },
         update: {
           value,
@@ -76,7 +75,7 @@ export class SystemSettingsService {
    */
   async deleteSetting(key: string, adminId: string): Promise<void> {
     try {
-      await this.prisma.systemSetting.delete({
+      await prisma.systemSetting.delete({
         where: { key },
       });
 
@@ -234,16 +233,16 @@ export class SystemSettingsService {
         adminUsersWithoutMFA,
         sellerUsersWithoutMFA,
       ] = await Promise.all([
-        this.prisma.admin.count({ where: { mfaEnabled: true } }),
-        this.prisma.admin.count(),
-        this.prisma.seller.count({ where: { mfaEnabled: true } }),
-        this.prisma.seller.count(),
-        this.prisma.admin.findMany({
+        prisma.admin.count({ where: { mfaEnabled: true } }),
+        prisma.admin.count(),
+        prisma.seller.count({ where: { mfaEnabled: true } }),
+        prisma.seller.count(),
+        prisma.admin.findMany({
           where: { mfaEnabled: false },
           select: { id: true, email: true, createdAt: true },
           take: 20,
         }),
-        this.prisma.seller.findMany({
+        prisma.seller.findMany({
           where: { mfaEnabled: false },
           select: { id: true, email: true, createdAt: true },
           take: 20,
@@ -328,13 +327,13 @@ export class SystemSettingsService {
         sellersOlder365,
         oldAdmins,
       ] = await Promise.all([
-        this.prisma.admin.count({ where: { createdAt: { lte: ninetyDaysAgo } } }),
-        this.prisma.admin.count({ where: { createdAt: { lte: oneEightyDaysAgo } } }),
-        this.prisma.admin.count({ where: { createdAt: { lte: threeSixtyFiveDaysAgo } } }),
-        this.prisma.seller.count({ where: { createdAt: { lte: ninetyDaysAgo } } }),
-        this.prisma.seller.count({ where: { createdAt: { lte: oneEightyDaysAgo } } }),
-        this.prisma.seller.count({ where: { createdAt: { lte: threeSixtyFiveDaysAgo } } }),
-        this.prisma.admin.findMany({
+        prisma.admin.count({ where: { createdAt: { lte: ninetyDaysAgo } } }),
+        prisma.admin.count({ where: { createdAt: { lte: oneEightyDaysAgo } } }),
+        prisma.admin.count({ where: { createdAt: { lte: threeSixtyFiveDaysAgo } } }),
+        prisma.seller.count({ where: { createdAt: { lte: ninetyDaysAgo } } }),
+        prisma.seller.count({ where: { createdAt: { lte: oneEightyDaysAgo } } }),
+        prisma.seller.count({ where: { createdAt: { lte: threeSixtyFiveDaysAgo } } }),
+        prisma.admin.findMany({
           where: { createdAt: { lte: oneEightyDaysAgo } },
           select: { id: true, email: true, createdAt: true },
           orderBy: { createdAt: "asc" },

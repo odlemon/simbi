@@ -5,14 +5,12 @@ import { SellerDocument, DocumentType, DocumentStatus } from "@prisma/client";
 import { prisma } from "../../../utils/database";
 
 export class DocumentManagementService {
-  private prisma = prisma;
-
   /**
    * Get all documents for a seller
    */
   async getSellerDocuments(sellerId: string): Promise<SellerDocument[]> {
     try {
-      const documents = await this.prisma.sellerDocument.findMany({
+      const documents = await prisma.sellerDocument.findMany({
         where: { sellerId },
         orderBy: { uploadedAt: "desc" },
       });
@@ -35,7 +33,7 @@ export class DocumentManagementService {
     adminId: string
   ): Promise<SellerDocument> {
     try {
-      const document = await this.prisma.sellerDocument.update({
+      const document = await prisma.sellerDocument.update({
         where: { id: documentId },
         data: {
           status: DocumentStatus.APPROVED,
@@ -72,7 +70,7 @@ export class DocumentManagementService {
     adminId: string
   ): Promise<SellerDocument> {
     try {
-      const document = await this.prisma.sellerDocument.update({
+      const document = await prisma.sellerDocument.update({
         where: { id: documentId },
         data: {
           status: DocumentStatus.REJECTED,
@@ -111,7 +109,7 @@ export class DocumentManagementService {
       const thresholdDate = new Date();
       thresholdDate.setDate(thresholdDate.getDate() + daysThreshold);
 
-      const documents = await this.prisma.sellerDocument.findMany({
+      const documents = await prisma.sellerDocument.findMany({
         where: {
           status: DocumentStatus.APPROVED,
           expiryDate: {
@@ -195,7 +193,7 @@ export class DocumentManagementService {
         (document.expiryDate!.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
       );
 
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: daysUntilExpiry <= 30 ? "HIGH" : "LOW",
           status: "OPEN",
@@ -229,7 +227,7 @@ export class DocumentManagementService {
     action: string
   ): Promise<void> {
     try {
-      const document = await this.prisma.sellerDocument.findUnique({
+      const document = await prisma.sellerDocument.findUnique({
         where: { id: documentId },
       });
 
@@ -243,7 +241,7 @@ export class DocumentManagementService {
         action,
       });
 
-      await this.prisma.sellerDocument.update({
+      await prisma.sellerDocument.update({
         where: { id: documentId },
         data: {
           viewLogs,
@@ -262,7 +260,7 @@ export class DocumentManagementService {
    */
   async getPendingDocuments(): Promise<Array<SellerDocument & { seller: any }>> {
     try {
-      const documents = await this.prisma.sellerDocument.findMany({
+      const documents = await prisma.sellerDocument.findMany({
         where: {
           status: DocumentStatus.PENDING,
         },
@@ -294,7 +292,7 @@ export class DocumentManagementService {
    */
   async getExpiredDocuments(): Promise<Array<SellerDocument & { seller: any }>> {
     try {
-      const documents = await this.prisma.sellerDocument.findMany({
+      const documents = await prisma.sellerDocument.findMany({
         where: {
           status: DocumentStatus.APPROVED,
           expiryDate: {
@@ -323,7 +321,7 @@ export class DocumentManagementService {
           doc.seller.status === "ACTIVE" &&
           ["ZIMRA_CERTIFICATE", "TIN_CERTIFICATE"].includes(doc.documentType)
         ) {
-          await this.prisma.seller.update({
+          await prisma.seller.update({
             where: { id: doc.sellerId },
             data: {
               status: "SUSPENDED",
@@ -331,7 +329,7 @@ export class DocumentManagementService {
             },
           });
 
-          await this.prisma.adminAlert.create({
+          await prisma.adminAlert.create({
             data: {
               tier: "CRITICAL",
               status: "OPEN",

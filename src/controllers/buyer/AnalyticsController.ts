@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Request, Response } from 'express';
 import AnalyticsService from '../../services/buyer/analytics/AnalyticsService';
-import { BuyerAuthRequest } from '../../middleware/buyerAuth';
+import { AuthenticatedRequest } from '../../middleware/buyerAuth';
 
 export class AnalyticsController {
   private analyticsService: AnalyticsService;
@@ -14,9 +14,9 @@ export class AnalyticsController {
    * Get dashboard data
    * GET /api/buyer/analytics/dashboard
    */
-  async getDashboard(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async getDashboard(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -61,9 +61,9 @@ export class AnalyticsController {
    * Generate spending report
    * POST /api/buyer/analytics/reports/spending
    */
-  async generateSpendingReport(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async generateSpendingReport(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -104,9 +104,9 @@ export class AnalyticsController {
    * Export data to CSV
    * POST /api/buyer/analytics/export/csv
    */
-  async exportToCSV(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async exportToCSV(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -159,9 +159,9 @@ export class AnalyticsController {
    * Get spending trends
    * GET /api/buyer/analytics/spending/trends
    */
-  async getSpendingTrends(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async getSpendingTrends(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -209,9 +209,9 @@ export class AnalyticsController {
    * Get product analytics
    * GET /api/buyer/analytics/products
    */
-  async getProductAnalytics(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async getProductAnalytics(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -257,9 +257,9 @@ export class AnalyticsController {
    * Get user activity (for enterprise buyers)
    * GET /api/buyer/analytics/users
    */
-  async getUserActivity(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async getUserActivity(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -305,9 +305,9 @@ export class AnalyticsController {
    * Get category analysis
    * GET /api/buyer/analytics/category-analysis
    */
-  async getCategoryAnalysis(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async getCategoryAnalysis(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -342,6 +342,48 @@ export class AnalyticsController {
       }
     } catch (error) {
       console.error('Get category analysis controller error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Get comprehensive dashboard - all metrics in one endpoint
+   * GET /api/buyer/analytics/comprehensive
+   */
+  async getComprehensiveDashboard(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const buyerId = req.buyer?.id;
+      
+      if (!buyerId) {
+        res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+          error: 'NO_BUYER_ID'
+        });
+        return;
+      }
+
+      const result = await this.analyticsService.getComprehensiveDashboard(buyerId);
+      
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: 'Comprehensive dashboard data retrieved successfully',
+          data: result.data
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to get comprehensive dashboard',
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Get comprehensive dashboard controller error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error',

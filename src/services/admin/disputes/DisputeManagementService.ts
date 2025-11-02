@@ -5,11 +5,9 @@ import { Dispute, DisputeStatus, DisputeType } from "@prisma/client";
 import { prisma } from "../../../utils/database";
 
 export class DisputeManagementService {
-  private prisma = prisma;
-
   async getAllDisputes(status?: DisputeStatus): Promise<Dispute[]> {
     try {
-      const disputes = await this.prisma.dispute.findMany({
+      const disputes = await prisma.dispute.findMany({
         where: status ? { status } : undefined,
         include: {
           order: {
@@ -31,7 +29,7 @@ export class DisputeManagementService {
 
   async getDisputeById(disputeId: string): Promise<Dispute | null> {
     try {
-      return await this.prisma.dispute.findUnique({
+      return await prisma.dispute.findUnique({
         where: { id: disputeId },
         include: {
           order: { include: { buyer: true, seller: true } },
@@ -46,7 +44,7 @@ export class DisputeManagementService {
 
   async assignDispute(disputeId: string, adminId: string): Promise<void> {
     try {
-      await this.prisma.dispute.update({
+      await prisma.dispute.update({
         where: { id: disputeId },
         data: { assignedAdminId: adminId, status: "UNDER_REVIEW" },
       });
@@ -64,10 +62,10 @@ export class DisputeManagementService {
     adminId: string
   ): Promise<void> {
     try {
-      const dispute = await this.prisma.dispute.findUnique({ where: { id: disputeId }, include: { order: true } });
+      const dispute = await prisma.dispute.findUnique({ where: { id: disputeId }, include: { order: true } });
       if (!dispute) throw new Error("Dispute not found");
 
-      await this.prisma.dispute.update({
+      await prisma.dispute.update({
         where: { id: disputeId },
         data: {
           status: outcome === "BUYER" ? "RESOLVED_BUYER_FAVOR" : "RESOLVED_SELLER_FAVOR",
@@ -79,7 +77,7 @@ export class DisputeManagementService {
       // Impact SRI if fault-based
       if (dispute.isFaultBased && outcome === "BUYER") {
         const sellerId = dispute.order.sellerId;
-        await this.prisma.seller.update({
+        await prisma.seller.update({
           where: { id: sellerId },
           data: { sriScore: { decrement: 30 } }, // 30 point penalty as per SRD
         });

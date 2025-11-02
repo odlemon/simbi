@@ -5,7 +5,6 @@ import { AdminAlert, AlertTier, AlertStatus } from "@prisma/client";
 import { prisma } from "../../../utils/database";
 
 export class DashboardService {
-  private prisma = prisma;
 
   /**
    * Get SRI violations KPI (hourly monitoring)
@@ -24,14 +23,14 @@ export class DashboardService {
   }> {
     try {
       const [totalSellers, belowThreshold70, belowThreshold50, violatedSellers] = await Promise.all([
-        this.prisma.seller.count({ where: { status: "ACTIVE" } }),
-        this.prisma.seller.count({
+        prisma.seller.count({ where: { status: "ACTIVE" } }),
+        prisma.seller.count({
           where: { status: "ACTIVE", sriScore: { lt: 70 } },
         }),
-        this.prisma.seller.count({
+        prisma.seller.count({
           where: { status: "ACTIVE", sriScore: { lt: 50 } },
         }),
-        this.prisma.seller.findMany({
+        prisma.seller.findMany({
           where: { status: "ACTIVE", sriScore: { lt: 70 } },
           select: {
             id: true,
@@ -84,31 +83,31 @@ export class DashboardService {
 
       const [expiring30Days, expiring60Days, expiring90Days, alreadyExpired, expiringDocs] =
         await Promise.all([
-          this.prisma.sellerDocument.count({
+          prisma.sellerDocument.count({
             where: {
               expiryDate: { gte: now, lte: in30Days },
               status: "APPROVED",
             },
           }),
-          this.prisma.sellerDocument.count({
+          prisma.sellerDocument.count({
             where: {
               expiryDate: { gte: now, lte: in60Days },
               status: "APPROVED",
             },
           }),
-          this.prisma.sellerDocument.count({
+          prisma.sellerDocument.count({
             where: {
               expiryDate: { gte: now, lte: in90Days },
               status: "APPROVED",
             },
           }),
-          this.prisma.sellerDocument.count({
+          prisma.sellerDocument.count({
             where: {
               expiryDate: { lt: now },
               status: "APPROVED",
             },
           }),
-          this.prisma.sellerDocument.findMany({
+          prisma.sellerDocument.findMany({
             where: {
               expiryDate: { gte: now, lte: in90Days },
               status: "APPROVED",
@@ -172,18 +171,18 @@ export class DashboardService {
 
       // Get failed payments (status FAILED)
       const [failedPayments, totalPayments, last24hFailed, last24hTotal] = await Promise.all([
-        this.prisma.payment.count({ where: { status: "FAILED" } }),
-        this.prisma.payment.count(),
-        this.prisma.payment.count({
+        prisma.payment.count({ where: { status: "FAILED" } }),
+        prisma.payment.count(),
+        prisma.payment.count({
           where: { status: "FAILED", createdAt: { gte: oneDayAgo } },
         }),
-        this.prisma.payment.count({
+        prisma.payment.count({
           where: { createdAt: { gte: oneDayAgo } },
         }),
       ]);
 
       // Analyze failure types from metadata
-      const failedPaymentDetails = await this.prisma.payment.findMany({
+      const failedPaymentDetails = await prisma.payment.findMany({
         where: { status: "FAILED" },
         select: { metadata: true },
         take: 1000,
@@ -255,7 +254,7 @@ export class DashboardService {
       const now = new Date();
 
       // Get resolved disputes
-      const resolvedDisputes = await this.prisma.dispute.findMany({
+      const resolvedDisputes = await prisma.dispute.findMany({
         where: {
           status: {
             in: ["RESOLVED_BUYER_FAVOR", "RESOLVED_SELLER_FAVOR", "CLOSED_NO_FAULT"],
@@ -300,14 +299,14 @@ export class DashboardService {
 
       // Get pending disputes over 7 days
       const [pendingOverSevenDays, totalDisputes, activeDisputes] = await Promise.all([
-        this.prisma.dispute.count({
+        prisma.dispute.count({
           where: {
             status: { in: ["OPEN", "UNDER_REVIEW", "AWAITING_EVIDENCE"] },
             createdAt: { lte: sevenDaysAgo },
           },
         }),
-        this.prisma.dispute.count(),
-        this.prisma.dispute.findMany({
+        prisma.dispute.count(),
+        prisma.dispute.findMany({
           where: {
             status: { in: ["OPEN", "UNDER_REVIEW", "AWAITING_EVIDENCE"] },
           },
@@ -359,21 +358,21 @@ export class DashboardService {
   }> {
     try {
       // Test database connection first
-      await this.prisma.$queryRaw`SELECT 1`;
+      await prisma.$queryRaw`SELECT 1`;
       
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
       // Execute queries in smaller batches to avoid connection issues
       const batch1 = Promise.all([
-        this.prisma.order.aggregate({
+        prisma.order.aggregate({
           _sum: { totalAmount: true },
           where: { status: "DELIVERED" },
         }),
-        this.prisma.seller.count({ where: { status: "ACTIVE" } }),
-        this.prisma.buyer.count({ where: { status: "ACTIVE" } }),
-        this.prisma.sellerInventory.count({ where: { isActive: true } }),
-        this.prisma.seller.aggregate({
+        prisma.seller.count({ where: { status: "ACTIVE" } }),
+        prisma.buyer.count({ where: { status: "ACTIVE" } }),
+        prisma.sellerInventory.count({ where: { isActive: true } }),
+        prisma.seller.aggregate({
           _avg: { sriScore: true },
           where: { status: "ACTIVE" },
         }),
@@ -393,20 +392,20 @@ export class DashboardService {
       ]) as any;
 
       const batch2 = Promise.all([
-        this.prisma.order.count({
+        prisma.order.count({
           where: { status: { in: ["PENDING_PAYMENT", "AWAITING_SELLER_ACCEPTANCE"] } },
         }),
-        this.prisma.order.count({ where: { status: "DELIVERED" } }),
-        this.prisma.dispute.count({ where: { status: "OPEN" } }),
-        this.prisma.order.findMany({
+        prisma.order.count({ where: { status: "DELIVERED" } }),
+        prisma.dispute.count({ where: { status: "OPEN" } }),
+        prisma.order.findMany({
           where: {
             status: "DELIVERED",
             createdAt: { gte: thirtyDaysAgo },
           },
           select: { platformCommission: true },
         }),
-        this.prisma.order.count(),
-        this.prisma.order.aggregate({
+        prisma.order.count(),
+        prisma.order.aggregate({
           _avg: { totalAmount: true },
           where: { status: "DELIVERED" },
         }),
@@ -452,8 +451,8 @@ export class DashboardService {
       if (error.code === 'P1001' || error.message.includes('Can\'t reach database server')) {
         logger.warn("Database connection lost, attempting to reconnect...");
         try {
-          await this.prisma.$disconnect();
-          await this.prisma.$connect();
+          await prisma.$disconnect();
+          await prisma.$connect();
           logger.info("Database reconnected successfully");
         } catch (reconnectError: any) {
           logger.error("Failed to reconnect to database", { error: reconnectError.message });
@@ -472,7 +471,7 @@ export class DashboardService {
     status?: AlertStatus
   ): Promise<AdminAlert[]> {
     try {
-      return await this.prisma.adminAlert.findMany({
+      return await prisma.adminAlert.findMany({
         where: {
           ...(tier && { tier }),
           ...(status && { status }),
@@ -507,7 +506,7 @@ export class DashboardService {
     metadata?: any
   ): Promise<AdminAlert> {
     try {
-      const alert = await this.prisma.adminAlert.create({
+      const alert = await prisma.adminAlert.create({
         data: {
           tier,
           status: "OPEN",
@@ -533,7 +532,7 @@ export class DashboardService {
    */
   async acknowledgeAlert(alertId: string, adminId: string): Promise<void> {
     try {
-      await this.prisma.adminAlert.update({
+      await prisma.adminAlert.update({
         where: { id: alertId },
         data: {
           status: "ACKNOWLEDGED",
@@ -558,7 +557,7 @@ export class DashboardService {
     adminId: string
   ): Promise<void> {
     try {
-      await this.prisma.adminAlert.update({
+      await prisma.adminAlert.update({
         where: { id: alertId },
         data: {
           status: "RESOLVED",
@@ -579,7 +578,7 @@ export class DashboardService {
    */
   async getCriticalAlertsCount(): Promise<number> {
     try {
-      return await this.prisma.adminAlert.count({
+      return await prisma.adminAlert.count({
         where: {
           tier: "CRITICAL",
           status: "OPEN",
@@ -715,7 +714,7 @@ export class DashboardService {
   }> {
     try {
       // Test database connection first
-      await this.prisma.$queryRaw`SELECT 1`;
+      await prisma.$queryRaw`SELECT 1`;
       
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -730,22 +729,22 @@ export class DashboardService {
         revenue30DaysResult,
         avgOrderValueResult
       ] = await Promise.all([
-        this.prisma.seller.count({ where: { status: "ACTIVE" } }),
-        this.prisma.buyer.count({ where: { status: "ACTIVE" } }),
-        this.prisma.sellerInventory.count({ where: { isActive: true } }),
-        this.prisma.order.count(),
-        this.prisma.order.aggregate({
+        prisma.seller.count({ where: { status: "ACTIVE" } }),
+        prisma.buyer.count({ where: { status: "ACTIVE" } }),
+        prisma.sellerInventory.count({ where: { isActive: true } }),
+        prisma.order.count(),
+        prisma.order.aggregate({
           _sum: { totalAmount: true },
           where: { status: "DELIVERED" }
         }),
-        this.prisma.order.aggregate({
+        prisma.order.aggregate({
           _sum: { totalAmount: true },
           where: { 
             status: "DELIVERED",
             createdAt: { gte: thirtyDaysAgo }
           }
         }),
-        this.prisma.order.aggregate({
+        prisma.order.aggregate({
           _avg: { totalAmount: true },
           where: { status: "DELIVERED" }
         })
@@ -761,13 +760,13 @@ export class DashboardService {
         totalAdmins,
         totalAuditLogs
       ] = await Promise.all([
-        this.prisma.payment.count(),
-        this.prisma.payout.count(),
-        this.prisma.seller.count({ where: { sriScore: { lt: 70 } } }),
-        this.prisma.dispute.count(),
-        this.prisma.carrier.count(),
-        this.prisma.admin.count(),
-        this.prisma.activityLog.count()
+        prisma.payment.count(),
+        prisma.payout.count(),
+        prisma.seller.count({ where: { sriScore: { lt: 70 } } }),
+        prisma.dispute.count(),
+        prisma.carrier.count(),
+        prisma.admin.count(),
+        prisma.activityLog.count()
       ]);
 
       // Calculate derived metrics from real data

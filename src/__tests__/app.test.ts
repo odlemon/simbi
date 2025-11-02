@@ -1,11 +1,11 @@
 // @ts-nocheck
 import request from "supertest";
 import app from "../app";
-import { dbConnection } from "../utils/database";
+import { prisma } from "../utils/database";
 
 // Close database connection after all tests
 afterAll(async () => {
-  await dbConnection.disconnect();
+  await prisma.$disconnect();
   // Give time for cleanup
   await new Promise(resolve => setTimeout(resolve, 500));
 });

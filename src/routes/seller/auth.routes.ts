@@ -54,6 +54,55 @@ router.post("/register", (req, res) => controller.register(req, res));
 
 /**
  * @swagger
+ * /api/seller/auth/verify-email:
+ *   post:
+ *     summary: Verify email with verification code
+ *     tags: [Seller - Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - code
+ *             properties:
+ *               email:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ */
+router.post("/verify-email", (req, res) => controller.verifyEmail(req, res));
+
+/**
+ * @swagger
+ * /api/seller/auth/resend-verification:
+ *   post:
+ *     summary: Resend verification email
+ *     tags: [Seller - Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Verification code sent to email
+ */
+router.post("/resend-verification", (req, res) => controller.resendVerification(req, res));
+
+/**
+ * @swagger
  * /api/seller/auth/login:
  *   post:
  *     summary: Login seller

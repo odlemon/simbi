@@ -9,6 +9,7 @@ const controller = new DashboardController();
 // All routes require authentication
 router.use(authenticateSeller);
 
+router.get("/comprehensive", (req, res) => controller.getComprehensiveDashboard(req, res));
 router.get("/stats", (req, res) => controller.getStats(req, res));
 router.get("/activity", (req, res) => controller.getRecentActivity(req, res));
 router.get("/trends", (req, res) => controller.getSalesTrends(req, res));

@@ -13,7 +13,7 @@ router.use(authenticateSeller);
  * @swagger
  * /api/seller/payments/record-cash:
  *   post:
- *     summary: Record cash payment for an order
+ *     summary: Record cash payment for an order (supports full or partial payments)
  *     tags: [Seller - Payments]
  *     security:
  *       - bearerAuth: []
@@ -32,7 +32,8 @@ router.use(authenticateSeller);
  *                 description: Order ID to record payment for
  *               amount:
  *                 type: number
- *                 description: Payment amount (must match order total)
+ *                 description: Payment amount (can be partial - multiple payments allowed per order)
+ *                 minimum: 0.01
  *               notes:
  *                 type: string
  *                 description: Optional payment notes
@@ -207,5 +208,30 @@ router.get("/summary", (req, res) => controller.getPaymentSummary(req, res));
  *         description: Unauthorized
  */
 router.get("/accounting-summary", (req, res) => controller.getPaymentAccountingSummary(req, res));
+
+/**
+ * @swagger
+ * /api/seller/payments/order/{orderId}:
+ *   get:
+ *     summary: Get payment details for a specific order
+ *     tags: [Seller - Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID to get payment details for
+ *     responses:
+ *       200:
+ *         description: Payment details retrieved successfully
+ *       404:
+ *         description: Payment not found for this order
+ *       401:
+ *         description: Unauthorized
+ */
+router.get("/order/:orderId", (req, res) => controller.getOrderPaymentDetails(req, res));
 
 export default router;

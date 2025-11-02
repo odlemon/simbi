@@ -43,13 +43,7 @@ export class PaymentController {
       const order = await prisma.order.findFirst({
         where: {
           id: orderId,
-          items: {
-            some: {
-              inventory: {
-                sellerId: sellerId
-              }
-            }
-          }
+          sellerId: sellerId // Order has sellerId directly
         },
         include: {
           payment: true,
@@ -74,54 +68,136 @@ export class PaymentController {
         return;
       }
 
-      // Check if payment already exists
-      if (order.payment) {
+      // Payment can only be recorded after seller accepts the order
+      // Order must be in AWAITING_PAYMENT status (seller has accepted)
+      if (order.status !== 'AWAITING_PAYMENT' && order.status !== 'PENDING_PAYMENT') {
         res.status(400).json({
           success: false,
-          message: "Payment already recorded for this order",
-          error: "PAYMENT_ALREADY_EXISTS"
+          message: `Payment can only be recorded when order is accepted by seller. Current status: ${order.status}. Please accept the order first.`,
+          error: "INVALID_ORDER_STATUS"
         });
         return;
       }
 
-      // Validate amount matches order total
-      if (amount !== order.totalAmount) {
-        res.status(400).json({
-          success: false,
-          message: `Payment amount (${amount}) must match order total (${order.totalAmount})`,
-          error: "AMOUNT_MISMATCH"
-        });
-        return;
-      }
-
-      // Record the cash payment
-      const payment = await prisma.payment.create({
-        data: {
-          orderId: orderId,
-          amount: amount,
-          currency: "USD", // Default currency
-          paymentMethod: "CASH_ON_DELIVERY",
-          status: "COMPLETED",
-          paidAt: new Date(),
-          notes: notes || "Cash payment recorded by seller"
-        }
+      // Get or create payment record for this order
+      let payment = await prisma.payment.findUnique({
+        where: { orderId: orderId }
       });
 
-      // Update order status to AWAITING_SELLER_ACCEPTANCE
+      const existingPaymentAmount = payment?.amount || 0;
+      const newTotalAmount = existingPaymentAmount + amount;
+      const remainingAmount = order.totalAmount - existingPaymentAmount;
+
+      // Validate payment doesn't exceed order total
+      if (amount > remainingAmount) {
+        res.status(400).json({
+          success: false,
+          message: `Payment amount (${amount}) exceeds remaining balance (${remainingAmount}). Total paid: ${existingPaymentAmount}, Order total: ${order.totalAmount}`,
+          error: "AMOUNT_EXCEEDS_BALANCE",
+          data: {
+            orderTotal: order.totalAmount,
+            alreadyPaid: existingPaymentAmount,
+            remainingBalance: remainingAmount,
+            requestedAmount: amount
+          }
+        });
+        return;
+      }
+
+      // Validate minimum payment amount
+      if (amount <= 0) {
+        res.status(400).json({
+          success: false,
+          message: "Payment amount must be greater than 0",
+          error: "INVALID_AMOUNT"
+        });
+        return;
+      }
+
+      // Update or create payment record
+      if (payment) {
+        // Update existing payment with new total
+        payment = await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            amount: newTotalAmount,
+            status: newTotalAmount >= order.totalAmount ? "COMPLETED" : "PARTIAL",
+            paidAt: new Date(),
+            metadata: {
+              ...(payment.metadata as any || {}),
+              partialPayments: [
+                ...((payment.metadata as any)?.partialPayments || []),
+                {
+                  amount,
+                  date: new Date().toISOString(),
+                  notes: notes || null
+                }
+              ]
+            }
+          }
+        });
+      } else {
+        // Create new payment record
+        payment = await prisma.payment.create({
+          data: {
+            orderId: orderId,
+            amount: amount,
+            currency: order.currency || "USD",
+            paymentMethod: "CASH_ON_DELIVERY",
+            status: amount >= order.totalAmount ? "COMPLETED" : "PARTIAL",
+            paidAt: new Date(),
+            metadata: {
+              partialPayments: [
+                {
+                  amount,
+                  date: new Date().toISOString(),
+                  notes: notes || null
+                }
+              ]
+            }
+          }
+        });
+      }
+
+      // Update order payment status based on payment amount
+      const isFullyPaid = newTotalAmount >= order.totalAmount;
+      const orderUpdateData: any = {
+        paymentStatus: isFullyPaid ? "COMPLETED" : "PARTIAL",
+        updatedAt: new Date()
+      };
+
+      // Order workflow: Order created → Accept → Record payment → Ship → Deliver
+      // After payment is recorded, move to PROCESSING status (ready for shipping)
+      if (isFullyPaid) {
+        // If fully paid, move to PROCESSING (ready for shipping)
+        if (order.status === "AWAITING_PAYMENT") {
+          orderUpdateData.status = "PROCESSING";
+        } else if (order.status === "PENDING_PAYMENT") {
+          // Legacy: if order is still PENDING_PAYMENT, move to PROCESSING after payment
+          // This handles old orders that haven't been accepted yet
+          orderUpdateData.status = "PROCESSING";
+        }
+      } else {
+        // Partial payment - stay in AWAITING_PAYMENT status
+        // Order remains in AWAITING_PAYMENT until fully paid
+        if (order.status === "AWAITING_PAYMENT") {
+          orderUpdateData.status = "AWAITING_PAYMENT"; // Stay in this status
+        }
+      }
+
       await prisma.order.update({
         where: { id: orderId },
-        data: {
-          status: "AWAITING_SELLER_ACCEPTANCE",
-          updatedAt: new Date()
-        }
+        data: orderUpdateData
       });
 
-      // Create accounting entries for the payment
+      // Create accounting entries for the payment (for the amount just paid, not total)
+      const orderCommissionRate = order.platformCommission / order.totalAmount;
       const accountingResult = await this.accountingService.createPaymentAccountingEntries(
         sellerId,
         orderId,
-        amount,
-        0.1 // 10% commission
+        amount, // Only the amount just paid
+        orderCommissionRate || 0.1, // Use order's commission rate
+        !isFullyPaid // Mark as partial if not fully paid
       );
 
       if (!accountingResult.success) {
@@ -134,41 +210,44 @@ export class PaymentController {
         // Continue with payment recording even if accounting fails
       }
 
-      // Create activity log
-      await prisma.activityLog.create({
-        data: {
-          userId: sellerId,
-          userType: "SELLER",
-          action: "CASH_PAYMENT_RECORDED",
-          details: `Cash payment of $${amount} recorded for order ${order.orderNumber}`,
-          metadata: {
-            orderId: orderId,
-            amount: amount,
-            paymentId: payment.id,
-            accountingEntries: accountingResult.success ? accountingResult.data.entries.length : 0
-          }
-        }
+      // Log payment activity (ActivityLog is admin-only, so we use logger instead)
+      logger.info('Cash payment recorded by seller', {
+        sellerId,
+        orderId,
+        orderNumber: order.orderNumber,
+        amount,
+        paymentId: payment.id,
+        isFullyPaid,
+        totalPaid: newTotalAmount,
+        remainingBalance: order.totalAmount - newTotalAmount,
+        accountingEntries: accountingResult.success ? accountingResult.data.entries.length : 0
       });
+
+      const partialPayments = payment.metadata ? (payment.metadata as any).partialPayments || [] : [];
 
       res.status(200).json({
         success: true,
-        message: "Cash payment recorded successfully",
+        message: isFullyPaid ? "Payment completed successfully" : `Partial payment recorded. Remaining balance: ${order.totalAmount - newTotalAmount}`,
         data: {
           payment: {
             id: payment.id,
             orderId: payment.orderId,
-            amount: payment.amount,
+            amount: newTotalAmount, // Total amount paid (including previous payments)
+            amountPaid: amount, // Amount just paid in this transaction
             currency: payment.currency,
             paymentMethod: payment.paymentMethod,
             status: payment.status,
             paidAt: payment.paidAt,
-            notes: payment.notes
+            partialPayments: partialPayments
           },
           order: {
             id: order.id,
             orderNumber: order.orderNumber,
-            status: "AWAITING_SELLER_ACCEPTANCE",
-            totalAmount: order.totalAmount
+            status: orderUpdateData.status || order.status,
+            paymentStatus: orderUpdateData.paymentStatus,
+            totalAmount: order.totalAmount,
+            paidAmount: newTotalAmount,
+            remainingBalance: order.totalAmount - newTotalAmount
           },
           accounting: accountingResult.success ? {
             entriesCreated: accountingResult.data.entries.length,
@@ -188,6 +267,99 @@ export class PaymentController {
       res.status(500).json({
         success: false,
         message: "Failed to record cash payment",
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * Get payment details for a specific order
+   * GET /api/seller/payments/order/:orderId
+   */
+  async getOrderPaymentDetails(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller?.id;
+      const { orderId } = req.params;
+
+      if (!sellerId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized - No seller ID found",
+          error: "NO_SELLER_ID"
+        });
+        return;
+      }
+
+      // Verify order belongs to seller
+      const order = await prisma.order.findFirst({
+        where: {
+          id: orderId,
+          sellerId: sellerId
+        },
+        include: {
+          payment: true,
+          items: {
+            include: {
+              inventory: {
+                include: {
+                  masterProduct: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!order) {
+        res.status(404).json({
+          success: false,
+          message: "Order not found or does not belong to this seller",
+          error: "ORDER_NOT_FOUND"
+        });
+        return;
+      }
+
+      const payment = order.payment;
+      const partialPayments = payment?.metadata ? (payment.metadata as any).partialPayments || [] : [];
+
+      res.status(200).json({
+        success: true,
+        data: {
+          order: {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            totalAmount: order.totalAmount,
+            currency: order.currency,
+            status: order.status,
+            paymentStatus: order.paymentStatus
+          },
+          payment: payment ? {
+            id: payment.id,
+            amount: payment.amount,
+            currency: payment.currency,
+            paymentMethod: payment.paymentMethod,
+            status: payment.status,
+            paidAt: payment.paidAt,
+            partialPayments: partialPayments,
+            totalPaid: payment.amount,
+            remainingBalance: order.totalAmount - payment.amount,
+            isFullyPaid: payment.amount >= order.totalAmount
+          } : null,
+          paymentHistory: partialPayments.map((pp: any) => ({
+            amount: pp.amount,
+            date: pp.date,
+            notes: pp.notes || null
+          }))
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error: any) {
+      logger.error("Error getting order payment details", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to get payment details",
         error: error.message,
         timestamp: new Date().toISOString()
       });

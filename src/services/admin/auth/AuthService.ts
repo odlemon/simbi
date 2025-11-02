@@ -21,7 +21,6 @@ interface CreateAdminData {
 }
 
 export class AuthService {
-  private prisma = prisma;
 
   /**
    * Create a new admin user
@@ -30,7 +29,7 @@ export class AuthService {
   async createAdmin(data: CreateAdminData): Promise<Admin> {
     try {
       // Check if admin already exists
-      const existing = await this.prisma.admin.findUnique({
+      const existing = await prisma.admin.findUnique({
         where: { email: data.email },
       });
 
@@ -42,7 +41,7 @@ export class AuthService {
       const hashedPassword = await bcrypt.hash(data.password, 12);
 
       // Create admin
-      const admin = await this.prisma.admin.create({
+      const admin = await prisma.admin.create({
         data: {
           email: data.email,
           password: hashedPassword,
@@ -79,7 +78,7 @@ export class AuthService {
   ): Promise<LoginResult> {
     try {
       // Find admin by email
-      const admin = await this.prisma.admin.findUnique({
+      const admin = await prisma.admin.findUnique({
         where: { email },
       });
 
@@ -114,7 +113,7 @@ export class AuthService {
       }
 
       // Update last login info
-      await this.prisma.admin.update({
+      await prisma.admin.update({
         where: { id: admin.id },
         data: {
           lastLoginAt: new Date(),
@@ -188,7 +187,7 @@ export class AuthService {
         envConfig.get("JWT_SECRET") as string
       ) as any;
 
-      const admin = await this.prisma.admin.findUnique({
+      const admin = await prisma.admin.findUnique({
         where: { id: decoded.id },
       });
 
@@ -211,7 +210,7 @@ export class AuthService {
     newPassword: string
   ): Promise<void> {
     try {
-      const admin = await this.prisma.admin.findUnique({
+      const admin = await prisma.admin.findUnique({
         where: { id: adminId },
       });
 
@@ -233,7 +232,7 @@ export class AuthService {
       const hashedPassword = await bcrypt.hash(newPassword, 12);
 
       // Update password
-      await this.prisma.admin.update({
+      await prisma.admin.update({
         where: { id: adminId },
         data: { password: hashedPassword },
       });
@@ -256,7 +255,7 @@ export class AuthService {
    */
   async getAdminById(adminId: string): Promise<Admin | null> {
     try {
-      const admin = await this.prisma.admin.findUnique({
+      const admin = await prisma.admin.findUnique({
         where: { id: adminId },
       });
 
@@ -279,7 +278,7 @@ export class AuthService {
     updatedBy: string
   ): Promise<void> {
     try {
-      await this.prisma.admin.update({
+      await prisma.admin.update({
         where: { id: adminId },
         data: { status },
       });
@@ -320,7 +319,7 @@ export class AuthService {
     metadata?: any
   ): Promise<void> {
     try {
-      await this.prisma.activityLog.create({
+      await prisma.activityLog.create({
         data: {
           adminId,
           action,
@@ -346,7 +345,7 @@ export class AuthService {
    */
   async getAllAdmins(): Promise<Omit<Admin, "password" | "mfaSecret">[]> {
     try {
-      const admins = await this.prisma.admin.findMany({
+      const admins = await prisma.admin.findMany({
         select: {
           id: true,
           email: true,

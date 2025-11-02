@@ -11,8 +11,6 @@ interface PriceUpdateViolation {
 }
 
 export class AntiSnipingService {
-  private prisma = prisma;
-  
   private readonly MAX_UPDATES_PER_HOUR = 3;
   private readonly COOLING_PERIOD_HOURS = 24;
   private readonly STRIKE_THRESHOLD = 3;
@@ -30,7 +28,7 @@ export class AntiSnipingService {
     cooldownEndsAt?: Date;
   }> {
     try {
-      const inventory = await this.prisma.sellerInventory.findUnique({
+      const inventory = await prisma.sellerInventory.findUnique({
         where: { id: inventoryId },
         select: {
           priceUpdateCount: true,
@@ -95,7 +93,7 @@ export class AntiSnipingService {
    */
   async recordPriceUpdate(inventoryId: string): Promise<void> {
     try {
-      const inventory = await this.prisma.sellerInventory.findUnique({
+      const inventory = await prisma.sellerInventory.findUnique({
         where: { id: inventoryId },
       });
 
@@ -107,7 +105,7 @@ export class AntiSnipingService {
       
       // Reset counter if last update was over 1 hour ago
       if (!inventory.lastPriceUpdate || inventory.lastPriceUpdate < oneHourAgo) {
-        await this.prisma.sellerInventory.update({
+        await prisma.sellerInventory.update({
           where: { id: inventoryId },
           data: {
             priceUpdateCount: 1,
@@ -116,7 +114,7 @@ export class AntiSnipingService {
         });
       } else {
         // Increment counter
-        await this.prisma.sellerInventory.update({
+        await prisma.sellerInventory.update({
           where: { id: inventoryId },
           data: {
             priceUpdateCount: { increment: 1 },
@@ -143,7 +141,7 @@ export class AntiSnipingService {
   ): Promise<void> {
     try {
       // Get seller info for alert
-      const seller = await this.prisma.seller.findUnique({
+      const seller = await prisma.seller.findUnique({
         where: { id: sellerId },
         select: { businessName: true, email: true },
       });
@@ -151,7 +149,7 @@ export class AntiSnipingService {
       // Get strike count in last 90 days
       const strikeWindowStart = new Date(Date.now() - this.STRIKE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
       
-      const recentViolations = await this.prisma.adminAlert.count({
+      const recentViolations = await prisma.adminAlert.count({
         where: {
           alertCode: "ANTI_SNIPING_VIOLATION",
           entityId: sellerId,
@@ -166,7 +164,7 @@ export class AntiSnipingService {
         ? `PERMANENT BAN: Seller "${seller?.businessName}" has triggered ${newStrikeCount} anti-sniping violations in 90 days. Price editing privileges permanently revoked.`
         : `Anti-sniping violation: Seller "${seller?.businessName}" attempted ${updateCount} price updates in 1 hour (max ${this.MAX_UPDATES_PER_HOUR}). Strike ${newStrikeCount}/${this.STRIKE_THRESHOLD}. 24-hour cooling period activated.`;
 
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: newStrikeCount >= this.STRIKE_THRESHOLD ? "CRITICAL" : "HIGH",
           status: "OPEN",
@@ -212,7 +210,7 @@ export class AntiSnipingService {
     try {
       const coolingPeriodStart = new Date(Date.now() - this.COOLING_PERIOD_HOURS * 60 * 60 * 1000);
       
-      const recentViolation = await this.prisma.adminAlert.findFirst({
+      const recentViolation = await prisma.adminAlert.findFirst({
         where: {
           alertCode: "ANTI_SNIPING_VIOLATION",
           entityId: sellerId,
@@ -248,7 +246,7 @@ export class AntiSnipingService {
     try {
       const strikeWindowStart = new Date(Date.now() - this.STRIKE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
       
-      const violationCount = await this.prisma.adminAlert.count({
+      const violationCount = await prisma.adminAlert.count({
         where: {
           alertCode: "ANTI_SNIPING_VIOLATION",
           entityId: sellerId,
@@ -271,7 +269,7 @@ export class AntiSnipingService {
    */
   async getViolationHistory(sellerId: string): Promise<any[]> {
     try {
-      const violations = await this.prisma.adminAlert.findMany({
+      const violations = await prisma.adminAlert.findMany({
         where: {
           alertCode: "ANTI_SNIPING_VIOLATION",
           entityId: sellerId,
@@ -298,7 +296,7 @@ export class AntiSnipingService {
       // Mark recent violations as resolved
       const coolingPeriodStart = new Date(Date.now() - this.COOLING_PERIOD_HOURS * 60 * 60 * 1000);
       
-      await this.prisma.adminAlert.updateMany({
+      await prisma.adminAlert.updateMany({
         where: {
           alertCode: "ANTI_SNIPING_VIOLATION",
           entityId: sellerId,

@@ -1,7 +1,7 @@
 # 🧪 Seller Module - Complete API Documentation
 
 **Version:** 3.0  
-**Base URL:** `http://localhost:3000/api/seller`  
+**Base URL:** `   `  
 **Last Updated:** October 21, 2025  
 **Status:** ✅ **PRODUCTION READY - 100% COMPLETE**
 

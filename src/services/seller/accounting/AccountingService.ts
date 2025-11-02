@@ -5,6 +5,9 @@ import { logger } from "../../../utils/logger";
 import { accountMappingService } from "./AccountMappingService";
 import { prisma } from "../../../utils/database";
 
+// Import COMMISSION type if needed
+const COMMISSION_TRANSACTION_TYPE = 'COMMISSION' as TransactionType;
+
 interface CreateExpenseDTO {
   date?: Date | string; // Accept both Date object and ISO string
   category: ExpenseCategory;
@@ -16,7 +19,6 @@ interface CreateExpenseDTO {
 }
 
 export class AccountingService {
-  private prisma = prisma;
 
   /**
    * Get ledger entries
@@ -49,9 +51,9 @@ export class AccountingService {
       if (filters.endDate) where.transactionDate.lte = filters.endDate;
     }
 
-    const total = await this.prisma.sellerLedger.count({ where });
+    const total = await prisma.sellerLedger.count({ where });
 
-    const entries = await this.prisma.sellerLedger.findMany({
+    const entries = await prisma.sellerLedger.findMany({
       where,
       skip,
       take: limit,
@@ -78,7 +80,7 @@ export class AccountingService {
     // Convert date string to Date object if needed
     const expenseDate = data.date ? new Date(data.date) : new Date();
     
-    const expense = await this.prisma.sellerExpense.create({
+    const expense = await prisma.sellerExpense.create({
       data: {
         sellerId,
         date: expenseDate,
@@ -97,7 +99,7 @@ export class AccountingService {
     );
 
     // Create ledger entry automatically with Chart of Accounts link
-    await this.prisma.sellerLedger.create({
+    await prisma.sellerLedger.create({
       data: {
         sellerId,
         accountId, // Link to Chart of Accounts
@@ -155,9 +157,9 @@ export class AccountingService {
       if (filters.endDate) where.date.lte = filters.endDate;
     }
 
-    const total = await this.prisma.sellerExpense.count({ where });
+    const total = await prisma.sellerExpense.count({ where });
 
-    const expenses = await this.prisma.sellerExpense.findMany({
+    const expenses = await prisma.sellerExpense.findMany({
       where,
       skip,
       take: limit,
@@ -192,7 +194,7 @@ export class AccountingService {
     }
 
     // Revenue (Sales)
-    const revenueData = await this.prisma.sellerLedger.aggregate({
+    const revenueData = await prisma.sellerLedger.aggregate({
       where: {
         ...where,
         type: TransactionType.SALE,
@@ -203,7 +205,7 @@ export class AccountingService {
     });
 
     // Expenses
-    const expenseData = await this.prisma.sellerLedger.aggregate({
+    const expenseData = await prisma.sellerLedger.aggregate({
       where: {
         ...where,
         type: TransactionType.EXPENSE,
@@ -214,7 +216,7 @@ export class AccountingService {
     });
 
     // Commission
-    const commissionData = await this.prisma.sellerLedger.aggregate({
+    const commissionData = await prisma.sellerLedger.aggregate({
       where: {
         ...where,
         type: TransactionType.PLATFORM_FEE,
@@ -225,7 +227,7 @@ export class AccountingService {
     });
 
     // Refunds
-    const refundData = await this.prisma.sellerLedger.aggregate({
+    const refundData = await prisma.sellerLedger.aggregate({
       where: {
         ...where,
         type: TransactionType.REFUND,
@@ -269,7 +271,7 @@ export class AccountingService {
       if (endDate) where.date.lte = endDate;
     }
 
-    const breakdown = await this.prisma.sellerExpense.groupBy({
+    const breakdown = await prisma.sellerExpense.groupBy({
       by: ["category"],
       where,
       _sum: {
@@ -291,7 +293,7 @@ export class AccountingService {
    * Get single expense
    */
   async getExpense(sellerId: string, expenseId: string) {
-    const expense = await this.prisma.sellerExpense.findFirst({
+    const expense = await prisma.sellerExpense.findFirst({
       where: {
         id: expenseId,
         sellerId,
@@ -309,7 +311,7 @@ export class AccountingService {
    * Update expense
    */
   async updateExpense(sellerId: string, expenseId: string, data: Partial<CreateExpenseDTO>) {
-    const expense = await this.prisma.sellerExpense.findFirst({
+    const expense = await prisma.sellerExpense.findFirst({
       where: {
         id: expenseId,
         sellerId,
@@ -341,7 +343,7 @@ export class AccountingService {
       updateData.receiptUrl = data.receiptUrl;
     }
 
-    const updatedExpense = await this.prisma.sellerExpense.update({
+    const updatedExpense = await prisma.sellerExpense.update({
       where: { id: expenseId },
       data: updateData,
     });
@@ -359,7 +361,7 @@ export class AccountingService {
    * Delete expense
    */
   async deleteExpense(sellerId: string, expenseId: string) {
-    const expense = await this.prisma.sellerExpense.findFirst({
+    const expense = await prisma.sellerExpense.findFirst({
       where: {
         id: expenseId,
         sellerId,
@@ -371,14 +373,14 @@ export class AccountingService {
     }
 
     // Also delete the associated ledger entry
-    await this.prisma.sellerLedger.deleteMany({
+    await prisma.sellerLedger.deleteMany({
       where: {
         referenceId: expenseId,
         type: TransactionType.EXPENSE,
       },
     });
 
-    await this.prisma.sellerExpense.delete({
+    await prisma.sellerExpense.delete({
       where: { id: expenseId },
     });
 
@@ -404,7 +406,7 @@ export class AccountingService {
       if (endDate) where.transactionDate.lte = endDate;
     }
 
-    const entries = await this.prisma.sellerLedger.findMany({
+    const entries = await prisma.sellerLedger.findMany({
       where,
       orderBy: {
         transactionDate: "asc",
@@ -486,15 +488,14 @@ export class AccountingService {
     sellerId: string,
     orderId: string,
     paymentAmount: number,
-    commission: number = 0.1 // 10% default commission
+    commission: number = 0.1, // 10% default commission
+    isPartial: boolean = false
   ) {
     try {
       const transactionDate = new Date();
-      const netAmount = paymentAmount * (1 - commission);
-      const commissionAmount = paymentAmount * commission;
 
       // Get seller's current balance
-      const lastEntry = await this.prisma.sellerLedger.findFirst({
+      const lastEntry = await prisma.sellerLedger.findFirst({
         where: { sellerId },
         orderBy: { transactionDate: 'desc' },
         select: { balance: true }
@@ -505,16 +506,43 @@ export class AccountingService {
       // Create accounting entries
       const entries = [];
 
-      // 1. Record the full payment as SALE (Debit: Cash/Revenue)
-      const saleEntry = await this.prisma.sellerLedger.create({
+      // Get order to calculate proper commission
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          platformCommission: true,
+          subtotal: true,
+          totalAmount: true
+        }
+      });
+
+      // Calculate commission from order's platform commission if available
+      let actualCommission = commission;
+      if (order) {
+        // Use order's commission rate
+        actualCommission = order.platformCommission / order.totalAmount;
+      }
+
+      const commissionAmount = paymentAmount * actualCommission;
+      const netAmount = paymentAmount - commissionAmount;
+
+      // Get account IDs from Chart of Accounts
+      const salesAccountId = await accountMappingService.getAccountIdForTransaction(TransactionType.SALE);
+      const commissionAccountId = await accountMappingService.getAccountIdForTransaction(TransactionType.PLATFORM_FEE);
+
+      // 1. Record the payment as SALE (Debit: Cash/Revenue)
+      const saleEntry = await prisma.sellerLedger.create({
         data: {
           sellerId,
+          accountId: salesAccountId || null, // Link to Chart of Accounts
           transactionDate,
           type: 'SALE',
-          category: 'CASH_PAYMENT',
+          category: isPartial ? 'PARTIAL_PAYMENT' : 'CASH_PAYMENT',
           amountUSD: paymentAmount,
           amountZWL: paymentAmount * 1, // Assuming 1:1 for now
-          description: `Cash payment received for order ${orderId}`,
+          description: isPartial 
+            ? `Partial cash payment received for order ${orderId} (${paymentAmount} of ${order?.totalAmount || 'unknown'})`
+            : `Cash payment received for order ${orderId}`,
           referenceId: orderId,
           debit: paymentAmount,
           credit: 0,
@@ -522,39 +550,52 @@ export class AccountingService {
         }
       });
       entries.push(saleEntry);
+      
+      // Update balance for next entries
+      const newBalance = currentBalance + paymentAmount;
 
       // 2. Record commission deduction (Credit: Commission Expense)
-      const commissionEntry = await this.prisma.sellerLedger.create({
+      const commissionEntry = await prisma.sellerLedger.create({
         data: {
           sellerId,
+          accountId: commissionAccountId || null, // Link to Chart of Accounts
           transactionDate,
-          type: 'COMMISSION',
+          type: TransactionType.PLATFORM_FEE, // Use PLATFORM_FEE instead of COMMISSION
           category: 'PLATFORM_COMMISSION',
           amountUSD: commissionAmount,
           amountZWL: commissionAmount * 1,
-          description: `Platform commission for order ${orderId}`,
+          description: isPartial
+            ? `Platform commission for partial payment on order ${orderId}`
+            : `Platform commission for order ${orderId}`,
           referenceId: orderId,
           debit: 0,
           credit: commissionAmount,
-          balance: currentBalance + paymentAmount - commissionAmount
+          balance: newBalance - commissionAmount
         }
       });
       entries.push(commissionEntry);
+      
+      // Update balance for next entry
+      const balanceAfterCommission = newBalance - commissionAmount;
 
       // 3. Record net amount to seller account (Credit: Seller Revenue)
-      const netEntry = await this.prisma.sellerLedger.create({
+      // Net revenue goes to the same sales account
+      const netEntry = await prisma.sellerLedger.create({
         data: {
           sellerId,
+          accountId: salesAccountId || null, // Link to Chart of Accounts
           transactionDate,
           type: 'SALE',
           category: 'NET_REVENUE',
           amountUSD: netAmount,
           amountZWL: netAmount * 1,
-          description: `Net revenue after commission for order ${orderId}`,
+          description: isPartial
+            ? `Net revenue after commission for partial payment on order ${orderId}`
+            : `Net revenue after commission for order ${orderId}`,
           referenceId: orderId,
           debit: 0,
           credit: netAmount,
-          balance: currentBalance + netAmount
+          balance: balanceAfterCommission + netAmount
         }
       });
       entries.push(netEntry);
@@ -613,7 +654,7 @@ export class AccountingService {
         recentPayments
       ] = await Promise.all([
         // Total sales (cash payments)
-        this.prisma.sellerLedger.aggregate({
+        prisma.sellerLedger.aggregate({
           where: {
             sellerId,
             type: 'SALE',
@@ -625,7 +666,7 @@ export class AccountingService {
         }),
 
         // Total commission paid
-        this.prisma.sellerLedger.aggregate({
+        prisma.sellerLedger.aggregate({
           where: {
             sellerId,
             type: 'COMMISSION',
@@ -637,7 +678,7 @@ export class AccountingService {
         }),
 
         // Net revenue
-        this.prisma.sellerLedger.aggregate({
+        prisma.sellerLedger.aggregate({
           where: {
             sellerId,
             type: 'SALE',
@@ -648,7 +689,7 @@ export class AccountingService {
         }),
 
         // Recent payment entries
-        this.prisma.sellerLedger.findMany({
+        prisma.sellerLedger.findMany({
           where: {
             sellerId,
             type: 'SALE',

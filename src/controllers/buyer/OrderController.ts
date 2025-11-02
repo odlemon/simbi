@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Request, Response } from 'express';
 import OrderService from '../../services/buyer/order/OrderService';
-import { BuyerAuthRequest } from '../../middleware/buyerAuth';
+import { AuthenticatedRequest } from '../../middleware/buyerAuth';
 
 export class OrderController {
   private orderService: OrderService;
@@ -14,9 +14,9 @@ export class OrderController {
    * Create a new order
    * POST /api/buyer/orders
    */
-  async createOrder(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async createOrder(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -61,9 +61,9 @@ export class OrderController {
    * Get order by ID
    * GET /api/buyer/orders/:id
    */
-  async getOrderById(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async getOrderById(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const orderId = req.params.id;
       
       if (!buyerId) {
@@ -103,9 +103,9 @@ export class OrderController {
    * Get orders for buyer
    * GET /api/buyer/orders
    */
-  async getBuyerOrders(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async getBuyerOrders(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       
@@ -152,9 +152,9 @@ export class OrderController {
    * Update order status
    * PUT /api/buyer/orders/:id/status
    */
-  async updateOrderStatus(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async updateOrderStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const orderId = req.params.id;
       
       if (!buyerId) {
@@ -195,9 +195,9 @@ export class OrderController {
    * Track order
    * GET /api/buyer/orders/:id/tracking
    */
-  async trackOrder(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async trackOrder(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const orderId = req.params.id;
       
       if (!buyerId) {
@@ -237,9 +237,9 @@ export class OrderController {
    * Cancel order
    * POST /api/buyer/orders/:id/cancel
    */
-  async cancelOrder(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async cancelOrder(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const orderId = req.params.id;
       const { reason } = req.body;
       
@@ -281,7 +281,7 @@ export class OrderController {
    * Calculate commission for order items
    * POST /api/buyer/orders/calculate-commission
    */
-  async calculateCommission(req: BuyerAuthRequest, res: Response): Promise<void> {
+  async calculateCommission(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { items } = req.body;
 
@@ -302,6 +302,92 @@ export class OrderController {
       });
     } catch (error) {
       console.error('Calculate commission controller error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Get payment details for an order
+   * GET /api/buyer/orders/:id/payment
+   */
+  async getOrderPaymentDetails(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const buyerId = req.buyer?.id;
+      const orderId = req.params.id;
+      
+      if (!buyerId) {
+        res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+          error: 'NO_BUYER_ID'
+        });
+        return;
+      }
+
+      const result = await this.orderService.getOrderPaymentDetails(orderId, buyerId);
+      
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          data: result.data
+        });
+      } else {
+        res.status(404).json({
+          success: false,
+          message: result.message || 'Payment details not found',
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Get order payment details controller error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Create order from cart
+   * POST /api/buyer/orders/from-cart
+   * Request body is optional - uses buyer's default address and stored data
+   */
+  async createOrderFromCart(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const buyerId = req.buyer?.id;
+      
+      if (!buyerId) {
+        res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+          error: 'NO_BUYER_ID'
+        });
+        return;
+      }
+
+      // Request body is optional - if not provided, uses buyer's default address and stored data
+      const result = await this.orderService.createOrderFromCart(buyerId, req.body || {});
+      
+      if (result.success) {
+        res.status(201).json({
+          success: true,
+          message: result.message,
+          data: result.data
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: result.message,
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Create order from cart controller error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error',

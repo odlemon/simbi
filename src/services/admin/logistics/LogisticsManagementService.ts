@@ -25,14 +25,13 @@ interface CreateShipmentData {
 }
 
 export class LogisticsManagementService {
-  private prisma = prisma;
 
   /**
    * Get all carriers
    */
   async getAllCarriers(): Promise<Carrier[]> {
     try {
-      return await this.prisma.carrier.findMany({
+      return await prisma.carrier.findMany({
         orderBy: { name: "asc" },
       });
     } catch (error: any) {
@@ -46,7 +45,7 @@ export class LogisticsManagementService {
    */
   async getCarrierById(carrierId: string): Promise<Carrier | null> {
     try {
-      return await this.prisma.carrier.findUnique({
+      return await prisma.carrier.findUnique({
         where: { id: carrierId },
       });
     } catch (error: any) {
@@ -61,7 +60,7 @@ export class LogisticsManagementService {
   async createCarrier(data: CreateCarrierData, adminId: string): Promise<Carrier> {
     try {
       // Check if carrier code already exists
-      const existing = await this.prisma.carrier.findUnique({
+      const existing = await prisma.carrier.findUnique({
         where: { code: data.code },
       });
 
@@ -69,7 +68,7 @@ export class LogisticsManagementService {
         throw new Error("Carrier with this code already exists");
       }
 
-      const carrier = await this.prisma.carrier.create({
+      const carrier = await prisma.carrier.create({
         data: {
           name: data.name,
           code: data.code,
@@ -99,7 +98,7 @@ export class LogisticsManagementService {
     adminId: string
   ): Promise<Carrier> {
     try {
-      const carrier = await this.prisma.carrier.update({
+      const carrier = await prisma.carrier.update({
         where: { id: carrierId },
         data: {
           ...(data.name && { name: data.name }),
@@ -123,7 +122,7 @@ export class LogisticsManagementService {
   async deleteCarrier(carrierId: string, adminId: string): Promise<void> {
     try {
       // Check if carrier has active shipments
-      const activeShipments = await this.prisma.shipment.count({
+      const activeShipments = await prisma.shipment.count({
         where: {
           carrierId,
           status: { in: ["PENDING_PICKUP", "IN_TRANSIT", "OUT_FOR_DELIVERY"] },
@@ -134,7 +133,7 @@ export class LogisticsManagementService {
         throw new Error("Cannot delete carrier with active shipments");
       }
 
-      await this.prisma.carrier.update({
+      await prisma.carrier.update({
         where: { id: carrierId },
         data: { status: CarrierStatus.INACTIVE },
       });
@@ -151,7 +150,7 @@ export class LogisticsManagementService {
    */
   async getAllShipments(status?: ShipmentStatus): Promise<any[]> {
     try {
-      const shipments = await this.prisma.shipment.findMany({
+      const shipments = await prisma.shipment.findMany({
         where: status ? { status } : undefined,
         include: {
           order: {
@@ -179,7 +178,7 @@ export class LogisticsManagementService {
    */
   async getShipmentById(shipmentId: string): Promise<any> {
     try {
-      return await this.prisma.shipment.findUnique({
+      return await prisma.shipment.findUnique({
         where: { id: shipmentId },
         include: {
           order: {
@@ -206,7 +205,7 @@ export class LogisticsManagementService {
       // Generate tracking number
       const trackingNumber = this.generateTrackingNumber();
 
-      const shipment = await this.prisma.shipment.create({
+      const shipment = await prisma.shipment.create({
         data: {
           orderId: data.orderId,
           carrierId: data.carrierId,
@@ -247,7 +246,7 @@ export class LogisticsManagementService {
     adminId: string
   ): Promise<Shipment> {
     try {
-      const shipment = await this.prisma.shipment.findUnique({
+      const shipment = await prisma.shipment.findUnique({
         where: { id: shipmentId },
       });
 
@@ -274,7 +273,7 @@ export class LogisticsManagementService {
         updateData.actualDelivery = new Date();
 
         // Update order status
-        await this.prisma.order.update({
+        await prisma.order.update({
           where: { id: shipment.orderId },
           data: {
             status: "DELIVERED",
@@ -283,7 +282,7 @@ export class LogisticsManagementService {
         });
       }
 
-      const updatedShipment = await this.prisma.shipment.update({
+      const updatedShipment = await prisma.shipment.update({
         where: { id: shipmentId },
         data: updateData,
       });
@@ -315,7 +314,7 @@ export class LogisticsManagementService {
     onTimeRate: number;
   }> {
     try {
-      const shipments = await this.prisma.shipment.findMany({
+      const shipments = await prisma.shipment.findMany({
         where: {
           carrierId,
           status: ShipmentStatus.DELIVERED,
@@ -380,15 +379,15 @@ export class LogisticsManagementService {
         allDelivered,
         carrierStats,
       ] = await Promise.all([
-        this.prisma.shipment.count(),
-        this.prisma.shipment.count({ where: { status: "IN_TRANSIT" } }),
-        this.prisma.shipment.count({ where: { status: "DELIVERED" } }),
-        this.prisma.shipment.count({ where: { status: "FAILED_DELIVERY" } }),
-        this.prisma.shipment.findMany({
+        prisma.shipment.count(),
+        prisma.shipment.count({ where: { status: "IN_TRANSIT" } }),
+        prisma.shipment.count({ where: { status: "DELIVERED" } }),
+        prisma.shipment.count({ where: { status: "FAILED_DELIVERY" } }),
+        prisma.shipment.findMany({
           where: { status: "DELIVERED", actualDelivery: { not: null } },
           select: { createdAt: true, actualDelivery: true },
         }),
-        this.prisma.shipment.groupBy({
+        prisma.shipment.groupBy({
           by: ["carrierId"],
           _count: true,
           orderBy: { _count: { carrierId: "desc" } },
@@ -413,7 +412,7 @@ export class LogisticsManagementService {
       // Get carrier names
       const topCarriers = await Promise.all(
         carrierStats.map(async (stat) => {
-          const carrier = await this.prisma.carrier.findUnique({
+          const carrier = await prisma.carrier.findUnique({
             where: { id: stat.carrierId },
             select: { name: true },
           });
@@ -464,7 +463,7 @@ export class LogisticsManagementService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Find shipment by tracking number
-      const shipment = await this.prisma.shipment.findUnique({
+      const shipment = await prisma.shipment.findUnique({
         where: { trackingNumber: webhookData.trackingNumber },
       });
 
@@ -561,7 +560,7 @@ export class LogisticsManagementService {
    */
   async pollCarrierForUpdates(shipmentId: string): Promise<void> {
     try {
-      const shipment = await this.prisma.shipment.findUnique({
+      const shipment = await prisma.shipment.findUnique({
         where: { id: shipmentId },
         include: { carrier: true },
       });
@@ -604,7 +603,7 @@ export class LogisticsManagementService {
   }> {
     try {
       // Get all non-final-status shipments
-      const pendingShipments = await this.prisma.shipment.findMany({
+      const pendingShipments = await prisma.shipment.findMany({
         where: {
           status: {
             in: ["PENDING_PICKUP", "IN_TRANSIT", "OUT_FOR_DELIVERY"],

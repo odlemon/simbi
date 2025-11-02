@@ -4,8 +4,6 @@ import { logger } from "../../../utils/logger";
 import { prisma } from "../../../utils/database";
 
 export class OrderProcessingService {
-  private prisma = prisma;
-
   /**
    * Track order processing time for a staff member (dispatcher)
    * Called when order status changes
@@ -19,7 +17,7 @@ export class OrderProcessingService {
   ) {
     try {
       // Get the order
-      const order = await this.prisma.order.findUnique({
+      const order = await prisma.order.findUnique({
         where: { id: orderId },
       });
 
@@ -41,7 +39,7 @@ export class OrderProcessingService {
       }
 
       // Log the activity
-      await this.prisma.staffActivityLog.create({
+      await prisma.staffActivityLog.create({
         data: {
           staffId,
           sellerId,
@@ -106,7 +104,7 @@ export class OrderProcessingService {
       if (endDate) where.createdAt.lte = endDate;
     }
 
-    const activities = await this.prisma.staffActivityLog.findMany({
+    const activities = await prisma.staffActivityLog.findMany({
       where,
       include: {
         staff: {
@@ -200,7 +198,7 @@ export class OrderProcessingService {
    * Get detailed processing history for an order
    */
   async getOrderProcessingHistory(orderId: string, sellerId: string) {
-    const activities = await this.prisma.staffActivityLog.findMany({
+    const activities = await prisma.staffActivityLog.findMany({
       where: {
         sellerId,
         activityType: "ORDER_PROCESSED",

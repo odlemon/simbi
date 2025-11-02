@@ -14,13 +14,11 @@ interface CreateLoanApplicationDTO {
 }
 
 export class LoanService {
-  private prisma = prisma;
-
   /**
    * Get available financial partners
    */
   async getFinancialPartners() {
-    const partners = await this.prisma.financialPartner.findMany({
+    const partners = await prisma.financialPartner.findMany({
       where: {
         isActive: true,
       },
@@ -37,7 +35,7 @@ export class LoanService {
    */
   async applyForLoan(sellerId: string, data: CreateLoanApplicationDTO) {
     // Verify partner exists
-    const partner = await this.prisma.financialPartner.findUnique({
+    const partner = await prisma.financialPartner.findUnique({
       where: { id: data.partnerId },
     });
 
@@ -46,7 +44,7 @@ export class LoanService {
     }
 
     // Get seller details
-    const seller = await this.prisma.seller.findUnique({
+    const seller = await prisma.seller.findUnique({
       where: { id: sellerId },
     });
 
@@ -55,7 +53,7 @@ export class LoanService {
     }
 
     // Create loan application
-    const application = await this.prisma.loanApplication.create({
+    const application = await prisma.loanApplication.create({
       data: {
         sellerId,
         partnerId: data.partnerId,
@@ -90,7 +88,7 @@ export class LoanService {
       where.status = status;
     }
 
-    const applications = await this.prisma.loanApplication.findMany({
+    const applications = await prisma.loanApplication.findMany({
       where,
       include: {
         partner: {
@@ -113,7 +111,7 @@ export class LoanService {
    * Get single loan application
    */
   async getLoanApplication(sellerId: string, applicationId: string) {
-    const application = await this.prisma.loanApplication.findFirst({
+    const application = await prisma.loanApplication.findFirst({
       where: {
         id: applicationId,
         sellerId,
@@ -134,7 +132,7 @@ export class LoanService {
    * Cancel loan application
    */
   async cancelLoanApplication(sellerId: string, applicationId: string) {
-    const existing = await this.prisma.loanApplication.findFirst({
+    const existing = await prisma.loanApplication.findFirst({
       where: {
         id: applicationId,
         sellerId,
@@ -149,7 +147,7 @@ export class LoanService {
       throw new Error("Only pending applications can be cancelled");
     }
 
-    await this.prisma.loanApplication.update({
+    await prisma.loanApplication.update({
       where: { id: applicationId },
       data: {
         status: LoanStatus.CANCELLED,

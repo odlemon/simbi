@@ -13,7 +13,7 @@ const enterpriseService = new EnterpriseUserService();
  */
 router.post('/users', authenticateBuyer, requireEnterpriseBuyer, async (req, res) => {
   try {
-    const enterpriseBuyerId = req.user?.buyerId;
+    const enterpriseBuyerId = req.buyer?.id;
     
     if (!enterpriseBuyerId) {
       res.status(401).json({
@@ -55,7 +55,7 @@ router.post('/users', authenticateBuyer, requireEnterpriseBuyer, async (req, res
  */
 router.get('/users', authenticateBuyer, requireEnterpriseBuyer, async (req, res) => {
   try {
-    const enterpriseBuyerId = req.user?.buyerId;
+    const enterpriseBuyerId = req.buyer?.id;
     
     if (!enterpriseBuyerId) {
       res.status(401).json({
@@ -97,7 +97,7 @@ router.get('/users', authenticateBuyer, requireEnterpriseBuyer, async (req, res)
  */
 router.put('/users/:id', authenticateBuyer, requireEnterpriseBuyer, async (req, res) => {
   try {
-    const enterpriseBuyerId = req.user?.buyerId;
+    const enterpriseBuyerId = req.buyer?.id;
     const userId = req.params.id;
     
     if (!enterpriseBuyerId) {
@@ -140,7 +140,7 @@ router.put('/users/:id', authenticateBuyer, requireEnterpriseBuyer, async (req, 
  */
 router.delete('/users/:id', authenticateBuyer, requireEnterpriseBuyer, async (req, res) => {
   try {
-    const enterpriseBuyerId = req.user?.buyerId;
+    const enterpriseBuyerId = req.buyer?.id;
     const userId = req.params.id;
     
     if (!enterpriseBuyerId) {
@@ -183,7 +183,7 @@ router.delete('/users/:id', authenticateBuyer, requireEnterpriseBuyer, async (re
  */
 router.post('/users/:id/spending-limits', authenticateBuyer, requireEnterpriseBuyer, async (req, res) => {
   try {
-    const enterpriseBuyerId = req.user?.buyerId;
+    const enterpriseBuyerId = req.buyer?.id;
     const userId = req.params.id;
     
     if (!enterpriseBuyerId) {
@@ -228,7 +228,7 @@ router.post('/users/:id/spending-limits', authenticateBuyer, requireEnterpriseBu
  */
 router.post('/approval-workflows', authenticateBuyer, requireEnterpriseBuyer, async (req, res) => {
   try {
-    const enterpriseBuyerId = req.user?.buyerId;
+    const enterpriseBuyerId = req.buyer?.id;
     
     if (!enterpriseBuyerId) {
       res.status(401).json({
@@ -270,7 +270,7 @@ router.post('/approval-workflows', authenticateBuyer, requireEnterpriseBuyer, as
  */
 router.get('/approval-workflows', authenticateBuyer, requireEnterpriseBuyer, async (req, res) => {
   try {
-    const enterpriseBuyerId = req.user?.buyerId;
+    const enterpriseBuyerId = req.buyer?.id;
     
     if (!enterpriseBuyerId) {
       res.status(401).json({

@@ -214,22 +214,25 @@ export class SellerOrderService {
         };
       }
 
-      // Check if order is in a valid state for status update
-      if (existingOrder.status !== 'PENDING_PAYMENT' && existingOrder.status !== 'PAID') {
+      // Check if order is in a valid state for acceptance/rejection
+      // Order can be accepted/rejected when it's in PENDING_PAYMENT status
+      if (existingOrder.status !== 'PENDING_PAYMENT') {
         return {
           success: false,
-          message: 'Order cannot be updated in current status',
+          message: 'Order can only be accepted/rejected when status is PENDING_PAYMENT',
           error: 'INVALID_STATUS'
         };
       }
 
       const updateData: any = {
-        status: status === 'ACCEPTED' ? 'PROCESSING' : 'SELLER_REJECTED',
+        status: status === 'ACCEPTED' ? 'AWAITING_PAYMENT' : 'SELLER_REJECTED',
         updatedAt: new Date()
       };
 
       if (status === 'ACCEPTED') {
         updateData.sellerAcceptedAt = new Date();
+        // When seller accepts, order status changes to AWAITING_PAYMENT
+        // Payment can then be recorded
       } else {
         updateData.sellerRejectedAt = new Date();
         updateData.rejectionReason = rejectionReason;
@@ -289,12 +292,17 @@ export class SellerOrderService {
     estimatedDeliveryDate?: Date
   ): Promise<OrderUpdateResult> {
     try {
-      // Verify the order belongs to this seller and is in correct status
+      // Verify the order belongs to this seller
+      // For SHIPPED: order must be in PROCESSING status
+      // For DELIVERED: order must be in SHIPPED status
       const existingOrder = await prisma.order.findFirst({
         where: {
           id: orderId,
           sellerId: sellerId,
           status: status === 'SHIPPED' ? 'PROCESSING' : 'SHIPPED'
+        },
+        include: {
+          payment: true
         }
       });
 
@@ -306,6 +314,39 @@ export class SellerOrderService {
         };
       }
 
+      // For shipping, verify payment is completed (full or partial is OK)
+      // Order must be in PROCESSING status (accepted + payment recorded)
+      if (status === 'SHIPPED') {
+        // Order must be in PROCESSING status (payment has been recorded)
+        if (existingOrder.status !== 'PROCESSING') {
+          return {
+            success: false,
+            message: `Cannot ship order. Order must be in PROCESSING status (accepted and payment recorded). Current status: ${existingOrder.status}`,
+            error: 'INVALID_STATUS'
+          };
+        }
+
+        // Verify payment exists
+        if (!existingOrder.payment || existingOrder.paymentStatus === 'PENDING') {
+          return {
+            success: false,
+            message: 'Cannot ship order without payment. Please record payment first.',
+            error: 'PAYMENT_REQUIRED'
+          };
+        }
+        
+        // Warn if partial payment but allow shipping (business decision)
+        if (existingOrder.paymentStatus === 'PARTIAL') {
+          // Log warning but allow shipping
+          console.warn('Shipping order with partial payment', {
+            orderId,
+            sellerId,
+            paidAmount: existingOrder.payment.amount,
+            orderTotal: existingOrder.totalAmount
+          });
+        }
+      }
+
       const updateData: any = {
         status: status === 'SHIPPED' ? 'SHIPPED' : 'DELIVERED',
         updatedAt: new Date()
@@ -315,6 +356,54 @@ export class SellerOrderService {
         updateData.estimatedDeliveryDate = estimatedDeliveryDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Default 7 days
       } else {
         updateData.actualDeliveryDate = new Date();
+      }
+
+      // If shipping, reduce inventory quantities BEFORE updating order status
+      if (status === 'SHIPPED') {
+        // Get order items to reduce inventory
+        const orderItems = await prisma.orderItem.findMany({
+          where: { orderId: orderId },
+          include: {
+            inventory: true
+          }
+        });
+
+        // Reduce inventory for each item
+        for (const item of orderItems) {
+          const newQuantity = item.inventory.quantity - item.quantity;
+          
+          if (newQuantity < 0) {
+            // This shouldn't happen if we validated stock on order creation, but handle gracefully
+            console.warn(`Insufficient inventory for item ${item.inventoryId}. Current: ${item.inventory.quantity}, Requested: ${item.quantity}`);
+            // Set to 0 instead of negative
+            await prisma.sellerInventory.update({
+              where: { id: item.inventoryId },
+              data: { quantity: 0 }
+            });
+          } else {
+            await prisma.sellerInventory.update({
+              where: { id: item.inventoryId },
+              data: { 
+                quantity: newQuantity
+              }
+            });
+          }
+
+          // Create inventory adjustment log
+          await prisma.inventoryAdjustmentLog.create({
+            data: {
+              sellerId: sellerId,
+              inventoryId: item.inventoryId,
+              adjustmentType: 'STOCK_DECREASE',
+              quantityChange: -item.quantity, // Negative for reduction
+              oldQuantity: item.inventory.quantity,
+              newQuantity: newQuantity >= 0 ? newQuantity : 0,
+              reason: `Order ${orderId} shipped`,
+              adjustedBy: sellerId,
+              adjustedByType: 'SELLER'
+            }
+          });
+        }
       }
 
       const updatedOrder = await prisma.order.update({

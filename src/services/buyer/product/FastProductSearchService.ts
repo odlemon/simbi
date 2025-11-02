@@ -6,6 +6,7 @@ import { MoneyUtils } from '../../../utils/money';
 // Fast search criteria schema
 const searchCriteriaSchema = z.object({
   q: z.string().optional(),
+  search: z.string().optional(), // Alternative to 'q'
   make: z.string().optional(),
   model: z.string().optional(),
   year: z.number().optional(),
@@ -13,15 +14,19 @@ const searchCriteriaSchema = z.object({
   yearTo: z.number().optional(),
   category: z.string().optional(),
   subcategory: z.string().optional(),
+  manufacturer: z.string().optional(),
   minPrice: z.number().optional(),
   maxPrice: z.number().optional(),
   inStock: z.boolean().optional(),
+  productType: z.string().optional(),
+  sortBy: z.string().optional(),
   page: z.number().default(1),
   limit: z.number().default(20)
 });
 
 interface FastProductResult {
-  id: string;
+  id: string; // Master product ID
+  inventoryId: string; // Seller inventory ID (required for adding to cart)
   name: string;
   make: string;
   model: string;
@@ -34,6 +39,12 @@ interface FastProductResult {
   sellerCount: number;
   lowestPrice: number;
   commission: number;
+  imageUrls: string[];
+  oemPartNumber: string;
+  manufacturer: string;
+  description: string;
+  sellerId: string; // Seller ID
+  sellerName: string; // Seller business name
 }
 
 export class FastProductSearchService {
@@ -115,11 +126,12 @@ export class FastProductSearchService {
     const whereClause: any = {};
 
     // Search in name and OEM part number (MySQL compatible - no mode option)
-    if (criteria.q) {
+    const searchTerm = criteria.q || criteria.search;
+    if (searchTerm) {
       whereClause.OR = [
-        { name: { contains: criteria.q } },
-        { oemPartNumber: { contains: criteria.q } },
-        { description: { contains: criteria.q } }
+        { name: { contains: searchTerm } },
+        { oemPartNumber: { contains: searchTerm } },
+        { description: { contains: searchTerm } }
       ];
     }
 
@@ -128,8 +140,20 @@ export class FastProductSearchService {
       whereClause.manufacturer = { contains: criteria.manufacturer };
     }
 
-    // For now, return basic where clause since vehicle compatibility is in JSON
-    // TODO: Implement JSON path queries for vehicle compatibility
+    // Category filter
+    if (criteria.category) {
+      whereClause.category = { contains: criteria.category };
+    }
+
+    // Subcategory filter
+    if (criteria.subcategory) {
+      whereClause.subcategory = { contains: criteria.subcategory };
+    }
+
+    // Vehicle compatibility filters will be handled in-memory
+    // Note: For now, we'll filter vehicle compatibility in the applyFilters method
+    // This avoids complex JSON path queries that might not work with all database setups
+
     return whereClause;
   }
 
@@ -141,6 +165,8 @@ export class FastProductSearchService {
     const sellerPrice = listing.sellerPrice;
     const currency = listing.currency;
     const quantity = listing.quantity;
+    const inventoryId = listing.id; // Seller inventory ID
+    const seller = listing.seller;
     
     // Extract vehicle compatibility info
     const compatibility = product.vehicleCompatibility || {};
@@ -155,12 +181,29 @@ export class FastProductSearchService {
     const commission = MoneyUtils.calculateCommission(sellerPrice, commissionRate);
     const displayPrice = MoneyUtils.calculateDisplayPrice(sellerPrice, commission);
 
+    // Handle imageUrls - parse if it's JSON string, otherwise use as-is
+    let imageUrlsArray: string[] = [];
+    if (product.imageUrls) {
+      if (typeof product.imageUrls === 'string') {
+        try {
+          imageUrlsArray = JSON.parse(product.imageUrls);
+        } catch {
+          imageUrlsArray = [product.imageUrls];
+        }
+      } else if (Array.isArray(product.imageUrls)) {
+        imageUrlsArray = product.imageUrls;
+      } else {
+        imageUrlsArray = [];
+      }
+    }
+
     return {
-      id: product.id,
+      id: product.id, // Master product ID
+      inventoryId: inventoryId, // Seller inventory ID - REQUIRED for adding to cart
       name: product.name,
       make: make,
       model: model,
-      year: year,
+      year: typeof year === 'string' ? parseInt(year) : year,
       category: category,
       subcategory: subcategory,
       displayPrice,
@@ -168,7 +211,13 @@ export class FastProductSearchService {
       inStock: quantity > 0,
       sellerCount: 1, // This is a single seller listing
       lowestPrice: sellerPrice,
-      commission
+      commission,
+      imageUrls: imageUrlsArray,
+      oemPartNumber: product.oemPartNumber || '',
+      manufacturer: product.manufacturer || '',
+      description: product.description || '',
+      sellerId: seller.id,
+      sellerName: seller.businessName
     };
   }
 
@@ -179,46 +228,76 @@ export class FastProductSearchService {
     const offers = product.sellerInventory || [];
     
     if (offers.length === 0) {
+      const compatibility = product.vehicleCompatibility || {};
+      const make = compatibility.make || 'Unknown';
+      const model = compatibility.model || 'Unknown';
+      const year = compatibility.year || 0;
+      const category = compatibility.category || 'General';
+      const subcategory = compatibility.subcategory || 'General';
+      
       return {
         id: product.id,
+        inventoryId: '', // No inventory available
         name: product.name,
-        make: product.make,
-        model: product.model,
-        year: product.year,
-        category: product.category,
-        subcategory: product.subcategory,
+        make: make,
+        model: model,
+        year: year,
+        category: category,
+        subcategory: subcategory,
         displayPrice: 0,
         currency: 'USD',
         inStock: false,
         sellerCount: 0,
         lowestPrice: 0,
-        commission: 0
+        commission: 0,
+        imageUrls: product.imageUrls || [],
+        oemPartNumber: product.oemPartNumber || '',
+        manufacturer: product.manufacturer || '',
+        description: product.description || '',
+        sellerId: '',
+        sellerName: ''
       };
     }
 
-    // Find lowest price
-    const prices = offers.map(offer => offer.sellerPrice);
-    const lowestPrice = Math.min(...prices);
+    // Find lowest price offer
+    const lowestOffer = offers.reduce((lowest: any, offer: any) => {
+      return offer.sellerPrice < lowest.sellerPrice ? offer : lowest;
+    }, offers[0]);
+    
+    const lowestPrice = lowestOffer.sellerPrice;
+    const compatibility = product.vehicleCompatibility || {};
+    const make = compatibility.make || 'Unknown';
+    const model = compatibility.model || 'Unknown';
+    const year = compatibility.year || 0;
+    const category = compatibility.category || 'General';
+    const subcategory = compatibility.subcategory || 'General';
     
     // Calculate commission (in memory - no database query!)
-    const commissionRate = MoneyUtils.getCommissionRate(product.category);
+    const commissionRate = MoneyUtils.getCommissionRate(category);
     const commission = MoneyUtils.calculateCommission(lowestPrice, commissionRate);
     const displayPrice = MoneyUtils.calculateDisplayPrice(lowestPrice, commission);
 
     return {
       id: product.id,
+      inventoryId: lowestOffer.id || '', // Use the lowest price inventory ID
       name: product.name,
-      make: product.make,
-      model: product.model,
-      year: product.year,
-      category: product.category,
-      subcategory: product.subcategory,
+      make: make,
+      model: model,
+      year: year,
+      category: category,
+      subcategory: subcategory,
       displayPrice,
-      currency: 'USD',
+      currency: lowestOffer.currency || 'USD',
       inStock: true,
       sellerCount: offers.length,
       lowestPrice,
-      commission
+      commission,
+      imageUrls: product.imageUrls || [],
+      oemPartNumber: product.oemPartNumber || '',
+      manufacturer: product.manufacturer || '',
+      description: product.description || '',
+      sellerId: lowestOffer.seller?.id || '',
+      sellerName: lowestOffer.seller?.businessName || ''
     };
   }
 
@@ -229,14 +308,64 @@ export class FastProductSearchService {
   private applyFilters(results: FastProductResult[], criteria: any): FastProductResult[] {
     let filtered = results;
 
+    // Price range filters
     if (criteria.minPrice) {
       filtered = filtered.filter(r => r.displayPrice >= criteria.minPrice);
     }
     if (criteria.maxPrice) {
       filtered = filtered.filter(r => r.displayPrice <= criteria.maxPrice);
     }
+    
+    // Stock filter
     if (criteria.inStock) {
       filtered = filtered.filter(r => r.inStock);
+    }
+
+    // Vehicle compatibility filters (in-memory filtering)
+    if (criteria.make) {
+      filtered = filtered.filter(r => r.make.toLowerCase().includes(criteria.make.toLowerCase()));
+    }
+    if (criteria.model) {
+      filtered = filtered.filter(r => r.model.toLowerCase().includes(criteria.model.toLowerCase()));
+    }
+    if (criteria.year) {
+      filtered = filtered.filter(r => r.year === criteria.year);
+    }
+
+    // Sorting
+    if (criteria.sortBy) {
+      switch (criteria.sortBy.toLowerCase()) {
+        case 'price_low':
+        case 'price_low_to_high':
+          filtered = filtered.sort((a, b) => a.displayPrice - b.displayPrice);
+          break;
+        case 'price_high':
+        case 'price_high_to_low':
+          filtered = filtered.sort((a, b) => b.displayPrice - a.displayPrice);
+          break;
+        case 'name':
+        case 'name_a_to_z':
+          filtered = filtered.sort((a, b) => a.name.localeCompare(b.name));
+          break;
+        case 'name_z_to_a':
+          filtered = filtered.sort((a, b) => b.name.localeCompare(a.name));
+          break;
+        case 'newest':
+          filtered = filtered.sort((a, b) => b.year - a.year);
+          break;
+        case 'oldest':
+          filtered = filtered.sort((a, b) => a.year - b.year);
+          break;
+        case 'top':
+        case 'popular':
+        default:
+          // Default sorting by display price (low to high)
+          filtered = filtered.sort((a, b) => a.displayPrice - b.displayPrice);
+          break;
+      }
+    } else {
+      // Default sorting by display price (low to high)
+      filtered = filtered.sort((a, b) => a.displayPrice - b.displayPrice);
     }
 
     return filtered;
@@ -434,7 +563,7 @@ export class FastProductSearchService {
         };
       }
 
-      // Calculate pricing and format result
+      // Calculate pricing and format result - includes inventoryId
       const result = this.calculateFastPricingFromListing(sellerListing);
       
       return {

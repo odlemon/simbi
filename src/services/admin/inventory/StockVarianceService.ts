@@ -15,7 +15,6 @@ interface StockVarianceData {
 }
 
 export class StockVarianceService {
-  private prisma = prisma;
 
   private readonly VARIANCE_THRESHOLD = 0.15; // 15%
 
@@ -30,7 +29,7 @@ export class StockVarianceService {
     reason?: string;
   }): Promise<void> {
     try {
-      const inventory = await this.prisma.sellerInventory.findUnique({
+      const inventory = await prisma.sellerInventory.findUnique({
         where: { id: data.inventoryId },
         include: {
           seller: { select: { id: true, businessName: true, sriScore: true } },
@@ -70,7 +69,7 @@ export class StockVarianceService {
         });
 
         // Adjust actual stock
-        await this.prisma.sellerInventory.update({
+        await prisma.sellerInventory.update({
           where: { id: data.inventoryId },
           data: { quantity: data.actualStock },
         });
@@ -94,19 +93,19 @@ export class StockVarianceService {
    */
   private async createVarianceAlert(data: StockVarianceData): Promise<void> {
     try {
-      const seller = await this.prisma.seller.findUnique({
+      const seller = await prisma.seller.findUnique({
         where: { id: data.sellerId },
         select: { businessName: true, email: true },
       });
 
-      const product = await this.prisma.masterProduct.findUnique({
+      const product = await prisma.masterProduct.findUnique({
         where: { id: data.productId },
         select: { name: true, oemPartNumber: true },
       });
 
       const variancePercentageDisplay = (data.variancePercentage * 100).toFixed(2);
 
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: data.variancePercentage > 0.3 ? "HIGH" : "CRITICAL",
           status: "OPEN",
@@ -168,7 +167,7 @@ export class StockVarianceService {
         if (endDate) where.createdAt.lte = endDate;
       }
 
-      const variances = await this.prisma.adminAlert.findMany({
+      const variances = await prisma.adminAlert.findMany({
         where,
         orderBy: { createdAt: "desc" },
       });
@@ -207,7 +206,7 @@ export class StockVarianceService {
     criticalVariances: number;
   }> {
     try {
-      const allVariances = await this.prisma.adminAlert.findMany({
+      const allVariances = await prisma.adminAlert.findMany({
         where: { alertCode: "STOCK_VARIANCE" },
         select: {
           entityId: true,
@@ -251,7 +250,7 @@ export class StockVarianceService {
     variancesDetected: number;
   }> {
     try {
-      const inventories = await this.prisma.sellerInventory.findMany({
+      const inventories = await prisma.sellerInventory.findMany({
         where: { sellerId, isActive: true },
         select: {
           id: true,

@@ -126,6 +126,7 @@ export class InventoryController {
    *                 type: array
    *                 items:
    *                   type: string
+   *                 description: Optional custom images (defaults to master product images)
    *     responses:
    *       201:
    *         description: Listing created successfully
@@ -154,6 +155,137 @@ export class InventoryController {
         timestamp: new Date().toISOString(),
       };
       res.status(400).json(response);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/seller/inventory/products:
+   *   get:
+   *     summary: Get seller inventory products (optimized for local search)
+   *     description: |
+   *       Returns all products for local frontend filtering. 
+   *       No query parameters = all products (up to 1000).
+   *       With query parameters = server-side filtering.
+   *     tags: [Seller - Inventory]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: q
+   *         schema:
+   *           type: string
+   *         description: Search query for server-side filtering (optional)
+   *       - in: query
+   *         name: isActive
+   *         schema:
+   *           type: boolean
+   *         description: Filter by active status (optional)
+   *       - in: query
+   *         name: lowStock
+   *         schema:
+   *           type: boolean
+   *         description: Filter by low stock items (optional)
+   *       - in: query
+   *         name: condition
+   *         schema:
+   *           type: string
+   *           enum: [NEW, USED, REFURBISHED, OEM]
+   *         description: Filter by condition (optional)
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           default: 1
+   *         description: Page number (only used with server-side filtering)
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *         description: Items per page (only used with server-side filtering)
+   *     responses:
+   *       200:
+   *         description: Products retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 message:
+   *                   type: string
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     inventory:
+   *                       type: array
+   *                       items:
+   *                         type: object
+   *                         properties:
+   *                           id:
+   *                             type: string
+   *                           masterProduct:
+   *                             type: object
+   *                             properties:
+   *                               name:
+   *                                 type: string
+   *                               oemPartNumber:
+   *                                 type: string
+   *                               manufacturer:
+   *                                 type: string
+   *                           sellerPrice:
+   *                             type: number
+   *                           quantity:
+   *                             type: integer
+   *                           condition:
+   *                             type: string
+   *                           isActive:
+   *                             type: boolean
+   */
+  async getProducts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { q, isActive, lowStock, condition, page, limit } = req.query;
+
+      // If no search query, return all products for local filtering
+      if (!q && !isActive && !lowStock && !condition) {
+        const filters = {
+          isActive: undefined,
+          lowStock: false,
+          condition: undefined,
+          page: 1,
+          limit: 1000, // Get all products for local search
+        };
+
+        const result = await inventoryService.getInventory(sellerId, filters);
+
+        const response: ApiResponse = {
+          success: true,
+          message: "All products retrieved for local search",
+          data: result,
+          timestamp: new Date().toISOString(),
+        };
+        res.status(200).json(response);
+        return;
+      }
+
+      // Delegate to getInventory method for filtered results
+      return this.getInventory(req, res);
+    } catch (error: any) {
+      logger.error("Failed to get products", {
+        error: error.message,
+        sellerId: req.seller?.id,
+      });
+
+      const response: ApiResponse = {
+        success: false,
+        message: "Failed to get products",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(500).json(response);
     }
   }
 

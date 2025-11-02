@@ -28,8 +28,6 @@ interface ClockInData {
 }
 
 export class HRManagementService {
-  private prisma = prisma;
-
   // Geofence settings (in meters)
   private readonly GEOFENCE_RADIUS = 100; // 100 meters
 
@@ -38,7 +36,7 @@ export class HRManagementService {
    */
   async getSellerEmployees(sellerId: string): Promise<SellerEmployee[]> {
     try {
-      return await this.prisma.sellerEmployee.findMany({
+      return await prisma.sellerEmployee.findMany({
         where: { sellerId },
         orderBy: { hiredDate: "desc" },
       });
@@ -56,7 +54,7 @@ export class HRManagementService {
    */
   async getEmployeeById(employeeId: string): Promise<SellerEmployee | null> {
     try {
-      return await this.prisma.sellerEmployee.findUnique({
+      return await prisma.sellerEmployee.findUnique({
         where: { id: employeeId },
         include: {
           seller: { select: { businessName: true, businessAddress: true } },
@@ -77,7 +75,7 @@ export class HRManagementService {
   async createEmployee(data: CreateEmployeeData, adminId: string): Promise<SellerEmployee> {
     try {
       // Check if national ID already exists
-      const existing = await this.prisma.sellerEmployee.findUnique({
+      const existing = await prisma.sellerEmployee.findUnique({
         where: { nationalId: data.nationalId },
       });
 
@@ -85,7 +83,7 @@ export class HRManagementService {
         throw new Error("Employee with this national ID already exists");
       }
 
-      const employee = await this.prisma.sellerEmployee.create({
+      const employee = await prisma.sellerEmployee.create({
         data: {
           sellerId: data.sellerId,
           nationalId: data.nationalId,
@@ -126,7 +124,7 @@ export class HRManagementService {
     adminId: string
   ): Promise<SellerEmployee> {
     try {
-      const employee = await this.prisma.sellerEmployee.update({
+      const employee = await prisma.sellerEmployee.update({
         where: { id: employeeId },
         data: {
           ...(data.firstName && { firstName: data.firstName }),
@@ -155,7 +153,7 @@ export class HRManagementService {
    */
   async terminateEmployee(employeeId: string, adminId: string): Promise<void> {
     try {
-      await this.prisma.sellerEmployee.update({
+      await prisma.sellerEmployee.update({
         where: { id: employeeId },
         data: {
           isActive: false,
@@ -176,7 +174,7 @@ export class HRManagementService {
   async clockIn(data: ClockInData): Promise<EmployeeShift> {
     try {
       // Check if employee has an open shift
-      const openShift = await this.prisma.employeeShift.findFirst({
+      const openShift = await prisma.employeeShift.findFirst({
         where: {
           employeeId: data.employeeId,
           clockOutTime: null,
@@ -188,7 +186,7 @@ export class HRManagementService {
       }
 
       // Get employee's work location (from seller address)
-      const employee = await this.prisma.sellerEmployee.findUnique({
+      const employee = await prisma.sellerEmployee.findUnique({
         where: { id: data.employeeId },
         include: { seller: true },
       });
@@ -199,7 +197,7 @@ export class HRManagementService {
 
       // TODO: Parse seller business address to get coordinates
       // For now, create shift without validation
-      const shift = await this.prisma.employeeShift.create({
+      const shift = await prisma.employeeShift.create({
         data: {
           employeeId: data.employeeId,
           clockInTime: new Date(),
@@ -230,7 +228,7 @@ export class HRManagementService {
   async clockOut(employeeId: string, latitude: number, longitude: number, accuracy: number): Promise<EmployeeShift> {
     try {
       // Find open shift
-      const openShift = await this.prisma.employeeShift.findFirst({
+      const openShift = await prisma.employeeShift.findFirst({
         where: {
           employeeId,
           clockOutTime: null,
@@ -246,7 +244,7 @@ export class HRManagementService {
       const clockOutTime = new Date();
       const totalHours = (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
-      const shift = await this.prisma.employeeShift.update({
+      const shift = await prisma.employeeShift.update({
         where: { id: openShift.id },
         data: {
           clockOutTime,
@@ -277,7 +275,7 @@ export class HRManagementService {
    */
   async getEmployeeShifts(employeeId: string, limit: number = 30): Promise<EmployeeShift[]> {
     try {
-      return await this.prisma.employeeShift.findMany({
+      return await prisma.employeeShift.findMany({
         where: { employeeId },
         orderBy: { clockInTime: "desc" },
         take: limit,
@@ -297,7 +295,7 @@ export class HRManagementService {
   async validateShifts(): Promise<{ validated: number; failed: number }> {
     try {
       // Get all unvalidated shifts
-      const shifts = await this.prisma.employeeShift.findMany({
+      const shifts = await prisma.employeeShift.findMany({
         where: { isValidated: false },
         include: {
           employee: {
@@ -312,7 +310,7 @@ export class HRManagementService {
       for (const shift of shifts) {
         // TODO: Implement proper geofence validation
         // For now, mark all as validated
-        await this.prisma.employeeShift.update({
+        await prisma.employeeShift.update({
           where: { id: shift.id },
           data: { isValidated: true },
         });
@@ -338,7 +336,7 @@ export class HRManagementService {
     adminId: string
   ): Promise<number> {
     try {
-      const employees = await this.prisma.sellerEmployee.findMany({
+      const employees = await prisma.sellerEmployee.findMany({
         where: { sellerId, isActive: true },
       });
 
@@ -346,7 +344,7 @@ export class HRManagementService {
 
       for (const employee of employees) {
         // Check if payslip already exists for this period
-        const existing = await this.prisma.payslip.findFirst({
+        const existing = await prisma.payslip.findFirst({
           where: {
             employeeId: employee.id,
             periodStart,
@@ -363,7 +361,7 @@ export class HRManagementService {
 
         if (employee.hourlyRate) {
           // Get total hours for period
-          const shifts = await this.prisma.employeeShift.findMany({
+          const shifts = await prisma.employeeShift.findMany({
             where: {
               employeeId: employee.id,
               clockInTime: {
@@ -384,7 +382,7 @@ export class HRManagementService {
         const netSalary = grossSalary - payeDeduction - nssaDeduction;
 
         // Create payslip
-        await this.prisma.payslip.create({
+        await prisma.payslip.create({
           data: {
             employeeId: employee.id,
             periodStart,
@@ -421,7 +419,7 @@ export class HRManagementService {
    */
   async getEmployeePayslips(employeeId: string): Promise<Payslip[]> {
     try {
-      return await this.prisma.payslip.findMany({
+      return await prisma.payslip.findMany({
         where: { employeeId },
         orderBy: { periodEnd: "desc" },
       });
@@ -439,7 +437,7 @@ export class HRManagementService {
    */
   async getPayslipById(payslipId: string): Promise<Payslip | null> {
     try {
-      return await this.prisma.payslip.findUnique({
+      return await prisma.payslip.findUnique({
         where: { id: payslipId },
         include: {
           employee: {
@@ -487,7 +485,7 @@ export class HRManagementService {
     payslips: Payslip[];
   }> {
     try {
-      const payslips = await this.prisma.payslip.findMany({
+      const payslips = await prisma.payslip.findMany({
         where: {
           employee: { sellerId },
           periodStart,

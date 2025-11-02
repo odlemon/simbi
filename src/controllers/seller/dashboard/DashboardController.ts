@@ -257,5 +257,71 @@ export class DashboardController {
       res.status(500).json(response);
     }
   }
+
+  /**
+   * @swagger
+   * /api/seller/dashboard/comprehensive:
+   *   get:
+   *     summary: Get comprehensive dashboard data (Sales Summary, Analytics, Metrics)
+   *     tags: [Seller - Dashboard]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Comprehensive dashboard data retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     salesSummary:
+   *                       type: object
+   *                       properties:
+   *                         daily:
+   *                           type: object
+   *                         weekly:
+   *                           type: object
+   *                         monthly:
+   *                           type: object
+   *                     salesPerformanceAnalytics:
+   *                       type: object
+   *                     periodComparison:
+   *                       type: object
+   *                     topCategories:
+   *                       type: array
+   *                     keyMetrics:
+   *                       type: object
+   */
+  async getComprehensiveDashboard(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const dashboardData = await dashboardService.getComprehensiveDashboard(sellerId);
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Comprehensive dashboard data retrieved successfully",
+        data: dashboardData,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to get comprehensive dashboard", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: "Failed to get comprehensive dashboard",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(500).json(response);
+    }
+  }
 }
 

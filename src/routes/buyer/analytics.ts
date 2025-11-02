@@ -49,6 +49,13 @@ router.get('/users', authenticateBuyer, analyticsController.getUserActivity.bind
 router.get('/category-analysis', authenticateBuyer, analyticsController.getCategoryAnalysis.bind(analyticsController));
 
 /**
+ * @route GET /api/buyer/analytics/comprehensive
+ * @desc Get comprehensive dashboard - all metrics in one endpoint
+ * @access Private
+ */
+router.get('/comprehensive', authenticateBuyer, analyticsController.getComprehensiveDashboard.bind(analyticsController));
+
+/**
  * @route POST /api/buyer/analytics/reports/spending
  * @desc Generate spending report
  * @access Private

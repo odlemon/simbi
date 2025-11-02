@@ -4,7 +4,9 @@ import { Request, Response } from "express";
 import { prisma } from "../../../utils/database";
 
 export class MasterProductController {
-  private prisma = prisma;
+  constructor() {
+    // No need for private prisma property - use imported prisma directly
+  }
 
   /**
    * GET /api/admin/catalog/products
@@ -37,10 +39,10 @@ export class MasterProductController {
       }
 
       // Get total count
-      const total = await this.prisma.masterProduct.count({ where });
+      const total = await prisma.masterProduct.count({ where });
 
       // Get products
-      const products = await this.prisma.masterProduct.findMany({
+      const products = await prisma.masterProduct.findMany({
         where,
         skip,
         take: limit,
@@ -87,7 +89,7 @@ export class MasterProductController {
     try {
       const { id } = req.params;
 
-      const product = await this.prisma.masterProduct.findUnique({
+      const product = await prisma.masterProduct.findUnique({
         where: { id },
         include: {
           category: true,
@@ -120,7 +122,7 @@ export class MasterProductController {
    */
   async getCategories(req: Request, res: Response) {
     try {
-      const categories = await this.prisma.productCategory.findMany({
+      const categories = await prisma.productCategory.findMany({
         orderBy: {
           name: "asc",
         },
@@ -153,13 +155,13 @@ export class MasterProductController {
   async getStats(req: Request, res: Response) {
     try {
       const [totalProducts, totalCategories, activeProducts] = await Promise.all([
-        this.prisma.masterProduct.count(),
-        this.prisma.productCategory.count(),
-        this.prisma.masterProduct.count({ where: { isActive: true } }),
+        prisma.masterProduct.count(),
+        prisma.productCategory.count(),
+        prisma.masterProduct.count({ where: { isActive: true } }),
       ]);
 
       // Get top categories
-      const topCategories = await this.prisma.productCategory.findMany({
+      const topCategories = await prisma.productCategory.findMany({
         take: 10,
         include: {
           _count: {

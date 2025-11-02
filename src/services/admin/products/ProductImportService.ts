@@ -22,7 +22,7 @@ interface CarPartRecord {
 }
 
 export class ProductImportService {
-  private prisma = prisma;
+
   private batchSize = 1000;
   private categoryCache: Map<string, string> = new Map();
 
@@ -173,7 +173,7 @@ export class ProductImportService {
         const categoryId = await this.getOrCreateCategory(record.Category);
 
         // Check if product already exists
-        const exists = await this.prisma.masterProduct.findFirst({
+        const exists = await prisma.masterProduct.findFirst({
           where: { oemPartNumber: record.part_code },
         });
 
@@ -219,7 +219,7 @@ export class ProductImportService {
     // Bulk insert
     if (productsToInsert.length > 0) {
       try {
-        await this.prisma.masterProduct.createMany({
+        await prisma.masterProduct.createMany({
           data: productsToInsert,
           skipDuplicates: true,
         });
@@ -244,7 +244,7 @@ export class ProductImportService {
    * Load existing categories into cache
    */
   private async loadCategories(): Promise<void> {
-    const categories = await this.prisma.productCategory.findMany();
+    const categories = await prisma.productCategory.findMany();
     categories.forEach((cat) => {
       this.categoryCache.set(cat.name, cat.id);
     });
@@ -264,7 +264,7 @@ export class ProductImportService {
 
     // Create category
     try {
-      const category = await this.prisma.productCategory.create({
+      const category = await prisma.productCategory.create({
         data: {
           name: categoryName,
           slug: this.slugify(categoryName),
@@ -279,7 +279,7 @@ export class ProductImportService {
       return category.id;
     } catch (error: any) {
       // If category exists (race condition), fetch it
-      const existing = await this.prisma.productCategory.findUnique({
+      const existing = await prisma.productCategory.findUnique({
         where: { name: categoryName },
       });
 
@@ -330,10 +330,10 @@ export class ProductImportService {
     totalCategories: number;
     productsByCategory: Array<{ category: string; count: number }>;
   }> {
-    const totalProducts = await this.prisma.masterProduct.count();
-    const totalCategories = await this.prisma.productCategory.count();
+    const totalProducts = await prisma.masterProduct.count();
+    const totalCategories = await prisma.productCategory.count();
 
-    const productsByCategory = await this.prisma.productCategory.findMany({
+    const productsByCategory = await prisma.productCategory.findMany({
       select: {
         name: true,
         _count: {

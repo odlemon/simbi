@@ -19,8 +19,6 @@ interface UpdateAccountDTO {
 }
 
 export class ChartOfAccountsService {
-  private prisma = prisma;
-
   /**
    * Get all accounts (with optional filtering)
    */
@@ -52,7 +50,7 @@ export class ChartOfAccountsService {
       ];
     }
 
-    const accounts = await this.prisma.chartOfAccount.findMany({
+    const accounts = await prisma.chartOfAccount.findMany({
       where,
       include: {
         parent: {
@@ -88,7 +86,7 @@ export class ChartOfAccountsService {
    * Get account by ID
    */
   async getAccount(id: string) {
-    const account = await this.prisma.chartOfAccount.findUnique({
+    const account = await prisma.chartOfAccount.findUnique({
       where: { id },
       include: {
         parent: {
@@ -125,7 +123,7 @@ export class ChartOfAccountsService {
    * Get account by code
    */
   async getAccountByCode(code: string) {
-    const account = await this.prisma.chartOfAccount.findUnique({
+    const account = await prisma.chartOfAccount.findUnique({
       where: { code },
       include: {
         parent: true,
@@ -146,7 +144,7 @@ export class ChartOfAccountsService {
   async createAccount(data: CreateAccountDTO) {
     // Verify parent exists if provided
     if (data.parentId) {
-      const parent = await this.prisma.chartOfAccount.findUnique({
+      const parent = await prisma.chartOfAccount.findUnique({
         where: { id: data.parentId },
       });
 
@@ -163,7 +161,7 @@ export class ChartOfAccountsService {
     }
 
     // Check if code already exists
-    const existing = await this.prisma.chartOfAccount.findUnique({
+    const existing = await prisma.chartOfAccount.findUnique({
       where: { code: data.code },
     });
 
@@ -171,7 +169,7 @@ export class ChartOfAccountsService {
       throw new Error(`Account with code ${data.code} already exists`);
     }
 
-    const account = await this.prisma.chartOfAccount.create({
+    const account = await prisma.chartOfAccount.create({
       data: {
         code: data.code,
         name: data.name,
@@ -199,7 +197,7 @@ export class ChartOfAccountsService {
    * Update account (cannot update system accounts)
    */
   async updateAccount(id: string, data: UpdateAccountDTO) {
-    const account = await this.prisma.chartOfAccount.findUnique({
+    const account = await prisma.chartOfAccount.findUnique({
       where: { id },
     });
 
@@ -211,7 +209,7 @@ export class ChartOfAccountsService {
       throw new Error("Cannot modify system accounts");
     }
 
-    const updated = await this.prisma.chartOfAccount.update({
+    const updated = await prisma.chartOfAccount.update({
       where: { id },
       data: {
         name: data.name,
@@ -236,7 +234,7 @@ export class ChartOfAccountsService {
    * Delete account (cannot delete system accounts or accounts with transactions)
    */
   async deleteAccount(id: string) {
-    const account = await this.prisma.chartOfAccount.findUnique({
+    const account = await prisma.chartOfAccount.findUnique({
       where: { id },
       include: {
         _count: {
@@ -268,7 +266,7 @@ export class ChartOfAccountsService {
       );
     }
 
-    await this.prisma.chartOfAccount.delete({
+    await prisma.chartOfAccount.delete({
       where: { id },
     });
 
@@ -292,7 +290,7 @@ export class ChartOfAccountsService {
       where.type = type;
     }
 
-    const rootAccounts = await this.prisma.chartOfAccount.findMany({
+    const rootAccounts = await prisma.chartOfAccount.findMany({
       where,
       include: {
         children: {
@@ -327,7 +325,7 @@ export class ChartOfAccountsService {
       if (endDate) where.transactionDate.lte = endDate;
     }
 
-    const result = await this.prisma.sellerLedger.aggregate({
+    const result = await prisma.sellerLedger.aggregate({
       where,
       _sum: {
         debit: true,
@@ -351,7 +349,7 @@ export class ChartOfAccountsService {
    * Get trial balance (all accounts with balances)
    */
   async getTrialBalance(startDate?: Date, endDate?: Date) {
-    const accounts = await this.prisma.chartOfAccount.findMany({
+    const accounts = await prisma.chartOfAccount.findMany({
       where: { isActive: true },
       orderBy: { code: "asc" },
     });

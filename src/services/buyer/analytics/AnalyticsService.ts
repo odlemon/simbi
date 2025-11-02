@@ -48,6 +48,86 @@ export interface DashboardData {
   };
 }
 
+export interface ComprehensiveDashboardData {
+  // KPI Cards
+  kpis: {
+    totalSpendYTD: {
+      value: number;
+      change: number;
+      changePercentage: number;
+      trend: 'up' | 'down' | 'neutral';
+    };
+    openPurchaseOrders: {
+      value: number;
+      change: number;
+      changePercentage: number;
+      trend: 'up' | 'down' | 'neutral';
+    };
+    pendingInvoiceTotal: {
+      value: number;
+      change: number;
+      changePercentage: number;
+      trend: 'up' | 'down' | 'neutral';
+    };
+    availableMonthlyBudget: {
+      value: number;
+      change: number;
+      changePercentage: number;
+      trend: 'up' | 'down' | 'neutral';
+    };
+  };
+  // Charts Data
+  charts: {
+    monthlySpendingTrend: {
+      title: string;
+      subtitle: string;
+      data: Array<{
+        month: string;
+        amount: number;
+      }>;
+    };
+    spendingByCategory: {
+      title: string;
+      subtitle: string;
+      data: Array<{
+        category: string;
+        amount: number;
+        percentage: number;
+        color?: string;
+      }>;
+    };
+    supplierPerformance: {
+      title: string;
+      subtitle: string;
+      data: Array<{
+        supplierName: string;
+        revenue: number;
+        orderCount: number;
+      }>;
+    };
+    budgetUtilization: {
+      title: string;
+      subtitle: string;
+      used: number;
+      total: number;
+      percentage: number;
+      remaining: number;
+    };
+  };
+  // Recent Orders Table
+  recentOrders: Array<{
+    orderId: string;
+    orderNumber: string;
+    poNumber: string | null;
+    status: string;
+    costCenter: string | null;
+    total: number;
+    items: number;
+    date: string;
+    sellerName: string;
+  }>;
+}
+
 export interface CategorySpending {
   category: string;
   amount: number;
@@ -177,7 +257,7 @@ export class AnalyticsService {
       const validatedFilters = reportFiltersSchema.parse(filters);
       const dateRange = this.getDateRangeFromFilters(validatedFilters);
 
-      // Get orders for the period
+      // Get orders for the period with payments
       const orders = await prisma.order.findMany({
         where: {
           buyerId,
@@ -188,6 +268,7 @@ export class AnalyticsService {
           ...(validatedFilters.costCenter && { costCenter: validatedFilters.costCenter })
         },
         include: {
+          payment: true,
           items: {
             include: {
               inventory: {
@@ -202,9 +283,10 @@ export class AnalyticsService {
         orderBy: { createdAt: 'desc' }
       });
 
-      // Calculate summary
-      const totalOrders = orders.length;
-      const totalSpent = orders.reduce((sum, order) => sum + order.totalAmount, 0);
+      // Calculate summary - only from orders with payments
+      const paidOrders = orders.filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'));
+      const totalOrders = paidOrders.length;
+      const totalSpent = paidOrders.reduce((sum, order) => sum + (order.payment?.amount || 0), 0);
       const averageOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
 
       // Get spending by category
@@ -287,6 +369,7 @@ export class AnalyticsService {
         createdAt: { gte: dateRange.start, lte: dateRange.end }
       },
       include: {
+        payment: true,
         items: {
           include: {
             inventory: {
@@ -300,8 +383,10 @@ export class AnalyticsService {
       }
     });
 
-    const totalOrders = orders.length;
-    const totalSpent = orders.reduce((sum, order) => sum + order.totalAmount, 0);
+    // Only count orders with payments
+    const paidOrders = orders.filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'));
+    const totalOrders = paidOrders.length;
+    const totalSpent = paidOrders.reduce((sum, order) => sum + (order.payment?.amount || 0), 0);
     const averageOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
 
     // Get top categories
@@ -331,15 +416,20 @@ export class AnalyticsService {
    * Get spending data
    */
   private async getSpendingData(buyerId: string, dateRange: { start: Date; end: Date }, query: any) {
-    // Get current period spending
+    // Get current period spending - from actual payments
     const currentOrders = await prisma.order.findMany({
       where: {
         buyerId,
         createdAt: { gte: dateRange.start, lte: dateRange.end }
+      },
+      include: {
+        payment: true
       }
     });
 
-    const currentSpending = currentOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const currentSpending = currentOrders
+      .filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'))
+      .reduce((sum, order) => sum + (order.payment?.amount || 0), 0);
 
     // Get previous period spending
     const previousPeriodStart = new Date(dateRange.start);
@@ -353,10 +443,15 @@ export class AnalyticsService {
       where: {
         buyerId,
         createdAt: { gte: previousPeriodStart, lte: previousPeriodEnd }
+      },
+      include: {
+        payment: true
       }
     });
 
-    const previousSpending = previousOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const previousSpending = previousOrders
+      .filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'))
+      .reduce((sum, order) => sum + (order.payment?.amount || 0), 0);
     const change = currentSpending - previousSpending;
     const changePercentage = previousSpending > 0 ? (change / previousSpending) * 100 : 0;
 
@@ -382,6 +477,7 @@ export class AnalyticsService {
         createdAt: { gte: dateRange.start, lte: dateRange.end }
       },
       include: {
+        payment: true,
         items: {
           include: {
             inventory: {
@@ -445,25 +541,34 @@ export class AnalyticsService {
   }
 
   /**
-   * Get spending by category
+   * Get spending by category - uses actual payment amounts (proportional)
    */
   private async getSpendingByCategory(orders: any[]): Promise<CategorySpending[]> {
     const categoryMap = new Map<string, { amount: number; orderCount: number }>();
 
-    orders.forEach(order => {
-      order.items.forEach((item: any) => {
-        const category = item.inventory.masterProduct.category;
-        const amount = item.lineTotalUsd;
+    // Only process orders with payments
+    orders
+      .filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'))
+      .forEach(order => {
+        const paymentAmount = order.payment?.amount || 0;
+        // Calculate order total from items
+        const orderTotal = order.items.reduce((sum: number, item: any) => sum + (item.displayPrice || item.lineTotalUsd || 0) * (item.quantity || 1), 0);
         
-        if (categoryMap.has(category)) {
-          const existing = categoryMap.get(category)!;
-          existing.amount += amount;
-          existing.orderCount += 1;
-        } else {
-          categoryMap.set(category, { amount, orderCount: 1 });
-        }
+        order.items.forEach((item: any) => {
+          const category = item.inventory?.masterProduct?.category?.name || item.inventory?.masterProduct?.category || 'Unknown';
+          const itemValue = (item.displayPrice || item.lineTotalUsd || 0) * (item.quantity || 1);
+          // Proportional payment amount for this item
+          const proportionalPayment = orderTotal > 0 ? (itemValue / orderTotal) * paymentAmount : 0;
+          
+          if (categoryMap.has(category)) {
+            const existing = categoryMap.get(category)!;
+            existing.amount += proportionalPayment;
+            existing.orderCount += 1;
+          } else {
+            categoryMap.set(category, { amount: proportionalPayment, orderCount: 1 });
+          }
+        });
       });
-    });
 
     const totalAmount = Array.from(categoryMap.values()).reduce((sum, cat) => sum + cat.amount, 0);
 
@@ -556,6 +661,351 @@ export class AnalyticsService {
     }
 
     return { start, end };
+  }
+
+  /**
+   * Get comprehensive dashboard data - all metrics in one endpoint
+   */
+  async getComprehensiveDashboard(buyerId: string): Promise<{ success: boolean; data?: ComprehensiveDashboardData; error?: string }> {
+    try {
+      // Get buyer info for budget
+      const buyer = await prisma.buyer.findUnique({
+        where: { id: buyerId },
+        select: {
+          creditLimit: true,
+          creditUsed: true,
+          monthlySpendingLimit: true
+        }
+      });
+
+      const now = new Date();
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+      
+      // Get all orders from year start (YTD) with payments
+      const ytdOrders = await prisma.order.findMany({
+        where: {
+          buyerId,
+          createdAt: { gte: yearStart }
+        },
+        include: {
+          items: {
+            include: {
+              inventory: {
+                include: {
+                  masterProduct: {
+                    include: {
+                      category: true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          seller: {
+            select: {
+              id: true,
+              businessName: true
+            }
+          },
+          payment: true // Include payment to get actual paid amounts
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      // Calculate YTD spending from actual payments (not order totals)
+      const totalSpendYTD = ytdOrders
+        .filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'))
+        .reduce((sum, order) => sum + (order.payment?.amount || 0), 0);
+      
+      // Previous year same period
+      const lastYearStart = new Date(now.getFullYear() - 1, 0, 1);
+      const lastYearEnd = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      const previousYTDOrders = await prisma.order.findMany({
+        where: {
+          buyerId,
+          createdAt: { gte: lastYearStart, lte: lastYearEnd }
+        },
+        include: {
+          payment: true
+        }
+      });
+      const previousYTDSpend = previousYTDOrders
+        .filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'))
+        .reduce((sum, order) => sum + (order.payment?.amount || 0), 0);
+      const ytdChange = totalSpendYTD - previousYTDSpend;
+      const ytdChangePercentage = previousYTDSpend > 0 ? (ytdChange / previousYTDSpend) * 100 : 0;
+
+      // Open Purchase Orders (not DELIVERED, CANCELLED, or REFUNDED)
+      const openOrders = ytdOrders.filter(order => 
+        !['DELIVERED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status)
+      );
+      const openPOCount = openOrders.length;
+
+      // Previous period open orders
+      const previousOpenOrders = previousYTDOrders.filter(order => 
+        !['DELIVERED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(order.status)
+      );
+      const previousOpenPOCount = previousOpenOrders.length;
+      const openPOChange = openPOCount - previousOpenPOCount;
+      const openPOChangePercentage = previousOpenPOCount > 0 ? (openPOChange / previousOpenPOCount) * 100 : 0;
+
+      // Pending Invoice Total (orders with PENDING payment status)
+      const pendingOrders = ytdOrders.filter(order => order.paymentStatus === 'PENDING');
+      const pendingInvoiceTotal = pendingOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+      
+      // Previous period pending invoices
+      const previousPendingOrders = previousYTDOrders.filter(order => order.paymentStatus === 'PENDING');
+      const previousPendingTotal = previousPendingOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+      const pendingChange = pendingInvoiceTotal - previousPendingTotal;
+      const pendingChangePercentage = previousPendingTotal > 0 ? (pendingChange / previousPendingTotal) * 100 : 0;
+
+      // Available Monthly Budget
+      const monthlyLimit = buyer?.monthlySpendingLimit || 0;
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      currentMonthStart.setHours(0, 0, 0, 0);
+      const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      currentMonthEnd.setHours(23, 59, 59, 999);
+      
+      // Query payments directly for the current month - only COMPLETED or PARTIAL payments
+      // Use paidAt if available, otherwise fall back to createdAt
+      const allCurrentMonthPayments = await prisma.payment.findMany({
+        where: {
+          order: {
+            buyerId: buyerId
+          },
+          status: {
+            in: ['COMPLETED', 'PARTIAL']
+          }
+        },
+        select: {
+          amount: true,
+          paidAt: true,
+          createdAt: true,
+          status: true
+        }
+      });
+      
+      // Filter by payment date (use paidAt, fallback to createdAt)
+      const currentMonthPayments = allCurrentMonthPayments.filter(payment => {
+        const paymentDate = payment.paidAt ? new Date(payment.paidAt) : new Date(payment.createdAt);
+        return paymentDate >= currentMonthStart && paymentDate <= currentMonthEnd;
+      });
+      
+      const currentMonthSpend = currentMonthPayments.reduce((sum, payment) => sum + payment.amount, 0);
+      const availableBudget = monthlyLimit - currentMonthSpend;
+      
+      // Previous month
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      lastMonthStart.setHours(0, 0, 0, 0);
+      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+      lastMonthEnd.setHours(23, 59, 59, 999);
+      
+      // Filter previous month payments
+      const lastMonthPayments = allCurrentMonthPayments.filter(payment => {
+        const paymentDate = payment.paidAt ? new Date(payment.paidAt) : new Date(payment.createdAt);
+        return paymentDate >= lastMonthStart && paymentDate <= lastMonthEnd;
+      });
+      
+      const lastMonthSpend = lastMonthPayments.reduce((sum, payment) => sum + payment.amount, 0);
+      const previousAvailableBudget = monthlyLimit - lastMonthSpend;
+      const budgetChange = availableBudget - previousAvailableBudget;
+      const budgetChangePercentage = previousAvailableBudget > 0 ? (budgetChange / previousAvailableBudget) * 100 : 0;
+
+      // Monthly Spending Trend (last 6 months)
+      const monthlyTrend = [];
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      
+      // Get all orders from last 6 months for accurate monthly breakdown with payments
+      const lastSixMonthsOrders = await prisma.order.findMany({
+        where: {
+          buyerId,
+          createdAt: { gte: sixMonthsAgo }
+        },
+        include: {
+          payment: true
+        }
+      });
+      
+      for (let i = 5; i >= 0; i--) {
+        const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+        const monthOrders = lastSixMonthsOrders.filter(order => {
+          const orderDate = new Date(order.createdAt);
+          return orderDate >= monthStart && orderDate <= monthEnd;
+        });
+        // Sum actual payment amounts, not order totals
+        const monthSpend = monthOrders
+          .filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'))
+          .reduce((sum, order) => sum + (order.payment?.amount || 0), 0);
+        monthlyTrend.push({
+          month: monthNames[monthStart.getMonth()],
+          amount: monthSpend
+        });
+      }
+
+      // Spending by Category (last 6 months)
+      const categorySpendingMap = new Map<string, number>();
+      
+      // Get orders with items for category breakdown - only orders with payments
+      const recentOrdersWithItems = await prisma.order.findMany({
+        where: {
+          buyerId,
+          createdAt: { gte: sixMonthsAgo }
+        },
+        include: {
+          payment: true,
+          items: {
+            include: {
+              inventory: {
+                include: {
+                  masterProduct: {
+                    include: {
+                      category: true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      // Only include orders with completed/partial payments
+      recentOrdersWithItems
+        .filter(order => order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL'))
+        .forEach(order => {
+          // Calculate proportion of payment per item
+          const orderTotal = order.items.reduce((sum, item) => sum + (item.displayPrice * item.quantity), 0);
+          const paymentAmount = order.payment?.amount || 0;
+          
+          order.items.forEach(item => {
+            const categoryName = item.inventory.masterProduct.category.name;
+            const itemValue = item.displayPrice * item.quantity;
+            // Proportional payment amount for this item
+            const proportionalPayment = orderTotal > 0 ? (itemValue / orderTotal) * paymentAmount : 0;
+            const current = categorySpendingMap.get(categoryName) || 0;
+            categorySpendingMap.set(categoryName, current + proportionalPayment);
+          });
+        });
+
+      const totalCategorySpend = Array.from(categorySpendingMap.values()).reduce((a, b) => a + b, 0);
+      const categoryData = Array.from(categorySpendingMap.entries()).map(([category, amount]) => ({
+        category,
+        amount,
+        percentage: totalCategorySpend > 0 ? (amount / totalCategorySpend) * 100 : 0
+      })).sort((a, b) => b.amount - a.amount);
+
+      // Supplier Performance (last quarter) - only orders with payments
+      const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+      const quarterOrders = ytdOrders.filter(order => 
+        order.createdAt >= quarterStart && 
+        order.payment && 
+        (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL')
+      );
+      
+      const supplierMap = new Map<string, { revenue: number; orderCount: number }>();
+      quarterOrders.forEach(order => {
+        const sellerName = order.seller.businessName;
+        const paymentAmount = order.payment?.amount || 0;
+        const existing = supplierMap.get(sellerName) || { revenue: 0, orderCount: 0 };
+        supplierMap.set(sellerName, {
+          revenue: existing.revenue + paymentAmount, // Use actual payment amount
+          orderCount: existing.orderCount + 1
+        });
+      });
+
+      const supplierPerformance = Array.from(supplierMap.entries()).map(([supplierName, data]) => ({
+        supplierName,
+        revenue: data.revenue,
+        orderCount: data.orderCount
+      })).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+
+      // Budget Utilization
+      const budgetUsed = currentMonthSpend;
+      const budgetTotal = monthlyLimit;
+      const budgetPercentage = budgetTotal > 0 ? (budgetUsed / budgetTotal) * 100 : 0;
+
+      // Recent Orders (last 10)
+      const recentOrdersList = ytdOrders.slice(0, 10).map(order => ({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        poNumber: order.poNumber,
+        status: order.status,
+        costCenter: order.costCenter,
+        total: order.totalAmount,
+        items: order.items.length,
+        date: order.createdAt.toISOString().split('T')[0],
+        sellerName: order.seller.businessName
+      }));
+
+      const dashboardData: ComprehensiveDashboardData = {
+        kpis: {
+          totalSpendYTD: {
+            value: totalSpendYTD,
+            change: ytdChange,
+            changePercentage: ytdChangePercentage,
+            trend: ytdChange >= 0 ? 'up' : 'down'
+          },
+          openPurchaseOrders: {
+            value: openPOCount,
+            change: openPOChange,
+            changePercentage: openPOChangePercentage,
+            trend: openPOChange >= 0 ? 'up' : 'down'
+          },
+          pendingInvoiceTotal: {
+            value: pendingInvoiceTotal,
+            change: pendingChange,
+            changePercentage: pendingChangePercentage,
+            trend: pendingChange >= 0 ? 'up' : 'down'
+          },
+          availableMonthlyBudget: {
+            value: availableBudget,
+            change: budgetChange,
+            changePercentage: budgetChangePercentage,
+            trend: budgetChange >= 0 ? 'up' : 'down'
+          }
+        },
+        charts: {
+          monthlySpendingTrend: {
+            title: 'Monthly Spending Trend',
+            subtitle: 'Total spend over the last 6 months',
+            data: monthlyTrend
+          },
+          spendingByCategory: {
+            title: 'Spending by Category',
+            subtitle: 'Breakdown by product category (last 6 months)',
+            data: categoryData
+          },
+          supplierPerformance: {
+            title: 'Supplier Performance',
+            subtitle: 'Top suppliers by revenue (last quarter)',
+            data: supplierPerformance
+          },
+          budgetUtilization: {
+            title: 'Budget Utilization',
+            subtitle: 'Monthly company spending limit usage',
+            used: budgetUsed,
+            total: budgetTotal,
+            percentage: budgetPercentage,
+            remaining: availableBudget
+          }
+        },
+        recentOrders: recentOrdersList
+      };
+
+      return {
+        success: true,
+        data: dashboardData
+      };
+
+    } catch (error) {
+      console.error('Get comprehensive dashboard error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 
   /**

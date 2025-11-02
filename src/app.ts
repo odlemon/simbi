@@ -5,7 +5,7 @@ import helmet from "helmet";
 import dotenv from "dotenv";
 
 import { errorMiddleware } from "./middleware/error";
-import { dbConnection } from "./utils/database";
+import { prisma, checkDatabaseConnection } from "./utils/database";
 import { envConfig } from "./utils/env";
 import { logger } from "./utils/logger";
 
@@ -28,6 +28,7 @@ app.use(cors({
     "172.20.20.10.9:3000",
     "http://localhost:3001",
     "http://localhost:5001",
+    "http://localhost:5000",
     "http://172.20.20.10.9:5001",
     "https://car-parts-hub.vercel.app",
     "https://simbi-admin.vercel.app",
@@ -48,6 +49,26 @@ app.use((req, res, next) => {
     userAgent: req.get("User-Agent"),
   });
   next();
+});
+
+// Database connection error handling middleware
+app.use(async (req, res, next) => {
+  try {
+    // Check database connection before processing request
+    const isConnected = await checkDatabaseConnection();
+    if (!isConnected) {
+      logger.warn("Database connection lost, attempting to reconnect");
+      await prisma.$connect();
+    }
+    next();
+  } catch (error: any) {
+    logger.error("Database connection error in middleware", { error: error.message });
+    res.status(503).json({
+      success: false,
+      message: "Database temporarily unavailable",
+      error: "Service temporarily unavailable"
+    });
+  }
 });
 
 // Health check endpoint
@@ -320,13 +341,39 @@ app.use(errorMiddleware);
 
 const startServer = async (): Promise<void> => {
   try {
-    await dbConnection.connect();
+    // Add retry mechanism for database connection
+    let retries = 3;
+    let connected = false;
+    
+    while (retries > 0 && !connected) {
+      try {
+        await prisma.$connect();
+        connected = await checkDatabaseConnection();
+        
+        if (connected) {
+          logger.info("✅ Connected to MySQL database successfully");
+          break;
+        }
+      } catch (error: any) {
+        retries--;
+        logger.warn(`Database connection attempt failed, ${retries} retries left`, { error: error.message });
+        
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+        }
+      }
+    }
+    
+    if (!connected) {
+      throw new Error("Failed to connect to database after 3 attempts");
+    }
 
     app.listen(port, () => {
       logger.info(`🚀 Server running on port ${port}`, {
         environment: envConfig.get("NODE_ENV"),
         port: port,
       });
+      logger.info(`📚 API Documentation available at http://localhost:${port}/api-docs`);
     });
   } catch (error: any) {
     logger.error("Failed to start server", { error: error.message });
@@ -338,7 +385,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
   logger.info(`Received ${signal}. Shutting down gracefully...`);
 
   try {
-    await dbConnection.disconnect();
+    await prisma.$disconnect();
     logger.info("Server shut down successfully");
     process.exit(0);
   } catch (error: any) {

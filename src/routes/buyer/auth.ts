@@ -14,6 +14,20 @@ const authController = new BuyerAuthController();
 router.post('/register', authController.register.bind(authController));
 
 /**
+ * @route POST /api/buyer/auth/verify-email
+ * @desc Verify email with verification code
+ * @access Public
+ */
+router.post('/verify-email', authController.verifyEmail.bind(authController));
+
+/**
+ * @route POST /api/buyer/auth/resend-verification
+ * @desc Resend verification email
+ * @access Public
+ */
+router.post('/resend-verification', authController.resendVerification.bind(authController));
+
+/**
  * @route POST /api/buyer/auth/login
  * @desc Login buyer
  * @access Public

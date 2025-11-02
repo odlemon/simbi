@@ -5,7 +5,6 @@ import { CustomProductRequestStatus } from "@prisma/client";
 import { prisma } from "../../../utils/database";
 
 export class CustomProductRequestService {
-  private prisma = prisma;
 
   /**
    * Get all custom product requests with optional filters
@@ -30,7 +29,7 @@ export class CustomProductRequestService {
       if (sellerId) where.sellerId = sellerId;
 
       const [requests, total] = await Promise.all([
-        this.prisma.customProductRequest.findMany({
+        prisma.customProductRequest.findMany({
           where,
           include: {
             seller: {
@@ -46,7 +45,7 @@ export class CustomProductRequestService {
           skip,
           take: limit,
         }),
-        this.prisma.customProductRequest.count({ where }),
+        prisma.customProductRequest.count({ where }),
       ]);
 
       return {
@@ -68,7 +67,7 @@ export class CustomProductRequestService {
    */
   async getCustomProductRequestById(id: string): Promise<any> {
     try {
-      const request = await this.prisma.customProductRequest.findUnique({
+      const request = await prisma.customProductRequest.findUnique({
         where: { id },
         include: {
           seller: {
@@ -107,7 +106,7 @@ export class CustomProductRequestService {
     adminNotes?: string
   ): Promise<{ request: any; product: any }> {
     try {
-      const request = await this.prisma.customProductRequest.findUnique({
+      const request = await prisma.customProductRequest.findUnique({
         where: { id: requestId },
       });
 
@@ -120,13 +119,13 @@ export class CustomProductRequestService {
       }
 
       // Find or create the product category
-      let category = await this.prisma.productCategory.findFirst({
+      let category = await prisma.productCategory.findFirst({
         where: { name: request.category },
       });
 
       if (!category) {
         // Create new category with default commission rate
-        category = await this.prisma.productCategory.create({
+        category = await prisma.productCategory.create({
           data: {
             name: request.category,
             slug: request.category
@@ -151,7 +150,7 @@ export class CustomProductRequestService {
         ...(request.year && { year: request.year }),
       };
 
-      const masterProduct = await this.prisma.masterProduct.create({
+      const masterProduct = await prisma.masterProduct.create({
         data: {
           oemPartNumber: request.partCode || `CUSTOM-${Date.now()}`,
           masterPartId: `MP-${Date.now()}`,
@@ -167,7 +166,7 @@ export class CustomProductRequestService {
       });
 
       // Update the request status
-      const updatedRequest = await this.prisma.customProductRequest.update({
+      const updatedRequest = await prisma.customProductRequest.update({
         where: { id: requestId },
         data: {
           status: CustomProductRequestStatus.APPROVED,
@@ -213,7 +212,7 @@ export class CustomProductRequestService {
     adminNotes: string
   ): Promise<any> {
     try {
-      const request = await this.prisma.customProductRequest.findUnique({
+      const request = await prisma.customProductRequest.findUnique({
         where: { id: requestId },
       });
 
@@ -225,7 +224,7 @@ export class CustomProductRequestService {
         throw new Error(`Request is already ${request.status.toLowerCase()}`);
       }
 
-      const updatedRequest = await this.prisma.customProductRequest.update({
+      const updatedRequest = await prisma.customProductRequest.update({
         where: { id: requestId },
         data: {
           status: CustomProductRequestStatus.REJECTED,
@@ -265,7 +264,7 @@ export class CustomProductRequestService {
     adminNotes: string
   ): Promise<any> {
     try {
-      const request = await this.prisma.customProductRequest.findUnique({
+      const request = await prisma.customProductRequest.findUnique({
         where: { id: requestId },
       });
 
@@ -277,7 +276,7 @@ export class CustomProductRequestService {
         throw new Error(`Request is already ${request.status.toLowerCase()}`);
       }
 
-      const updatedRequest = await this.prisma.customProductRequest.update({
+      const updatedRequest = await prisma.customProductRequest.update({
         where: { id: requestId },
         data: {
           status: CustomProductRequestStatus.MORE_INFO_NEEDED,
@@ -321,23 +320,23 @@ export class CustomProductRequestService {
   }> {
     try {
       const [total, pending, approved, rejected, moreInfoNeeded] = await Promise.all([
-        this.prisma.customProductRequest.count(),
-        this.prisma.customProductRequest.count({
+        prisma.customProductRequest.count(),
+        prisma.customProductRequest.count({
           where: { status: CustomProductRequestStatus.PENDING },
         }),
-        this.prisma.customProductRequest.count({
+        prisma.customProductRequest.count({
           where: { status: CustomProductRequestStatus.APPROVED },
         }),
-        this.prisma.customProductRequest.count({
+        prisma.customProductRequest.count({
           where: { status: CustomProductRequestStatus.REJECTED },
         }),
-        this.prisma.customProductRequest.count({
+        prisma.customProductRequest.count({
           where: { status: CustomProductRequestStatus.MORE_INFO_NEEDED },
         }),
       ]);
 
       // Calculate average processing time for reviewed requests
-      const reviewedRequests = await this.prisma.customProductRequest.findMany({
+      const reviewedRequests = await prisma.customProductRequest.findMany({
         where: {
           reviewedAt: { not: null },
         },

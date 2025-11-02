@@ -24,8 +24,6 @@ interface ValidationError {
 }
 
 export class BulkUploadService {
-  private prisma = prisma;
-
   /**
    * Process bulk upload CSV
    */
@@ -36,7 +34,7 @@ export class BulkUploadService {
   ) {
     try {
       // Update upload status to processing
-      await this.prisma.bulkUpload.update({
+      await prisma.bulkUpload.update({
         where: { id: uploadId },
         data: {
           status: "PROCESSING",
@@ -65,7 +63,7 @@ export class BulkUploadService {
         }
 
         // Check if master product exists
-        const masterProduct = await this.prisma.masterProduct.findUnique({
+        const masterProduct = await prisma.masterProduct.findUnique({
           where: { id: row.masterProductId },
         });
 
@@ -82,7 +80,7 @@ export class BulkUploadService {
         }
 
         // Check if seller already listed this product
-        const existing = await this.prisma.sellerInventory.findFirst({
+        const existing = await prisma.sellerInventory.findFirst({
           where: {
             sellerId,
             masterProductId: row.masterProductId,
@@ -92,7 +90,7 @@ export class BulkUploadService {
         if (existing) {
           // Update existing listing
           try {
-            await this.prisma.sellerInventory.update({
+            await prisma.sellerInventory.update({
               where: { id: existing.id },
               data: {
                 sellerPrice: row.sellerPrice,
@@ -107,7 +105,7 @@ export class BulkUploadService {
             });
 
             // Log adjustment
-            await this.prisma.inventoryAdjustmentLog.create({
+            await prisma.inventoryAdjustmentLog.create({
               data: {
                 inventoryId: existing.id,
                 sellerId,
@@ -137,7 +135,7 @@ export class BulkUploadService {
         } else {
           // Create new listing
           try {
-            const inventory = await this.prisma.sellerInventory.create({
+            const inventory = await prisma.sellerInventory.create({
               data: {
                 sellerId,
                 masterProductId: row.masterProductId,
@@ -154,7 +152,7 @@ export class BulkUploadService {
             });
 
             // Log adjustment
-            await this.prisma.inventoryAdjustmentLog.create({
+            await prisma.inventoryAdjustmentLog.create({
               data: {
                 inventoryId: inventory.id,
                 sellerId,
@@ -184,7 +182,7 @@ export class BulkUploadService {
 
         // Update progress every 10 rows
         if (processedCount % 10 === 0) {
-          await this.prisma.bulkUpload.update({
+          await prisma.bulkUpload.update({
             where: { id: uploadId },
             data: {
               processedRows: processedCount,
@@ -197,7 +195,7 @@ export class BulkUploadService {
 
       // Final update
       const status = failedCount === 0 ? "COMPLETED" : "COMPLETED_WITH_ERRORS";
-      await this.prisma.bulkUpload.update({
+      await prisma.bulkUpload.update({
         where: { id: uploadId },
         data: {
           status,
@@ -228,7 +226,7 @@ export class BulkUploadService {
       };
     } catch (error: any) {
       // Mark upload as failed
-      await this.prisma.bulkUpload.update({
+      await prisma.bulkUpload.update({
         where: { id: uploadId },
         data: {
           status: "FAILED",

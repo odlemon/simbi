@@ -4,10 +4,8 @@ import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
 
 export class BuyerController {
-  private prisma;
-
   constructor() {
-    this.prisma = prisma;
+    // No need for private prisma property - use imported prisma directly
   }
 
   /**
@@ -57,10 +55,10 @@ export class BuyerController {
         buyersByStatus,
       ] = await Promise.all([
         // Total count with filters
-        this.prisma.buyer.count({ where }),
+        prisma.buyer.count({ where }),
         
         // Buyers with pagination
-        this.prisma.buyer.findMany({
+        prisma.buyer.findMany({
           where,
           skip,
           take: limit,
@@ -87,10 +85,10 @@ export class BuyerController {
         }),
         
         // Total buyers (all)
-        this.prisma.buyer.count(),
+        prisma.buyer.count(),
         
         // Active buyers (with orders)
-        this.prisma.buyer.count({
+        prisma.buyer.count({
           where: {
             orders: {
               some: {}
@@ -99,19 +97,19 @@ export class BuyerController {
         }),
         
         // Verified buyers
-        this.prisma.buyer.count({
+        prisma.buyer.count({
           where: { status: 'ACTIVE' }
         }),
         
         // Enterprise buyers (with company name)
-        this.prisma.buyer.count({
+        prisma.buyer.count({
           where: {
             companyName: { not: null }
           }
         }),
         
         // Recent buyers (last 30 days)
-        this.prisma.buyer.count({
+        prisma.buyer.count({
           where: {
             createdAt: {
               gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -120,7 +118,7 @@ export class BuyerController {
         }),
         
         // Top buyers by order count
-        this.prisma.buyer.findMany({
+        prisma.buyer.findMany({
           select: {
             id: true,
             firstName: true,
@@ -137,7 +135,7 @@ export class BuyerController {
         }),
         
         // Buyers by status
-        this.prisma.buyer.groupBy({
+        prisma.buyer.groupBy({
           by: ['status'],
           _count: {
             status: true
@@ -214,10 +212,10 @@ export class BuyerController {
       }
 
       // Get total count
-      const total = await this.prisma.buyer.count({ where });
+      const total = await prisma.buyer.count({ where });
 
       // Get buyers
-      const buyers = await this.prisma.buyer.findMany({
+      const buyers = await prisma.buyer.findMany({
         where,
         skip,
         take: limit,
@@ -275,7 +273,7 @@ export class BuyerController {
     try {
       const { id } = req.params;
 
-      const buyer = await this.prisma.buyer.findUnique({
+      const buyer = await prisma.buyer.findUnique({
         where: { id },
         select: {
           id: true,
@@ -362,10 +360,10 @@ export class BuyerController {
         buyersByStatus,
       ] = await Promise.all([
         // Total buyers
-        this.prisma.buyer.count(),
+        prisma.buyer.count(),
         
         // Active buyers (with orders)
-        this.prisma.buyer.count({
+        prisma.buyer.count({
           where: {
             orders: {
               some: {}
@@ -374,19 +372,19 @@ export class BuyerController {
         }),
         
         // Verified buyers
-        this.prisma.buyer.count({
+        prisma.buyer.count({
           where: { status: 'ACTIVE' }
         }),
         
         // Enterprise buyers (with company name)
-        this.prisma.buyer.count({
+        prisma.buyer.count({
           where: {
             companyName: { not: null }
           }
         }),
         
         // Recent buyers (last 30 days)
-        this.prisma.buyer.count({
+        prisma.buyer.count({
           where: {
             createdAt: {
               gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -395,7 +393,7 @@ export class BuyerController {
         }),
         
         // Top buyers by order count
-        this.prisma.buyer.findMany({
+        prisma.buyer.findMany({
           select: {
             id: true,
             firstName: true,
@@ -412,7 +410,7 @@ export class BuyerController {
         }),
         
         // Buyers by status
-        this.prisma.buyer.groupBy({
+        prisma.buyer.groupBy({
           by: ['status'],
           _count: {
             status: true
@@ -461,7 +459,7 @@ export class BuyerController {
         });
       }
 
-      const buyer = await this.prisma.buyer.update({
+      const buyer = await prisma.buyer.update({
         where: { id },
         data: { status },
         select: {

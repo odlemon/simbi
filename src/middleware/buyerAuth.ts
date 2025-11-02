@@ -2,28 +2,44 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from "../utils/database";
+import { logger } from "../utils/logger";
+import { envConfig } from "../utils/env";
 
-// Extend Express Request type to include user
+// Extend Express Request type to include buyer
 declare global {
   namespace Express {
     interface Request {
-      user?: {
-        buyerId: string;
+      buyer?: {
+        id: string;
         email: string;
         buyerType: string;
         status: string;
+        firstName: string;
+        lastName: string;
       };
     }
   }
 }
 
 export interface BuyerAuthRequest extends Request {
-  user?: {
-    buyerId: string;
+  buyer?: {
+    id: string;
     email: string;
     buyerType: string;
     status: string;
+    firstName: string;
+    lastName: string;
   };
+}
+
+interface BuyerJwtPayload {
+  buyerId: string;
+  email: string;
+  buyerType: string;
+  status: string;
+  firstName: string;
+  lastName: string;
+  type: string;
 }
 
 /**
@@ -31,28 +47,40 @@ export interface BuyerAuthRequest extends Request {
  */
 export const authenticateBuyer = async (req: BuyerAuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
+    // Extract token from Authorization header
     const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(401).json({
         success: false,
-        message: 'Access token required',
-        error: 'NO_TOKEN'
+        message: "Authentication required. No token provided.",
+        timestamp: new Date().toISOString(),
       });
       return;
     }
 
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-    const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
     // Verify JWT token
-    const decoded = jwt.verify(token, JWT_SECRET) as { buyerId: string; type: string };
-    
+    const jwtSecret = envConfig.get("JWT_SECRET");
+    if (!jwtSecret) {
+      logger.error("JWT_SECRET not configured");
+      res.status(500).json({
+        success: false,
+        message: "Server configuration error",
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const decoded = jwt.verify(token, jwtSecret as string) as BuyerJwtPayload;
+
+    // Check if token is for buyer
     if (decoded.type !== 'access') {
       res.status(401).json({
         success: false,
-        message: 'Invalid token type',
-        error: 'INVALID_TOKEN_TYPE'
+        message: "Invalid token type",
+        timestamp: new Date().toISOString(),
       });
       return;
     }
@@ -64,15 +92,17 @@ export const authenticateBuyer = async (req: BuyerAuthRequest, res: Response, ne
         id: true,
         email: true,
         buyerType: true,
-        status: true
+        status: true,
+        firstName: true,
+        lastName: true
       }
     });
 
     if (!buyer) {
       res.status(401).json({
         success: false,
-        message: 'Buyer not found',
-        error: 'BUYER_NOT_FOUND'
+        message: "Buyer not found",
+        timestamp: new Date().toISOString(),
       });
       return;
     }
@@ -80,37 +110,57 @@ export const authenticateBuyer = async (req: BuyerAuthRequest, res: Response, ne
     if (buyer.status !== 'ACTIVE') {
       res.status(401).json({
         success: false,
-        message: 'Account is suspended or banned',
-        error: 'ACCOUNT_INACTIVE'
+        message: "Account is suspended or banned",
+        timestamp: new Date().toISOString(),
       });
       return;
     }
 
-    // Add buyer info to request
-    req.user = {
+    // Attach buyer data to request
+    req.buyer = {
+      id: buyer.id,
+      email: buyer.email,
+      buyerType: buyer.buyerType,
+      status: buyer.status,
+      firstName: buyer.firstName,
+      lastName: buyer.lastName
+    };
+
+    logger.info("Buyer authenticated", {
       buyerId: buyer.id,
       email: buyer.email,
       buyerType: buyer.buyerType,
-      status: buyer.status
-    };
+    });
 
     next();
-  } catch (error) {
-    console.error('Buyer authentication error:', error);
-    
-    if (error instanceof jwt.JsonWebTokenError) {
+  } catch (error: any) {
+    if (error.name === "TokenExpiredError") {
       res.status(401).json({
         success: false,
-        message: 'Invalid or expired token',
-        error: 'INVALID_TOKEN'
+        message: "Token has expired. Please login again.",
+        timestamp: new Date().toISOString(),
       });
       return;
     }
 
+    if (error.name === "JsonWebTokenError") {
+      res.status(401).json({
+        success: false,
+        message: "Invalid token. Authentication failed.",
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    logger.error("Buyer authentication error", {
+      error: error.message,
+      stack: error.stack,
+    });
+
     res.status(500).json({
       success: false,
-      message: 'Authentication error',
-      error: 'AUTH_ERROR'
+      message: "Authentication error occurred",
+      timestamp: new Date().toISOString(),
     });
   }
 };
@@ -119,20 +169,20 @@ export const authenticateBuyer = async (req: BuyerAuthRequest, res: Response, ne
  * Middleware to check if buyer is enterprise type
  */
 export const requireEnterpriseBuyer = (req: BuyerAuthRequest, res: Response, next: NextFunction): void => {
-  if (!req.user) {
+  if (!req.buyer) {
     res.status(401).json({
       success: false,
-      message: 'Authentication required',
-      error: 'NOT_AUTHENTICATED'
+      message: "Authentication required",
+      timestamp: new Date().toISOString(),
     });
     return;
   }
 
-  if (req.user.buyerType !== 'ENTERPRISE') {
+  if (req.buyer.buyerType !== 'ENTERPRISE') {
     res.status(403).json({
       success: false,
-      message: 'Enterprise buyer access required',
-      error: 'ENTERPRISE_REQUIRED'
+      message: "Enterprise buyer access required",
+      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -144,20 +194,20 @@ export const requireEnterpriseBuyer = (req: BuyerAuthRequest, res: Response, nex
  * Middleware to check if buyer is individual type
  */
 export const requireIndividualBuyer = (req: BuyerAuthRequest, res: Response, next: NextFunction): void => {
-  if (!req.user) {
+  if (!req.buyer) {
     res.status(401).json({
       success: false,
-      message: 'Authentication required',
-      error: 'NOT_AUTHENTICATED'
+      message: "Authentication required",
+      timestamp: new Date().toISOString(),
     });
     return;
   }
 
-  if (req.user.buyerType !== 'INDIVIDUAL') {
+  if (req.buyer.buyerType !== 'INDIVIDUAL') {
     res.status(403).json({
       success: false,
-      message: 'Individual buyer access required',
-      error: 'INDIVIDUAL_REQUIRED'
+      message: "Individual buyer access required",
+      timestamp: new Date().toISOString(),
     });
     return;
   }
@@ -179,12 +229,16 @@ export const optionalBuyerAuth = async (req: BuyerAuthRequest, res: Response, ne
     }
 
     const token = authHeader.substring(7);
-    const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+    const jwtSecret = envConfig.get("JWT_SECRET");
 
-    const decoded = jwt.verify(token, JWT_SECRET) as { buyerId: string; type: string };
+    if (!jwtSecret) {
+      next();
+      return;
+    }
+
+    const decoded = jwt.verify(token, jwtSecret as string) as BuyerJwtPayload;
     
     if (decoded.type !== 'access') {
-      // Invalid token type, continue without user info
       next();
       return;
     }
@@ -195,16 +249,20 @@ export const optionalBuyerAuth = async (req: BuyerAuthRequest, res: Response, ne
         id: true,
         email: true,
         buyerType: true,
-        status: true
+        status: true,
+        firstName: true,
+        lastName: true
       }
     });
 
     if (buyer && buyer.status === 'ACTIVE') {
-      req.user = {
-        buyerId: buyer.id,
+      req.buyer = {
+        id: buyer.id,
         email: buyer.email,
         buyerType: buyer.buyerType,
-        status: buyer.status
+        status: buyer.status,
+        firstName: buyer.firstName,
+        lastName: buyer.lastName
       };
     }
 

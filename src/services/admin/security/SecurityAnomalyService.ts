@@ -11,7 +11,6 @@ interface AnomalyDetectionResult {
 }
 
 export class SecurityAnomalyService {
-  private prisma = prisma;
 
   /**
    * Check for multiple login attempts from different IPs
@@ -25,7 +24,7 @@ export class SecurityAnomalyService {
       // Get recent login attempts (last 24 hours)
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-      const recentLogins = await this.prisma.activityLog.findMany({
+      const recentLogins = await prisma.activityLog.findMany({
         where: {
           entityType: userType.charAt(0).toUpperCase() + userType.slice(1),
           entityId: userId,
@@ -95,7 +94,7 @@ export class SecurityAnomalyService {
     newQuantity: number
   ): Promise<AnomalyDetectionResult> {
     try {
-      const inventory = await this.prisma.sellerInventory.findUnique({
+      const inventory = await prisma.sellerInventory.findUnique({
         where: { id: inventoryId },
         include: {
           seller: { select: { id: true, businessName: true } },
@@ -154,7 +153,7 @@ export class SecurityAnomalyService {
    */
   async checkUnusualOrderPattern(buyerId: string, orderId: string): Promise<AnomalyDetectionResult> {
     try {
-      const order = await this.prisma.order.findUnique({
+      const order = await prisma.order.findUnique({
         where: { id: orderId },
         select: {
           totalAmount: true,
@@ -169,7 +168,7 @@ export class SecurityAnomalyService {
       // Get buyer's order history (last 30 days)
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-      const recentOrders = await this.prisma.order.findMany({
+      const recentOrders = await prisma.order.findMany({
         where: {
           buyerId,
           createdAt: { gte: thirtyDaysAgo },
@@ -235,7 +234,7 @@ export class SecurityAnomalyService {
       // Get orders in last 1 hour
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-      const recentOrders = await this.prisma.order.findMany({
+      const recentOrders = await prisma.order.findMany({
         where: {
           buyerId,
           createdAt: { gte: oneHourAgo },
@@ -290,7 +289,7 @@ export class SecurityAnomalyService {
 
       // MySQL doesn't support JSON path queries
       // Fetch all failed login attempts and filter in code
-      const allFailedAttempts = await this.prisma.activityLog.findMany({
+      const allFailedAttempts = await prisma.activityLog.findMany({
         where: {
           entityType: userType.charAt(0).toUpperCase() + userType.slice(1),
           action: "LOGIN_FAILED",
@@ -360,7 +359,7 @@ export class SecurityAnomalyService {
       // Map MEDIUM to LOW since AlertTier only has CRITICAL, HIGH, LOW
       const tier = data.severity === "MEDIUM" ? "LOW" : data.severity;
 
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: tier as "CRITICAL" | "HIGH" | "LOW",
           status: "OPEN",
@@ -455,13 +454,13 @@ export class SecurityAnomalyService {
       if (anomalyType) where.alertCode = `SECURITY_${anomalyType}`;
 
       const [alerts, total] = await Promise.all([
-        this.prisma.adminAlert.findMany({
+        prisma.adminAlert.findMany({
           where,
           orderBy: { createdAt: "desc" },
           skip,
           take: limit,
         }),
-        this.prisma.adminAlert.count({ where }),
+        prisma.adminAlert.count({ where }),
       ]);
 
       return {

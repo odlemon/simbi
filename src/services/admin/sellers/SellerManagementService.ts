@@ -30,7 +30,7 @@ interface CreateSellerData {
 }
 
 export class SellerManagementService {
-  private prisma = prisma;
+
   private sriService = new SRICalculationService();
 
   /**
@@ -75,7 +75,7 @@ export class SellerManagementService {
       }
 
       const [sellers, total] = await Promise.all([
-        this.prisma.seller.findMany({
+        prisma.seller.findMany({
           where,
           skip,
           take: limit,
@@ -100,7 +100,7 @@ export class SellerManagementService {
             bankAccountNumber: false,
           },
         }),
-        this.prisma.seller.count({ where }),
+        prisma.seller.count({ where }),
       ]);
 
       return {
@@ -126,7 +126,7 @@ export class SellerManagementService {
    */
   async getSellerById(sellerId: string): Promise<any> {
     try {
-      const seller = await this.prisma.seller.findUnique({
+      const seller = await prisma.seller.findUnique({
         where: { id: sellerId },
         include: {
           documents: {
@@ -189,7 +189,7 @@ export class SellerManagementService {
   ): Promise<Seller> {
     try {
       // Check if seller already exists
-      const existing = await this.prisma.seller.findFirst({
+      const existing = await prisma.seller.findFirst({
         where: {
           OR: [
             { email: data.email },
@@ -207,7 +207,7 @@ export class SellerManagementService {
       const hashedPassword = await bcrypt.hash(data.password, 12);
 
       // Create seller with auto-approval
-      const seller = await this.prisma.seller.create({
+      const seller = await prisma.seller.create({
         data: {
           email: data.email,
           password: hashedPassword,
@@ -252,7 +252,7 @@ export class SellerManagementService {
     adminId: string
   ): Promise<Seller> {
     try {
-      const seller = await this.prisma.seller.update({
+      const seller = await prisma.seller.update({
         where: { id: sellerId },
         data: {
           ...(data.businessName && { businessName: data.businessName }),
@@ -295,7 +295,7 @@ export class SellerManagementService {
       //   );
       // }
 
-      await this.prisma.seller.update({
+      await prisma.seller.update({
         where: { id: sellerId },
         data: {
           status: SellerStatus.ACTIVE,
@@ -326,7 +326,7 @@ export class SellerManagementService {
     adminId: string
   ): Promise<void> {
     try {
-      await this.prisma.seller.update({
+      await prisma.seller.update({
         where: { id: sellerId },
         data: {
           status: SellerStatus.SUSPENDED,
@@ -335,7 +335,7 @@ export class SellerManagementService {
       });
 
       // Create alert
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: "HIGH",
           status: "OPEN",
@@ -374,7 +374,7 @@ export class SellerManagementService {
     adminId: string
   ): Promise<void> {
     try {
-      await this.prisma.seller.update({
+      await prisma.seller.update({
         where: { id: sellerId },
         data: {
           status: SellerStatus.BANNED,
@@ -384,7 +384,7 @@ export class SellerManagementService {
       });
 
       // Create alert
-      await this.prisma.adminAlert.create({
+      await prisma.adminAlert.create({
         data: {
           tier: "CRITICAL",
           status: "OPEN",
@@ -420,7 +420,7 @@ export class SellerManagementService {
   async reactivateSeller(sellerId: string, adminId: string): Promise<void> {
     try {
       // Check if seller meets requirements
-      const seller = await this.prisma.seller.findUnique({
+      const seller = await prisma.seller.findUnique({
         where: { id: sellerId },
       });
 
@@ -437,7 +437,7 @@ export class SellerManagementService {
         throw new Error("Cannot reactivate: SRI score below threshold (70)");
       }
 
-      await this.prisma.seller.update({
+      await prisma.seller.update({
         where: { id: sellerId },
         data: {
           status: SellerStatus.ACTIVE,
@@ -465,7 +465,7 @@ export class SellerManagementService {
   private async checkSellerCompliance(sellerId: string): Promise<number> {
     const requiredDocTypes = ["ZIMRA_CERTIFICATE", "TIN_CERTIFICATE", "KYC_DOCUMENT"];
 
-    const documents = await this.prisma.sellerDocument.findMany({
+    const documents = await prisma.sellerDocument.findMany({
       where: {
         sellerId,
         documentType: { in: requiredDocTypes as any },
@@ -514,16 +514,16 @@ export class SellerManagementService {
         sriStats,
         belowThreshold,
       ] = await Promise.all([
-        this.prisma.seller.count(),
-        this.prisma.seller.count({ where: { status: "ACTIVE" } }),
-        this.prisma.seller.count({ where: { status: "SUSPENDED" } }),
-        this.prisma.seller.count({ where: { status: "BANNED" } }),
-        this.prisma.seller.count({ where: { status: "PENDING_APPROVAL" } }),
-        this.prisma.seller.aggregate({
+        prisma.seller.count(),
+        prisma.seller.count({ where: { status: "ACTIVE" } }),
+        prisma.seller.count({ where: { status: "SUSPENDED" } }),
+        prisma.seller.count({ where: { status: "BANNED" } }),
+        prisma.seller.count({ where: { status: "PENDING_APPROVAL" } }),
+        prisma.seller.aggregate({
           _avg: { sriScore: true },
           where: { status: "ACTIVE" },
         }),
-        this.prisma.seller.count({
+        prisma.seller.count({
           where: {
             status: "ACTIVE",
             sriScore: { lt: 70 },

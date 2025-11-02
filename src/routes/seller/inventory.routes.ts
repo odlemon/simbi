@@ -15,6 +15,9 @@ router.use(authenticateSeller);
 // Browse master catalog
 router.get("/catalog", (req, res) => controller.browseCatalog(req, res));
 
+// Products endpoint (alias for listings)
+router.get("/products", (req, res) => controller.getProducts(req, res));
+
 // Listing CRUD
 router.post("/listings", (req, res) => controller.createListing(req, res));
 router.get("/listings", (req, res) => controller.getInventory(req, res));

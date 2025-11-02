@@ -16,7 +16,7 @@ class DisputeController {
    */
   async createDispute(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -57,7 +57,7 @@ class DisputeController {
    */
   async getBuyerDisputes(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       
@@ -106,7 +106,7 @@ class DisputeController {
    */
   async getDisputeById(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const disputeId = req.params.id;
       
       if (!buyerId) {
@@ -148,7 +148,7 @@ class DisputeController {
    */
   async updateDispute(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const disputeId = req.params.id;
       
       if (!buyerId) {

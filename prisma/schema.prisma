@@ -1,6 +1,3 @@
-// Simbi Market - Comprehensive Database Schema
-// Version: 1.0
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,9 +7,1126 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================================
-// AUTHENTICATION & RBAC
-// ============================================================================
+model Admin {
+  id              String                @id @default(uuid())
+  email           String                @unique
+  password        String
+  firstName       String
+  lastName        String
+  role            UserRole
+  status          UserStatus            @default(ACTIVE)
+  mfaEnabled      Boolean               @default(false)
+  mfaSecret       String?
+  lastLoginAt     DateTime?
+  lastLoginIp     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  activityLogs    ActivityLog[]
+  alertsHandled   AdminAlert[]
+  disputesHandled Dispute[]
+  integrations    ExternalIntegration[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@map("admins")
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  adminId    String
+  action     String
+  entityType String
+  entityId   String
+  ipAddress  String
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  admin      Admin    @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model MasterProduct {
+  id                   String                @id @default(uuid())
+  masterPartId         String                @unique
+  oemPartNumber        String
+  name                 String
+  description          String                @db.Text
+  categoryId           String
+  manufacturer         String
+  length               Float?
+  width                Float?
+  height               Float?
+  weight               Float?
+  unit                 MeasurementUnit       @default(METRIC)
+  vehicleCompatibility Json
+  imageUrls            Json?
+  specSheetUrl         String?
+  isActive             Boolean               @default(true)
+  isCustom             Boolean               @default(false)
+  approvedAt           DateTime?
+  approvedBy           String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  customRequest        CustomProductRequest?
+  category             ProductCategory       @relation(fields: [categoryId], references: [id])
+  quoteRequests        QuoteRequest[]
+  sellerInventory      SellerInventory[]
+
+  @@index([oemPartNumber])
+  @@index([categoryId])
+  @@index([manufacturer])
+  @@index([isActive])
+  @@map("master_products")
+}
+
+model ProductCategory {
+  id             String            @id @default(uuid())
+  name           String            @unique
+  slug           String            @unique
+  description    String?           @db.Text
+  commissionRate Float
+  parentId       String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  products       MasterProduct[]
+  parent         ProductCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children       ProductCategory[] @relation("CategoryHierarchy")
+
+  @@index([slug])
+  @@index([parentId])
+  @@map("product_categories")
+}
+
+model Seller {
+  id                        String                 @id @default(uuid())
+  email                     String                 @unique
+  password                  String
+  businessName              String
+  tradingName               String?
+  businessAddress           String                 @db.Text
+  contactNumber             String
+  tin                       String                 @unique
+  registrationNumber        String?
+  bankAccountName           String?
+  bankAccountNumber         String?
+  bankName                  String?
+  status                    SellerStatus           @default(ACTIVE)
+  sriScore                  Float                  @default(70)
+  lastSriCalculation        DateTime?
+  mfaEnabled                Boolean                @default(false)
+  mfaSecret                 String?
+  isEligible                Boolean                @default(true)
+  isShadowBanned            Boolean                @default(false)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  emailVerified             Boolean                @default(false)
+  verificationCode          String?
+  verificationCodeExpiresAt DateTime?
+  bulkUploads               BulkUpload[]
+  customProductRequests     CustomProductRequest[]
+  disputes                  Dispute[]
+  integrations              ExternalIntegration[]
+  loanApplications          LoanApplication[]
+  orders                    Order[]
+  payouts                   Payout[]
+  quoteRequests             QuoteRequest[]
+  quoteResponses            QuoteResponse[]
+  documents                 SellerDocument[]
+  employees                 SellerEmployee[]
+  expenses                  SellerExpense[]
+  inventory                 SellerInventory[]
+  ledgerEntries             SellerLedger[]
+  staff                     SellerStaff[]
+  sriHistory                SRIHistory[]
+
+  @@index([email])
+  @@index([status])
+  @@index([sriScore])
+  @@index([isEligible])
+  @@map("sellers")
+}
+
+model SellerDocument {
+  id              String         @id @default(uuid())
+  sellerId        String
+  documentType    DocumentType
+  status          DocumentStatus @default(PENDING)
+  fileUrl         String
+  fileHash        String
+  issuedDate      DateTime?
+  expiryDate      DateTime?
+  uploadedAt      DateTime       @default(now())
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?        @db.Text
+  viewLogs        Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  seller          Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([documentType])
+  @@index([status])
+  @@index([expiryDate])
+  @@map("seller_documents")
+}
+
+model SRIHistory {
+  id                  String   @id @default(uuid())
+  sellerId            String
+  score               Float
+  fulfilmentRate      Float
+  onTimeDeliveryRate  Float
+  defectRate          Float
+  complianceScore     Float
+  calculationDate     DateTime @default(now())
+  ordersPeriodStart   DateTime
+  ordersPeriodEnd     DateTime
+  totalOrdersAnalyzed Int
+  seller              Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([calculationDate])
+  @@map("sri_history")
+}
+
+model SellerInventory {
+  id                String                   @id @default(uuid())
+  sellerId          String
+  masterProductId   String
+  sellerPrice       Float
+  currency          Currency                 @default(USD)
+  quantity          Int
+  lowStockThreshold Int                      @default(5)
+  isActive          Boolean                  @default(true)
+  lastPriceUpdate   DateTime?
+  priceUpdateCount  Int                      @default(0)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  condition         ProductCondition         @default(NEW)
+  reorderPoint      Int?
+  sellerImages      Json?
+  sellerNotes       String?                  @db.Text
+  sellerSku         String?
+  cartItems         CartItem[]
+  adjustmentLogs    InventoryAdjustmentLog[]
+  orderItems        OrderItem[]
+  masterProduct     MasterProduct            @relation(fields: [masterProductId], references: [id])
+  seller            Seller                   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, masterProductId])
+  @@index([sellerId])
+  @@index([masterProductId])
+  @@index([isActive])
+  @@index([condition])
+  @@map("seller_inventory")
+}
+
+model InventoryAdjustmentLog {
+  id             String          @id @default(uuid())
+  inventoryId    String
+  sellerId       String
+  adjustmentType String
+  oldPrice       Float?
+  newPrice       Float?
+  oldQuantity    Int?
+  newQuantity    Int?
+  quantityChange Int?
+  adjustedBy     String?
+  adjustedByType String
+  adjustedByName String?
+  reason         String?         @db.Text
+  notes          String?         @db.Text
+  ipAddress      String?
+  userAgent      String?         @db.Text
+  createdAt      DateTime        @default(now())
+  inventory      SellerInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryId])
+  @@index([sellerId, createdAt])
+  @@index([adjustmentType])
+  @@map("inventory_adjustment_logs")
+}
+
+model BulkUpload {
+  id               String           @id @default(uuid())
+  sellerId         String
+  fileName         String
+  fileUrl          String?
+  fileSize         Int?
+  totalRows        Int              @default(0)
+  status           BulkUploadStatus @default(PENDING)
+  processedRows    Int              @default(0)
+  successRows      Int              @default(0)
+  failedRows       Int              @default(0)
+  validationReport Json?
+  errorSummary     String?          @db.Text
+  startedAt        DateTime?
+  completedAt      DateTime?
+  processingTime   Int?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  seller           Seller           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, createdAt])
+  @@index([status])
+  @@map("bulk_uploads")
+}
+
+model ChartOfAccount {
+  id            String           @id @default(uuid())
+  code          String           @unique
+  name          String
+  type          AccountType
+  parentId      String?
+  isActive      Boolean          @default(true)
+  isSystem      Boolean          @default(true)
+  description   String?          @db.Text
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  parent        ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children      ChartOfAccount[] @relation("AccountHierarchy")
+  ledgerEntries SellerLedger[]
+
+  @@index([type])
+  @@index([code])
+  @@index([isActive])
+  @@index([parentId], map: "chart_of_accounts_parentId_fkey")
+  @@map("chart_of_accounts")
+}
+
+model SellerLedger {
+  id              String          @id @default(uuid())
+  sellerId        String
+  transactionDate DateTime
+  type            TransactionType
+  category        String?
+  amountUSD       Float
+  amountZWL       Float?
+  description     String          @db.Text
+  referenceId     String?
+  debit           Float?
+  credit          Float?
+  balance         Float
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  accountId       String?
+  account         ChartOfAccount? @relation(fields: [accountId], references: [id])
+  seller          Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, transactionDate])
+  @@index([type])
+  @@index([referenceId])
+  @@index([accountId])
+  @@map("seller_ledger")
+}
+
+model SellerExpense {
+  id          String          @id @default(uuid())
+  sellerId    String
+  date        DateTime
+  category    ExpenseCategory
+  amount      Float
+  currency    Currency        @default(USD)
+  description String          @db.Text
+  receiptUrl  String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  seller      Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, date])
+  @@index([category])
+  @@map("seller_expenses")
+}
+
+model SellerStaff {
+  id           String             @id @default(uuid())
+  sellerId     String
+  email        String             @unique
+  firstName    String
+  lastName     String
+  phone        String
+  role         StaffRole          @default(DISPATCHER)
+  hourlyRate   Float?
+  isActive     Boolean            @default(true)
+  lastLogin    DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  department   StaffDepartment
+  endDate      DateTime?
+  passwordHash String
+  position     String
+  salary       Float
+  startDate    DateTime
+  status       StaffStatus        @default(ACTIVE)
+  seller       Seller             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  activityLogs StaffActivityLog[]
+  timeLogs     StaffTimeLog[]
+
+  @@index([sellerId])
+  @@index([email])
+  @@index([isActive])
+  @@index([status])
+  @@index([department])
+  @@map("seller_staff")
+}
+
+model StaffTimeLog {
+  id          String      @id @default(uuid())
+  staffId     String
+  sellerId    String
+  clockIn     DateTime
+  clockOut    DateTime?
+  hoursWorked Float?
+  date        DateTime
+  notes       String?     @db.Text
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  staff       SellerStaff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, date])
+  @@index([sellerId, date])
+  @@map("staff_time_logs")
+}
+
+model StaffActivityLog {
+  id           String       @id @default(uuid())
+  staffId      String
+  sellerId     String
+  action       String?
+  entityType   String?
+  entityId     String?
+  description  String       @db.Text
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?      @db.Text
+  createdAt    DateTime     @default(now())
+  activityType ActivityType
+  staff        SellerStaff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+  @@index([activityType])
+  @@index([sellerId, createdAt])
+  @@index([entityType, entityId])
+  @@map("staff_activity_logs")
+}
+
+model FinancialPartner {
+  id               String            @id @default(uuid())
+  name             String
+  slug             String            @unique
+  logo             String?
+  description      String            @db.Text
+  minAmount        Float
+  maxAmount        Float
+  interestRate     Float
+  termMonths       Int
+  apiEndpoint      String?
+  apiKey           String?
+  webhookUrl       String?
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  loanApplications LoanApplication[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("financial_partners")
+}
+
+model LoanApplication {
+  id                    String           @id @default(uuid())
+  sellerId              String
+  partnerId             String
+  requestedAmount       Float
+  currency              Currency         @default(USD)
+  purpose               String           @db.Text
+  status                LoanStatus       @default(DRAFT)
+  last6MonthsRevenue    Float?
+  inventoryValue        Float?
+  storeHealthScore      Float?
+  monthlyOrderCount     Int?
+  applicationData       Json?
+  partnerReferenceId    String?
+  partnerResponse       Json?
+  rejectionReason       String?          @db.Text
+  approvedAmount        Float?
+  interestRate          Float?
+  termMonths            Int?
+  monthlyPayment        Float?
+  submittedAt           DateTime?
+  reviewedAt            DateTime?
+  approvedAt            DateTime?
+  rejectedAt            DateTime?
+  disbursedAt           DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  businessExpenses      Float?
+  businessRevenue       Float?
+  collateralDescription String?          @db.Text
+  partner               FinancialPartner @relation(fields: [partnerId], references: [id])
+  seller                Seller           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, status])
+  @@index([partnerId])
+  @@index([status])
+  @@index([submittedAt])
+  @@map("loan_applications")
+}
+
+model Buyer {
+  id                        String                @id @default(uuid())
+  email                     String                @unique
+  password                  String
+  firstName                 String
+  lastName                  String
+  phoneNumber               String
+  buyerType                 BuyerType             @default(INDIVIDUAL)
+  status                    BuyerStatus           @default(ACTIVE)
+  loyaltyPoints             Int                   @default(0)
+  loyaltyTier               LoyaltyTier           @default(BRONZE)
+  companyName               String?
+  taxId                     String?
+  creditLimit               Float?                @default(0)
+  creditUsed                Float?                @default(0)
+  paymentTermDays           Int?
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  addressLine1              String?
+  addressLine2              String?
+  billingAddress            String?
+  businessType              String?
+  city                      String?
+  contactEmail              String?
+  contactPhone              String?
+  country                   String?
+  currency                  String?               @default("USD")
+  description               String?
+  establishedYear           Int?
+  industry                  String?
+  marketingConsent          Boolean?              @default(false)
+  monthlySpendingLimit      Float?
+  numberOfEmployees         Int?
+  postalCode                String?
+  preferredContactMethod    String?
+  province                  String?
+  registrationNumber        String?
+  shippingAddress           String?
+  termsAccepted             Boolean?              @default(false)
+  website                   String?
+  emailVerified             Boolean               @default(false)
+  verificationCode          String?
+  verificationCodeExpiresAt DateTime?
+  approvalWorkflows         ApprovalWorkflow[]
+  addresses                 BuyerAddress[]
+  cart                      Cart?
+  disputes                  Dispute[]
+  enterpriseUsers           EnterpriseUser[]
+  integrations              ExternalIntegration[]
+  orders                    Order[]
+  quoteRequests             QuoteRequest[]
+  savedSearches             SavedSearch[]
+
+  @@index([email])
+  @@index([buyerType])
+  @@index([status])
+  @@map("buyers")
+}
+
+model BuyerAddress {
+  id           String   @id @default(uuid())
+  buyerId      String
+  fullName     String
+  phoneNumber  String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  province     String
+  postalCode   String?
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  buyer        Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  orders       Order[]
+
+  @@index([buyerId])
+  @@map("buyer_addresses")
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  buyerId   String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     CartItem[]
+  buyer     Buyer      @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([buyerId])
+  @@map("carts")
+}
+
+model CartItem {
+  id          String          @id @default(uuid())
+  cartId      String
+  inventoryId String
+  quantity    Int             @default(1)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  cart        Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  inventory   SellerInventory @relation(fields: [inventoryId], references: [id])
+
+  @@unique([cartId, inventoryId])
+  @@index([cartId])
+  @@index([inventoryId])
+  @@map("cart_items")
+}
+
+model EnterpriseUser {
+  id                String             @id @default(uuid())
+  enterpriseBuyerId String
+  email             String             @unique
+  firstName         String
+  lastName          String
+  role              EnterpriseUserRole
+  spendingLimit     Float?
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  enterpriseBuyer   Buyer              @relation(fields: [enterpriseBuyerId], references: [id], onDelete: Cascade)
+
+  @@index([enterpriseBuyerId])
+  @@index([email])
+  @@map("enterprise_users")
+}
+
+model ExternalIntegration {
+  id               String            @id @default(uuid())
+  buyerId          String?
+  sellerId         String?
+  adminId          String?
+  integrationType  IntegrationType
+  name             String
+  apiEndpoint      String?
+  apiKey           String?
+  clientId         String?
+  clientSecret     String?
+  webhookUrl       String?
+  config           Json?
+  isActive         Boolean           @default(false)
+  status           IntegrationStatus @default(PENDING_SETUP)
+  lastSyncAt       DateTime?
+  syncStatus       String?
+  syncError        String?           @db.Text
+  rateLimitPerHour Int?              @default(1000)
+  currentRateCount Int               @default(0)
+  rateLimitResetAt DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  admin            Admin?            @relation(fields: [adminId], references: [id])
+  buyer            Buyer?            @relation(fields: [buyerId], references: [id])
+  seller           Seller?           @relation(fields: [sellerId], references: [id])
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([integrationType])
+  @@index([status])
+  @@index([adminId], map: "external_integrations_adminId_fkey")
+  @@map("external_integrations")
+}
+
+model VinDecodeCache {
+  id           String   @id @default(uuid())
+  vin          String   @unique
+  make         String
+  model        String
+  year         Int
+  engine       String?
+  transmission String?
+  bodyStyle    String?
+  fuelType     String?
+  confidence   Float
+  rawResponse  Json?
+  decodedAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([vin])
+  @@index([expiresAt])
+  @@map("vin_decode_cache")
+}
+
+model SmsMessage {
+  id               String    @id @default(uuid())
+  recipient        String
+  message          String    @db.Text
+  templateId       String?
+  gatewayProvider  String?
+  gatewayMessageId String?
+  gatewayStatus    String?
+  status           String    @default("PENDING")
+  sentAt           DateTime?
+  deliveredAt      DateTime?
+  failedAt         DateTime?
+  failureReason    String?   @db.Text
+  retryCount       Int       @default(0)
+  maxRetries       Int       @default(3)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([recipient])
+  @@index([status])
+  @@index([createdAt])
+  @@map("sms_messages")
+}
+
+model PaymentGatewayTransaction {
+  id                   String    @id @default(uuid())
+  orderId              String
+  paymentId            String
+  gatewayProvider      String
+  gatewayTransactionId String    @unique
+  gatewayResponse      Json?
+  amount               Float
+  currency             Currency
+  gatewayFee           Float?
+  status               String
+  processedAt          DateTime?
+  failedAt             DateTime?
+  failureReason        String?   @db.Text
+  webhookReceived      Boolean   @default(false)
+  webhookData          Json?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  order                Order     @relation(fields: [orderId], references: [id])
+  payment              Payment   @relation(fields: [paymentId], references: [id])
+
+  @@index([orderId])
+  @@index([gatewayTransactionId])
+  @@index([status])
+  @@index([paymentId], map: "payment_gateway_transactions_paymentId_fkey")
+  @@map("payment_gateway_transactions")
+}
+
+model SavedSearch {
+  id          String   @id @default(uuid())
+  buyerId     String
+  name        String
+  description String?  @db.Text
+  criteria    Json
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  buyer       Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([buyerId])
+  @@index([isPublic])
+  @@map("saved_searches")
+}
+
+model ApprovalWorkflow {
+  id                String   @id @default(uuid())
+  enterpriseBuyerId String
+  name              String
+  description       String?  @db.Text
+  conditions        Json
+  approvers         Json
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  enterpriseBuyer   Buyer    @relation(fields: [enterpriseBuyerId], references: [id], onDelete: Cascade)
+
+  @@index([enterpriseBuyerId])
+  @@index([isActive])
+  @@map("approval_workflows")
+}
+
+model QuoteRequest {
+  id                   String         @id @default(uuid())
+  productId            String
+  buyerId              String
+  sellerId             String
+  quantity             Int
+  message              String?        @db.Text
+  urgency              String         @default("MEDIUM")
+  expectedDeliveryDate DateTime?
+  status               String         @default("PENDING")
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  buyer                Buyer          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  product              MasterProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  seller               Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  quote                QuoteResponse?
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([productId])
+  @@index([status])
+  @@map("quote_requests")
+}
+
+model QuoteResponse {
+  id                String       @id @default(uuid())
+  quoteRequestId    String       @unique
+  sellerId          String
+  price             Float
+  availability      String
+  estimatedDelivery DateTime?
+  message           String?      @db.Text
+  validUntil        DateTime?
+  status            String       @default("PENDING")
+  respondedAt       DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  quoteRequest      QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+  seller            Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([quoteRequestId])
+  @@index([sellerId])
+  @@index([status])
+  @@map("quote_responses")
+}
+
+model Order {
+  id                    String                      @id @default(uuid())
+  orderNumber           String                      @unique
+  buyerId               String
+  sellerId              String
+  addressId             String
+  poNumber              String?
+  costCenter            String?
+  subtotal              Float
+  shippingCost          Float
+  platformCommission    Float
+  totalAmount           Float
+  currency              Currency
+  exchangeRate          Float?
+  exchangeRateTimestamp DateTime?
+  status                OrderStatus                 @default(PENDING_PAYMENT)
+  paymentStatus         PaymentStatus               @default(PENDING)
+  sellerAcceptedAt      DateTime?
+  sellerRejectedAt      DateTime?
+  rejectionReason       String?                     @db.Text
+  estimatedDeliveryDate DateTime?
+  actualDeliveryDate    DateTime?
+  ipAddress             String?
+  userAgent             String?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  disputes              Dispute?
+  items                 OrderItem[]
+  shippingAddress       BuyerAddress                @relation(fields: [addressId], references: [id])
+  buyer                 Buyer                       @relation(fields: [buyerId], references: [id])
+  seller                Seller                      @relation(fields: [sellerId], references: [id])
+  gatewayTransactions   PaymentGatewayTransaction[]
+  payment               Payment?
+  payout                Payout?
+  shipment              Shipment?
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([createdAt])
+  @@index([addressId], map: "orders_addressId_fkey")
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String          @id @default(uuid())
+  orderId      String
+  inventoryId  String
+  quantity     Int
+  unitPrice    Float
+  displayPrice Float
+  commission   Float
+  createdAt    DateTime        @default(now())
+  inventory    SellerInventory @relation(fields: [inventoryId], references: [id])
+  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([inventoryId], map: "order_items_inventoryId_fkey")
+  @@map("order_items")
+}
+
+model Payment {
+  id                   String                      @id @default(uuid())
+  orderId              String                      @unique
+  amount               Float
+  currency             Currency
+  paymentMethod        PaymentMethod
+  gatewayProvider      String?
+  gatewayTransactionId String?
+  gatewayResponse      Json?
+  status               PaymentStatus               @default(PENDING)
+  paidAt               DateTime?
+  failedAt             DateTime?
+  failureReason        String?                     @db.Text
+  refundedAt           DateTime?
+  refundAmount         Float?
+  metadata             Json?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  gatewayTransactions  PaymentGatewayTransaction[]
+  order                Order                       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([gatewayTransactionId])
+  @@map("payments")
+}
+
+model Payout {
+  id                 String       @id @default(uuid())
+  sellerId           String
+  orderId            String       @unique
+  grossAmount        Float
+  platformCommission Float
+  gatewayFee         Float
+  netAmount          Float
+  currency           Currency
+  status             PayoutStatus @default(PENDING)
+  scheduledDate      DateTime
+  processedDate      DateTime?
+  bankReference      String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  order              Order        @relation(fields: [orderId], references: [id])
+  seller             Seller       @relation(fields: [sellerId], references: [id])
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("payouts")
+}
+
+model ExchangeRate {
+  id            String   @id @default(uuid())
+  fromCurrency  Currency
+  toCurrency    Currency
+  rate          Float
+  source        String
+  effectiveDate DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([fromCurrency, toCurrency, effectiveDate])
+  @@map("exchange_rates")
+}
+
+model Dispute {
+  id                 String        @id @default(uuid())
+  orderId            String        @unique
+  disputeType        DisputeType
+  status             DisputeStatus @default(OPEN)
+  buyerDescription   String        @db.Text
+  sellerResponse     String?       @db.Text
+  adminNotes         String?       @db.Text
+  assignedAdminId    String?
+  buyerEvidenceUrls  Json?
+  sellerEvidenceUrls Json?
+  resolutionDate     DateTime?
+  resolutionOutcome  String?       @db.Text
+  isFaultBased       Boolean       @default(true)
+  sloTargetDate      DateTime?
+  sloStatus          String?
+  sloBreached        Boolean       @default(false)
+  metadata           Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  buyerId            String
+  sellerId           String
+  assignedAdmin      Admin?        @relation(fields: [assignedAdminId], references: [id])
+  buyer              Buyer         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  order              Order         @relation(fields: [orderId], references: [id])
+  seller             Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([assignedAdminId])
+  @@index([createdAt])
+  @@index([isFaultBased])
+  @@index([sloStatus])
+  @@index([sloBreached])
+  @@map("disputes")
+}
+
+model Carrier {
+  id                String        @id @default(uuid())
+  name              String        @unique
+  code              String        @unique
+  contactEmail      String
+  contactPhone      String
+  hasApiIntegration Boolean       @default(false)
+  apiEndpoint       String?
+  apiKey            String?
+  serviceLevels     Json
+  status            CarrierStatus @default(ACTIVE)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  shipments         Shipment[]
+
+  @@index([code])
+  @@map("carriers")
+}
+
+model Shipment {
+  id                String         @id @default(uuid())
+  orderId           String         @unique
+  carrierId         String
+  trackingNumber    String         @unique
+  weight            Float
+  length            Float
+  width             Float
+  height            Float
+  status            ShipmentStatus @default(PENDING_PICKUP)
+  estimatedDelivery DateTime
+  actualDelivery    DateTime?
+  trackingHistory   Json?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  carrier           Carrier        @relation(fields: [carrierId], references: [id])
+  order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([trackingNumber])
+  @@index([status])
+  @@index([carrierId], map: "shipments_carrierId_fkey")
+  @@map("shipments")
+}
+
+model SellerEmployee {
+  id                String          @id @default(uuid())
+  sellerId          String
+  nationalId        String          @unique
+  firstName         String
+  lastName          String
+  phoneNumber       String
+  email             String?
+  position          String
+  department        String?
+  salary            Float
+  hourlyRate        Float?
+  bankAccountNumber String?
+  bankName          String?
+  isActive          Boolean         @default(true)
+  hiredDate         DateTime
+  terminatedDate    DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  shifts            EmployeeShift[]
+  payslips          Payslip[]
+  seller            Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([nationalId])
+  @@map("seller_employees")
+}
+
+model EmployeeShift {
+  id               String         @id @default(uuid())
+  employeeId       String
+  clockInTime      DateTime
+  clockInLocation  Json
+  clockOutTime     DateTime?
+  clockOutLocation Json?
+  totalHours       Float?
+  isValidated      Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  employee         SellerEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([clockInTime])
+  @@map("employee_shifts")
+}
+
+model Payslip {
+  id              String         @id @default(uuid())
+  employeeId      String
+  periodStart     DateTime
+  periodEnd       DateTime
+  grossSalary     Float
+  payeDeduction   Float
+  nssaDeduction   Float
+  otherDeductions Float?
+  netSalary       Float
+  pdfUrl          String?
+  generatedAt     DateTime       @default(now())
+  paidAt          DateTime?
+  employee        SellerEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([periodEnd])
+  @@map("payslips")
+}
+
+model AdminAlert {
+  id              String      @id @default(uuid())
+  tier            AlertTier
+  status          AlertStatus @default(OPEN)
+  title           String
+  message         String      @db.Text
+  alertCode       String
+  entityType      String?
+  entityId        String?
+  metadata        Json?
+  assignedAdminId String?
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  resolutionNotes String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  assignedAdmin   Admin?      @relation(fields: [assignedAdminId], references: [id])
+
+  @@index([tier])
+  @@index([status])
+  @@index([alertCode])
+  @@index([createdAt])
+  @@index([assignedAdminId], map: "admin_alerts_assignedAdminId_fkey")
+  @@map("admin_alerts")
+}
+
+model CustomProductRequest {
+  id               String                     @id @default(uuid())
+  sellerId         String
+  productName      String
+  category         String
+  make             String
+  model            String
+  year             Int?
+  partCode         String?
+  description      String?                    @db.Text
+  imageUrls        Json?
+  status           CustomProductRequestStatus @default(PENDING)
+  adminNotes       String?                    @db.Text
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  createdProductId String?                    @unique
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  createdProduct   MasterProduct?             @relation(fields: [createdProductId], references: [id])
+  seller           Seller                     @relation(fields: [sellerId], references: [id])
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("custom_product_requests")
+}
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String   @db.Text
+  dataType    String
+  description String?  @db.Text
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
+}
 
 enum UserRole {
   SUPER_ADMIN
@@ -31,128 +1145,10 @@ enum UserStatus {
   INACTIVE
 }
 
-model Admin {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  password      String // Argon2id hashed
-  firstName     String
-  lastName      String
-  role          UserRole
-  status        UserStatus @default(ACTIVE)
-  mfaEnabled    Boolean  @default(false)
-  mfaSecret     String?
-  lastLoginAt   DateTime?
-  lastLoginIp   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Relations
-  activityLogs     ActivityLog[]
-  disputesHandled  Dispute[]
-  alertsHandled    AdminAlert[]
-  integrations     ExternalIntegration[]
-  
-  @@map("admins")
-  @@index([email])
-  @@index([role])
-  @@index([status])
-}
-
-model ActivityLog {
-  id          String   @id @default(uuid())
-  adminId     String
-  action      String   // e.g., "VIEWED_DOCUMENT", "APPROVED_SELLER", "PROCESSED_PAYOUT"
-  entityType  String   // e.g., "Seller", "Order", "Product"
-  entityId    String
-  ipAddress   String
-  userAgent   String?
-  metadata    Json?    // Additional context
-  createdAt   DateTime @default(now())
-
-  admin       Admin    @relation(fields: [adminId], references: [id])
-
-  @@map("activity_logs")
-  @@index([adminId])
-  @@index([entityType, entityId])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// MASTER PRODUCT DATABASE (2 Million Parts)
-// ============================================================================
-
 enum MeasurementUnit {
   METRIC
   IMPERIAL
 }
-
-model MasterProduct {
-  id                    String   @id @default(uuid())
-  masterPartId          String   @unique // Custom identifier
-  oemPartNumber         String   // Original Equipment Manufacturer part number
-  name                  String
-  description           String   @db.Text
-  categoryId            String
-  manufacturer          String
-  
-  // Dimensional data for logistics
-  length                Float?
-  width                 Float?
-  height                Float?
-  weight                Float?
-  unit                  MeasurementUnit @default(METRIC)
-  
-  // Vehicle compatibility (JSON array for flexibility)
-  vehicleCompatibility  Json     // { make, model, year, engineCode, trimLevel, vinRange }
-  
-  // Metadata
-  imageUrls             Json?    // Array of image URLs
-  specSheetUrl          String?
-  isActive              Boolean  @default(true)
-  isCustom              Boolean  @default(false) // True if admin-approved custom product
-  approvedAt            DateTime?
-  approvedBy            String?
-  
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  // Relations
-  category              ProductCategory @relation(fields: [categoryId], references: [id])
-  sellerInventory       SellerInventory[]
-  customRequest         CustomProductRequest?
-  quoteRequests         QuoteRequest[]
-  
-  @@map("master_products")
-  @@index([oemPartNumber])
-  @@index([categoryId])
-  @@index([manufacturer])
-  @@index([isActive])
-}
-
-model ProductCategory {
-  id                String   @id @default(uuid())
-  name              String   @unique
-  slug              String   @unique
-  description       String?  @db.Text
-  commissionRate    Float    // Platform commission rate (e.g., 0.10 for 10%)
-  parentId          String?  // For hierarchical categories
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  // Relations
-  parent            ProductCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children          ProductCategory[] @relation("CategoryHierarchy")
-  products          MasterProduct[]
-  
-  @@map("product_categories")
-  @@index([slug])
-  @@index([parentId])
-}
-
-// ============================================================================
-// SELLER MANAGEMENT
-// ============================================================================
 
 enum SellerStatus {
   PENDING_APPROVAL
@@ -176,123 +1172,6 @@ enum DocumentStatus {
   EXPIRED
 }
 
-model Seller {
-  id                    String   @id @default(uuid())
-  email                 String   @unique
-  password              String   // Argon2id hashed
-  businessName          String
-  tradingName           String?
-  businessAddress       String   @db.Text
-  contactNumber         String   // Encrypted
-  tin                   String   @unique // Tax Identification Number
-  
-  // Business details
-  registrationNumber    String?
-  bankAccountName       String?
-  bankAccountNumber     String?  // Encrypted
-  bankName              String?
-  
-  // Status and compliance
-  status                SellerStatus @default(ACTIVE)
-  sriScore              Float    @default(70) // Seller Reliability Index (0-100)
-  lastSriCalculation    DateTime?
-  
-  // Flags
-  mfaEnabled            Boolean  @default(false)
-  mfaSecret             String?
-  isEligible            Boolean  @default(true) // Above SRI threshold (70)
-  isShadowBanned        Boolean  @default(false)
-  
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  // Relations
-  documents             SellerDocument[]
-  inventory             SellerInventory[]
-  orders                Order[]
-  employees             SellerEmployee[]
-  sriHistory            SRIHistory[]
-  payouts               Payout[]
-  customProductRequests CustomProductRequest[]
-  
-  // ERP Module Relations
-  ledgerEntries         SellerLedger[]
-  expenses              SellerExpense[]
-  staff                 SellerStaff[]
-  loanApplications      LoanApplication[]
-  bulkUploads           BulkUpload[]
-  integrations          ExternalIntegration[]
-  
-  // Dispute & Quote Relations
-  disputes              Dispute[]
-  quoteRequests         QuoteRequest[]
-  quoteResponses        QuoteResponse[]
-  
-  @@map("sellers")
-  @@index([email])
-  @@index([status])
-  @@index([sriScore])
-  @@index([isEligible])
-}
-
-model SellerDocument {
-  id                String   @id @default(uuid())
-  sellerId          String
-  documentType      DocumentType
-  status            DocumentStatus @default(PENDING)
-  fileUrl           String   // Encrypted S3 URL
-  fileHash          String   // SHA-256 checksum
-  issuedDate        DateTime?
-  expiryDate        DateTime?
-  
-  uploadedAt        DateTime @default(now())
-  approvedAt        DateTime?
-  approvedBy        String?  // Admin ID
-  rejectionReason   String?  @db.Text
-  
-  // Audit trail
-  viewLogs          Json?    // Array of {adminId, timestamp, ipAddress}
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  seller            Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  
-  @@map("seller_documents")
-  @@index([sellerId])
-  @@index([documentType])
-  @@index([status])
-  @@index([expiryDate])
-}
-
-model SRIHistory {
-  id                    String   @id @default(uuid())
-  sellerId              String
-  score                 Float
-  
-  // Component scores (0.0 - 1.0)
-  fulfilmentRate        Float
-  onTimeDeliveryRate    Float
-  defectRate            Float
-  complianceScore       Float
-  
-  // Metadata
-  calculationDate       DateTime @default(now())
-  ordersPeriodStart     DateTime
-  ordersPeriodEnd       DateTime
-  totalOrdersAnalyzed   Int
-  
-  seller                Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  
-  @@map("sri_history")
-  @@index([sellerId])
-  @@index([calculationDate])
-}
-
-// ============================================================================
-// INVENTORY MANAGEMENT
-// ============================================================================
-
 enum Currency {
   USD
   ZWL
@@ -304,135 +1183,13 @@ enum ProductCondition {
   REFURBISHED
 }
 
-model SellerInventory {
-  id                String   @id @default(uuid())
-  sellerId          String
-  masterProductId   String
-  
-  // Pricing
-  sellerPrice       Float    // Seller's price in primary currency
-  currency          Currency @default(USD)
-  
-  // Stock
-  quantity          Int
-  lowStockThreshold Int      @default(5)
-  reorderPoint      Int?     // Alert when stock falls below this
-  
-  // Seller-specific fields
-  condition         ProductCondition @default(NEW)
-  sellerSku         String?  // Seller's internal SKU
-  sellerImages      Json?    // Array of up to 5 image URLs (seller's photos)
-  sellerNotes       String?  @db.Text
-  
-  // Metadata
-  isActive          Boolean  @default(true)
-  lastPriceUpdate   DateTime?
-  priceUpdateCount  Int      @default(0) // For anti-sniping detection
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  seller            Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  masterProduct     MasterProduct @relation(fields: [masterProductId], references: [id])
-  orderItems        OrderItem[]
-  adjustmentLogs    InventoryAdjustmentLog[]
-  
-  @@unique([sellerId, masterProductId])
-  @@map("seller_inventory")
-  @@index([sellerId])
-  @@index([masterProductId])
-  @@index([isActive])
-  @@index([condition])
-}
-
-// ============================================================================
-// SELLER ERP MODULE - Inventory Tracking & History
-// ============================================================================
-
-model InventoryAdjustmentLog {
-  id                  String    @id @default(uuid())
-  inventoryId         String
-  sellerId            String
-  
-  // What changed
-  adjustmentType      String    // PRICE_CHANGE, STOCK_INCREASE, STOCK_DECREASE, BULK_UPDATE
-  
-  // Old vs New values
-  oldPrice            Float?
-  newPrice            Float?
-  oldQuantity         Int?
-  newQuantity         Int?
-  quantityChange      Int?      // +/- amount
-  
-  // Who made the change
-  adjustedBy          String?   // Staff ID or Seller ID
-  adjustedByType      String    // SELLER, STAFF
-  adjustedByName      String?   // For display
-  
-  // Why
-  reason              String?   @db.Text
-  notes               String?   @db.Text
-  
-  // Metadata
-  ipAddress           String?
-  userAgent           String?   @db.Text
-  
-  createdAt           DateTime  @default(now())
-
-  inventory           SellerInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
-  
-  @@map("inventory_adjustment_logs")
-  @@index([inventoryId])
-  @@index([sellerId, createdAt])
-  @@index([adjustmentType])
-}
-
 enum BulkUploadStatus {
-  PENDING           // Upload received, not processed yet
-  PROCESSING        // Currently being processed
-  COMPLETED         // Successfully completed
-  COMPLETED_WITH_ERRORS // Completed but some rows failed
-  FAILED            // Complete failure
+  PENDING
+  PROCESSING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
 }
-
-model BulkUpload {
-  id                  String            @id @default(uuid())
-  sellerId            String
-  
-  // Upload details
-  fileName            String
-  fileUrl             String?           // S3 URL for the uploaded CSV
-  fileSize            Int?              // File size in bytes
-  totalRows           Int               @default(0)
-  
-  // Processing results
-  status              BulkUploadStatus  @default(PENDING)
-  processedRows       Int               @default(0)
-  successRows         Int               @default(0)
-  failedRows          Int               @default(0)
-  
-  // Validation report
-  validationReport    Json?             // Array of errors/warnings
-  errorSummary        String?           @db.Text
-  
-  // Processing metadata
-  startedAt           DateTime?
-  completedAt         DateTime?
-  processingTime      Int?              // Seconds
-  
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-
-  seller              Seller            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  
-  @@map("bulk_uploads")
-  @@index([sellerId, createdAt])
-  @@index([status])
-}
-
-// ============================================================================
-// SELLER ERP MODULE - Accounting & Finance
-// ============================================================================
 
 enum TransactionType {
   SALE
@@ -456,30 +1213,6 @@ enum ExpenseCategory {
   OTHER
 }
 
-// Chart of Accounts
-model ChartOfAccount {
-  id          String        @id @default(uuid())
-  code        String        @unique // e.g., "6110", "4000"
-  name        String        // e.g., "Platform Commission", "Sales Revenue"
-  type        AccountType   // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, COGS
-  parentId    String?       // For hierarchical structure
-  isActive    Boolean       @default(true)
-  isSystem    Boolean       @default(true) // System accounts can't be deleted by sellers
-  description String?       @db.Text
-  
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  
-  parent      ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children    ChartOfAccount[] @relation("AccountHierarchy")
-  ledgerEntries SellerLedger[]
-  
-  @@map("chart_of_accounts")
-  @@index([type])
-  @@index([code])
-  @@index([isActive])
-}
-
 enum AccountType {
   ASSET
   LIABILITY
@@ -489,65 +1222,11 @@ enum AccountType {
   COGS
 }
 
-model SellerLedger {
-  id              String          @id @default(uuid())
-  sellerId        String
-  accountId       String?         // Link to Chart of Accounts
-  transactionDate DateTime
-  type            TransactionType
-  category        String?
-  amountUSD       Float
-  amountZWL       Float?
-  description     String          @db.Text
-  referenceId     String?         // Order ID, Expense ID, Payout ID, etc.
-  
-  // Double-entry bookkeeping
-  debit           Float?
-  credit          Float?
-  balance         Float           // Running balance
-  
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  seller          Seller             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  account         ChartOfAccount?    @relation(fields: [accountId], references: [id])
-  
-  @@map("seller_ledger")
-  @@index([sellerId, transactionDate])
-  @@index([type])
-  @@index([referenceId])
-  @@index([accountId])
-}
-
-model SellerExpense {
-  id              String          @id @default(uuid())
-  sellerId        String
-  date            DateTime
-  category        ExpenseCategory
-  amount          Float
-  currency        Currency        @default(USD)
-  description     String          @db.Text
-  receiptUrl      String?         // S3 URL for receipt image/PDF
-  
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  seller          Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  
-  @@map("seller_expenses")
-  @@index([sellerId, date])
-  @@index([category])
-}
-
-// ============================================================================
-// SELLER ERP MODULE - Staff Management
-// ============================================================================
-
 enum StaffRole {
-  STOCK_MANAGER    // Can manage inventory
-  DISPATCHER       // Can update order status only
-  FINANCE_VIEW     // Can view accounting (read-only)
-  FULL_ACCESS      // All permissions except delete seller account
+  STOCK_MANAGER
+  DISPATCHER
+  FINANCE_VIEW
+  FULL_ACCESS
 }
 
 enum StaffStatus {
@@ -577,209 +1256,21 @@ enum ActivityType {
   OTHER
 }
 
-model SellerStaff {
-  id              String          @id @default(uuid())
-  sellerId        String
-  email           String          @unique
-  passwordHash    String          // Hashed with bcrypt
-  firstName       String
-  lastName        String
-  phone           String
-  
-  // Department & Position
-  department      StaffDepartment
-  position        String
-  
-  // Compensation
-  salary          Float
-  hourlyRate      Float?          // For payroll calculation
-  
-  // Employment
-  startDate       DateTime
-  endDate         DateTime?
-  
-  // Role & Permissions
-  role            StaffRole       @default(DISPATCHER)
-  
-  // Status
-  status          StaffStatus     @default(ACTIVE)
-  isActive        Boolean         @default(true)
-  lastLogin       DateTime?
-  
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  seller          Seller          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  timeLogs        StaffTimeLog[]
-  activityLogs    StaffActivityLog[]
-  
-  @@map("seller_staff")
-  @@index([sellerId])
-  @@index([email])
-  @@index([isActive])
-  @@index([status])
-  @@index([department])
-}
-
-model StaffTimeLog {
-  id              String      @id @default(uuid())
-  staffId         String
-  sellerId        String
-  
-  // Time tracking
-  clockIn         DateTime
-  clockOut        DateTime?
-  hoursWorked     Float?      // Calculated when clocked out
-  
-  // Metadata
-  date            DateTime    // Date of shift (for easy querying)
-  notes           String?     @db.Text
-  
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  staff           SellerStaff @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  
-  @@map("staff_time_logs")
-  @@index([staffId, date])
-  @@index([sellerId, date])
-}
-
-model StaffActivityLog {
-  id              String        @id @default(uuid())
-  staffId         String
-  sellerId        String
-  
-  // Activity details
-  activityType    ActivityType  // Type of activity
-  action          String?       // e.g., "UPDATED_ORDER_STATUS", "ADDED_PRODUCT"
-  entityType      String?       // e.g., "ORDER", "INVENTORY"
-  entityId        String?       // ID of affected entity
-  description     String        @db.Text
-  metadata        Json?         // Additional data
-  
-  ipAddress       String?
-  userAgent       String?       @db.Text
-  
-  createdAt       DateTime      @default(now())
-
-  staff           SellerStaff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  
-  @@map("staff_activity_logs")
-  @@index([staffId])
-  @@index([activityType])
-  @@index([sellerId, createdAt])
-  @@index([entityType, entityId])
-}
-
-// ============================================================================
-// SELLER ERP MODULE - Loan & Financing
-// ============================================================================
-
 enum LoanStatus {
-  DRAFT           // Application not yet submitted
-  SUBMITTED       // Submitted to partner
-  UNDER_REVIEW    // Partner is reviewing
-  APPROVED        // Loan approved
-  REJECTED        // Application rejected
-  DISBURSED       // Funds have been disbursed
-  ACTIVE          // Loan is active (being repaid)
-  PAID_OFF        // Loan fully paid
-  DEFAULTED       // Loan in default
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  DISBURSED
+  ACTIVE
+  PAID_OFF
+  DEFAULTED
 }
-
-model FinancialPartner {
-  id              String      @id @default(uuid())
-  name            String
-  slug            String      @unique
-  logo            String?     // Logo URL
-  description     String      @db.Text
-  
-  // Loan terms
-  minAmount       Float
-  maxAmount       Float
-  interestRate    Float       // Annual interest rate (e.g., 0.12 for 12%)
-  termMonths      Int         // Loan term in months
-  
-  // API Integration
-  apiEndpoint     String?
-  apiKey          String?     // Encrypted
-  webhookUrl      String?
-  
-  // Status
-  isActive        Boolean     @default(true)
-  
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  loanApplications LoanApplication[]
-  
-  @@map("financial_partners")
-  @@index([slug])
-  @@index([isActive])
-}
-
-model LoanApplication {
-  id                  String            @id @default(uuid())
-  sellerId            String
-  partnerId           String
-  
-  // Application details
-  requestedAmount     Float
-  currency            Currency          @default(USD)
-  purpose             String            @db.Text
-  status              LoanStatus        @default(DRAFT)
-  
-  // Auto-attached seller data (snapshot at time of application)
-  last6MonthsRevenue  Float?
-  inventoryValue      Float?
-  storeHealthScore    Float?            // SRI score at time of application
-  monthlyOrderCount   Int?
-  
-  // Application form data
-  businessRevenue     Float?             // Last 12 months revenue
-  businessExpenses    Float?             // Last 12 months expenses
-  collateralDescription String?          @db.Text
-  applicationData     Json?             // Additional form fields
-  
-  // Partner responses
-  partnerReferenceId  String?           // Partner's internal loan ID
-  partnerResponse     Json?             // Response from partner API
-  rejectionReason     String?           @db.Text
-  
-  // Loan details (if approved)
-  approvedAmount      Float?
-  interestRate        Float?
-  termMonths          Int?
-  monthlyPayment      Float?
-  
-  // Timestamps
-  submittedAt         DateTime?
-  reviewedAt          DateTime?
-  approvedAt          DateTime?
-  rejectedAt          DateTime?
-  disbursedAt         DateTime?
-  
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-
-  seller              Seller            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  partner             FinancialPartner  @relation(fields: [partnerId], references: [id])
-  
-  @@map("loan_applications")
-  @@index([sellerId, status])
-  @@index([partnerId])
-  @@index([status])
-  @@index([submittedAt])
-}
-
-// ============================================================================
-// BUYER MANAGEMENT
-// ============================================================================
 
 enum BuyerType {
   INDIVIDUAL
-  ENTERPRISE
+  COMMERCIAL
 }
 
 enum BuyerStatus {
@@ -794,103 +1285,12 @@ enum LoyaltyTier {
   GOLD
 }
 
-model Buyer {
-  id                String   @id @default(uuid())
-  email             String   @unique
-  password          String   // Argon2id hashed
-  firstName         String
-  lastName          String
-  phoneNumber       String   // Encrypted
-  
-  // Buyer type
-  buyerType         BuyerType @default(INDIVIDUAL)
-  status            BuyerStatus @default(ACTIVE)
-  
-  // Loyalty program (Individual buyers)
-  loyaltyPoints     Int      @default(0)
-  loyaltyTier       LoyaltyTier @default(BRONZE)
-  
-  // Enterprise-specific fields
-  companyName       String?
-  taxId             String?
-  creditLimit       Float?   @default(0)
-  creditUsed        Float?   @default(0)
-  paymentTermDays   Int?     // e.g., 30 for net-30
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  // Relations
-  orders            Order[]
-  addresses         BuyerAddress[]
-  enterpriseUsers   EnterpriseUser[] // For multi-user management
-  integrations      ExternalIntegration[]
-  savedSearches      SavedSearch[]
-  approvalWorkflows  ApprovalWorkflow[]
-  disputes           Dispute[]
-  quoteRequests      QuoteRequest[]
-  
-  @@map("buyers")
-  @@index([email])
-  @@index([buyerType])
-  @@index([status])
-}
-
-model BuyerAddress {
-  id                String   @id @default(uuid())
-  buyerId           String
-  
-  fullName          String
-  phoneNumber       String
-  addressLine1      String
-  addressLine2      String?
-  city              String
-  province          String
-  postalCode        String?
-  
-  isDefault         Boolean  @default(false)
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  buyer             Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  orders            Order[]
-  
-  @@map("buyer_addresses")
-  @@index([buyerId])
-}
-
 enum EnterpriseUserRole {
   MASTER_ADMIN
   REQUESTER
   APPROVER
   VIEWER
 }
-
-model EnterpriseUser {
-  id                String   @id @default(uuid())
-  enterpriseBuyerId String
-  email             String   @unique
-  firstName         String
-  lastName          String
-  role              EnterpriseUserRole
-  spendingLimit     Float?   // Per-transaction limit
-  
-  isActive          Boolean  @default(true)
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  enterpriseBuyer   Buyer    @relation(fields: [enterpriseBuyerId], references: [id], onDelete: Cascade)
-  
-  @@map("enterprise_users")
-  @@index([enterpriseBuyerId])
-  @@index([email])
-}
-
-// ============================================================================
-// EXTERNAL SYSTEM INTEGRATIONS (PLACEHOLDERS)
-// ============================================================================
 
 enum IntegrationType {
   SAGE_PASTEL
@@ -908,249 +1308,11 @@ enum IntegrationStatus {
   PENDING_SETUP
 }
 
-model ExternalIntegration {
-  id                String   @id @default(uuid())
-  buyerId           String?  // For buyer-specific integrations
-  sellerId          String?  // For seller-specific integrations
-  adminId           String?  // For admin/system integrations
-  
-  integrationType   IntegrationType
-  name              String   // e.g., "Company ERP", "VIN Decoder"
-  
-  // Connection details (encrypted)
-  apiEndpoint       String?
-  apiKey            String?  // Encrypted
-  clientId          String?  // Encrypted
-  clientSecret      String?  // Encrypted
-  webhookUrl        String?
-  
-  // Configuration
-  config            Json?    // Integration-specific settings
-  isActive          Boolean  @default(false)
-  status            IntegrationStatus @default(PENDING_SETUP)
-  
-  // Sync tracking
-  lastSyncAt        DateTime?
-  syncStatus        String?  // "SUCCESS", "FAILED", "PENDING"
-  syncError         String?  @db.Text
-  
-  // Rate limiting
-  rateLimitPerHour  Int?     @default(1000)
-  currentRateCount  Int      @default(0)
-  rateLimitResetAt  DateTime?
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  buyer             Buyer?   @relation(fields: [buyerId], references: [id])
-  seller            Seller?  @relation(fields: [sellerId], references: [id])
-  admin             Admin?   @relation(fields: [adminId], references: [id])
-  
-  @@map("external_integrations")
-  @@index([buyerId])
-  @@index([sellerId])
-  @@index([integrationType])
-  @@index([status])
-}
-
-// VIN Decoder integration placeholder
-model VinDecodeCache {
-  id                String   @id @default(uuid())
-  vin               String   @unique
-  make              String
-  model             String
-  year              Int
-  engine            String?
-  transmission     String?
-  bodyStyle         String?
-  fuelType          String?
-  
-  // Confidence score
-  confidence        Float    // 0.0 to 1.0
-  
-  // Cached data
-  rawResponse       Json?    // Full API response
-  decodedAt         DateTime @default(now())
-  expiresAt         DateTime // Cache expiration
-  
-  @@map("vin_decode_cache")
-  @@index([vin])
-  @@index([expiresAt])
-}
-
-// SMS Gateway integration placeholder
-model SmsMessage {
-  id                String   @id @default(uuid())
-  recipient         String   // Phone number
-  message           String   @db.Text
-  templateId        String?  // SMS template reference
-  
-  // Gateway details
-  gatewayProvider   String?  // e.g., "Econet", "NetOne"
-  gatewayMessageId  String?
-  gatewayStatus     String?  // "SENT", "DELIVERED", "FAILED"
-  
-  // Status tracking
-  status            String   @default("PENDING") // PENDING, SENT, DELIVERED, FAILED
-  sentAt            DateTime?
-  deliveredAt       DateTime?
-  failedAt          DateTime?
-  failureReason     String?  @db.Text
-  
-  // Retry logic
-  retryCount        Int      @default(0)
-  maxRetries        Int      @default(3)
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
-  @@map("sms_messages")
-  @@index([recipient])
-  @@index([status])
-  @@index([createdAt])
-}
-
-// Payment Gateway integration placeholder
-model PaymentGatewayTransaction {
-  id                String   @id @default(uuid())
-  orderId           String
-  paymentId         String
-  
-  // Gateway details
-  gatewayProvider   String   // e.g., "Paynow", "Ecocash"
-  gatewayTransactionId String @unique
-  gatewayResponse   Json?    // Full gateway response
-  
-  // Amounts
-  amount            Float
-  currency          Currency
-  gatewayFee        Float?
-  
-  // Status
-  status            String   // PENDING, COMPLETED, FAILED, REFUNDED
-  processedAt       DateTime?
-  failedAt          DateTime?
-  failureReason     String?  @db.Text
-  
-  // Webhook tracking
-  webhookReceived   Boolean  @default(false)
-  webhookData       Json?
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
-  order             Order    @relation(fields: [orderId], references: [id])
-  payment           Payment  @relation(fields: [paymentId], references: [id])
-  
-  @@map("payment_gateway_transactions")
-  @@index([orderId])
-  @@index([gatewayTransactionId])
-  @@index([status])
-}
-
-// ============================================================================
-// BUYER FEATURES
-// ============================================================================
-
-model SavedSearch {
-  id                String   @id @default(uuid())
-  buyerId           String
-  name              String
-  description       String?  @db.Text
-  criteria          Json     // Search criteria object
-  isPublic          Boolean  @default(false)
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  buyer             Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  
-  @@map("saved_searches")
-  @@index([buyerId])
-  @@index([isPublic])
-}
-
-model ApprovalWorkflow {
-  id                String   @id @default(uuid())
-  enterpriseBuyerId String
-  name              String
-  description       String?  @db.Text
-  conditions        Json     // Approval conditions
-  approvers         Json     // Array of approver user IDs
-  isActive          Boolean  @default(true)
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  enterpriseBuyer   Buyer    @relation(fields: [enterpriseBuyerId], references: [id], onDelete: Cascade)
-  
-  @@map("approval_workflows")
-  @@index([enterpriseBuyerId])
-  @@index([isActive])
-}
-
-
-// ============================================================================
-// QUOTE REQUEST SYSTEM
-// ============================================================================
-
-model QuoteRequest {
-  id                    String   @id @default(uuid())
-  productId             String
-  buyerId               String
-  sellerId              String
-  quantity              Int
-  message               String?  @db.Text
-  urgency               String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
-  expectedDeliveryDate  DateTime?
-  status                String   @default("PENDING") // PENDING, RESPONDED, ACCEPTED, REJECTED, EXPIRED
-  
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  product               MasterProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
-  buyer                 Buyer         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  seller                Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  quote                 QuoteResponse?
-  
-  @@map("quote_requests")
-  @@index([buyerId])
-  @@index([sellerId])
-  @@index([productId])
-  @@index([status])
-}
-
-model QuoteResponse {
-  id                    String   @id @default(uuid())
-  quoteRequestId        String   @unique
-  sellerId              String
-  price                 Float
-  availability           String   // IN_STOCK, OUT_OF_STOCK, BACKORDER
-  estimatedDelivery      DateTime?
-  message                String?  @db.Text
-  validUntil            DateTime?
-  status                 String   @default("PENDING") // PENDING, ACCEPTED, REJECTED, EXPIRED
-  
-  respondedAt            DateTime @default(now())
-  updatedAt              DateTime @updatedAt
-
-  quoteRequest          QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
-  seller                Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  
-  @@map("quote_responses")
-  @@index([quoteRequestId])
-  @@index([sellerId])
-  @@index([status])
-}
-
-// ============================================================================
-// ORDERS & TRANSACTIONS
-// ============================================================================
-
 enum OrderStatus {
   PENDING_PAYMENT
   PAYMENT_FAILED
   AWAITING_SELLER_ACCEPTANCE
+  AWAITING_PAYMENT
   SELLER_REJECTED
   PROCESSING
   SHIPPED
@@ -1164,6 +1326,7 @@ enum OrderStatus {
 
 enum PaymentStatus {
   PENDING
+  PARTIAL
   COMPLETED
   FAILED
   REFUNDED
@@ -1178,124 +1341,6 @@ enum PaymentMethod {
   CASH_ON_DELIVERY
 }
 
-model Order {
-  id                    String   @id @default(uuid())
-  orderNumber           String   @unique // Human-readable order number
-  buyerId               String
-  sellerId              String
-  addressId             String
-  
-  // Enterprise-specific
-  poNumber              String?  // Purchase Order Number
-  costCenter            String?  // Cost center reference
-  
-  // Pricing
-  subtotal              Float
-  shippingCost          Float
-  platformCommission    Float
-  totalAmount           Float    // Display price (Pdisplay)
-  currency              Currency
-  exchangeRate          Float?   // Locked exchange rate for ZWL transactions
-  exchangeRateTimestamp DateTime?
-  
-  // Status
-  status                OrderStatus @default(PENDING_PAYMENT)
-  paymentStatus         PaymentStatus @default(PENDING)
-  
-  // Fulfilment
-  sellerAcceptedAt      DateTime?
-  sellerRejectedAt      DateTime?
-  rejectionReason       String?  @db.Text
-  
-  // Shipping
-  estimatedDeliveryDate DateTime?
-  actualDeliveryDate    DateTime?
-  
-  // Metadata
-  ipAddress             String?
-  userAgent             String?
-  
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  // Relations
-  buyer                 Buyer         @relation(fields: [buyerId], references: [id])
-  seller                Seller        @relation(fields: [sellerId], references: [id])
-  shippingAddress       BuyerAddress  @relation(fields: [addressId], references: [id])
-  items                 OrderItem[]
-  payment               Payment?
-  shipment              Shipment?
-  disputes              Dispute[]
-  payout                Payout?
-  gatewayTransactions    PaymentGatewayTransaction[]
-  
-  @@map("orders")
-  @@index([buyerId])
-  @@index([sellerId])
-  @@index([orderNumber])
-  @@index([status])
-  @@index([createdAt])
-}
-
-model OrderItem {
-  id                String   @id @default(uuid())
-  orderId           String
-  inventoryId       String
-  
-  quantity          Int
-  unitPrice         Float    // Seller price at time of order
-  displayPrice      Float    // Display price (with commission)
-  commission        Float    // Platform commission
-  
-  createdAt         DateTime @default(now())
-
-  order             Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  inventory         SellerInventory  @relation(fields: [inventoryId], references: [id])
-  
-  @@map("order_items")
-  @@index([orderId])
-}
-
-model Payment {
-  id                String   @id @default(uuid())
-  orderId           String   @unique
-  
-  amount            Float
-  currency          Currency
-  paymentMethod     PaymentMethod
-  
-  // Gateway details
-  gatewayProvider   String?  // e.g., "Paynow", "Ecocash"
-  gatewayTransactionId String?
-  gatewayResponse   Json?
-  
-  // Status
-  status            PaymentStatus @default(PENDING)
-  paidAt            DateTime?
-  failedAt          DateTime?
-  failureReason     String?  @db.Text
-  refundedAt        DateTime?
-  refundAmount      Float?
-  
-  // Metadata for chargebacks, refunds, etc.
-  metadata          Json?
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  gatewayTransactions PaymentGatewayTransaction[]
-  
-  @@map("payments")
-  @@index([orderId])
-  @@index([status])
-  @@index([gatewayTransactionId])
-}
-
-// ============================================================================
-// FINANCIAL MANAGEMENT
-// ============================================================================
-
 enum PayoutStatus {
   PENDING
   PROCESSING
@@ -1303,54 +1348,6 @@ enum PayoutStatus {
   FAILED
   FROZEN
 }
-
-model Payout {
-  id                String   @id @default(uuid())
-  sellerId          String
-  orderId           String   @unique
-  
-  grossAmount       Float    // Seller's price
-  platformCommission Float
-  gatewayFee        Float
-  netAmount         Float    // Amount paid to seller
-  currency          Currency
-  
-  status            PayoutStatus @default(PENDING)
-  scheduledDate     DateTime
-  processedDate     DateTime?
-  
-  // Banking details
-  bankReference     String?
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  seller            Seller   @relation(fields: [sellerId], references: [id])
-  order             Order    @relation(fields: [orderId], references: [id])
-  
-  @@map("payouts")
-  @@index([sellerId])
-  @@index([status])
-  @@index([scheduledDate])
-}
-
-model ExchangeRate {
-  id                String   @id @default(uuid())
-  fromCurrency      Currency
-  toCurrency        Currency
-  rate              Float
-  source            String   // e.g., "RBZ_OFFICIAL", "MANUAL_ADMIN"
-  
-  effectiveDate     DateTime @default(now())
-  createdAt         DateTime @default(now())
-  
-  @@map("exchange_rates")
-  @@index([fromCurrency, toCurrency, effectiveDate])
-}
-
-// ============================================================================
-// DISPUTE MANAGEMENT
-// ============================================================================
 
 enum DisputeType {
   WRONG_PART
@@ -1370,92 +1367,9 @@ enum DisputeStatus {
   CLOSED_NO_FAULT
 }
 
-model Dispute {
-  id                String   @id @default(uuid())
-  orderId           String   @unique
-  buyerId           String
-  sellerId          String
-  disputeType       DisputeType
-  status            DisputeStatus @default(OPEN)
-  
-  // Details
-  buyerDescription  String   @db.Text
-  sellerResponse    String?  @db.Text
-  adminNotes        String?  @db.Text
-  
-  // Assignment
-  assignedAdminId   String?
-  
-  // Evidence
-  buyerEvidenceUrls Json?    // Array of file URLs
-  sellerEvidenceUrls Json?   // Array of file URLs
-  
-  // Resolution
-  resolutionDate    DateTime?
-  resolutionOutcome String?  @db.Text
-  isFaultBased      Boolean  @default(true) // Impacts SRI
-  
-  // SLO Tracking (Service Level Objective)
-  sloTargetDate     DateTime? // Target resolution date based on priority
-  sloStatus         String?   // "ON_TIME", "AT_RISK", "BREACHED"
-  sloBreached       Boolean   @default(false)
-  
-  // Metadata for return labels, etc.
-  metadata          Json?
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  order             Order    @relation(fields: [orderId], references: [id])
-  buyer             Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  seller            Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  assignedAdmin     Admin?   @relation(fields: [assignedAdminId], references: [id])
-  
-  @@map("disputes")
-  @@index([orderId])
-  @@index([buyerId])
-  @@index([sellerId])
-  @@index([status])
-  @@index([assignedAdminId])
-  @@index([createdAt])
-  @@index([isFaultBased])
-  @@index([sloStatus])
-  @@index([sloBreached])
-}
-
-// ============================================================================
-// LOGISTICS & SHIPPING
-// ============================================================================
-
 enum CarrierStatus {
   ACTIVE
   INACTIVE
-}
-
-model Carrier {
-  id                String   @id @default(uuid())
-  name              String   @unique
-  code              String   @unique // e.g., "DHL", "FEDEX", "ARAMEX"
-  contactEmail      String
-  contactPhone      String
-  
-  // API integration
-  hasApiIntegration Boolean  @default(false)
-  apiEndpoint       String?
-  apiKey            String?  // Encrypted
-  
-  // Service levels
-  serviceLevels     Json     // Array of {name, avgDeliveryDays, costMatrix}
-  
-  status            CarrierStatus @default(ACTIVE)
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  shipments         Shipment[]
-  
-  @@map("carriers")
-  @@index([code])
 }
 
 enum ShipmentStatus {
@@ -1467,133 +1381,10 @@ enum ShipmentStatus {
   RETURNED_TO_SENDER
 }
 
-model Shipment {
-  id                String   @id @default(uuid())
-  orderId           String   @unique
-  carrierId         String
-  
-  trackingNumber    String   @unique
-  
-  // Dimensions and weight (from master product)
-  weight            Float
-  length            Float
-  width             Float
-  height            Float
-  
-  // Status
-  status            ShipmentStatus @default(PENDING_PICKUP)
-  
-  // Tracking
-  estimatedDelivery DateTime
-  actualDelivery    DateTime?
-  trackingHistory   Json?    // Array of {status, timestamp, location, notes}
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  carrier           Carrier  @relation(fields: [carrierId], references: [id])
-  
-  @@map("shipments")
-  @@index([orderId])
-  @@index([trackingNumber])
-  @@index([status])
-}
-
-// ============================================================================
-// SELLER HR & PAYROLL
-// ============================================================================
-
-model SellerEmployee {
-  id                String   @id @default(uuid())
-  sellerId          String
-  
-  nationalId        String   @unique // For tax reconciliation
-  firstName         String
-  lastName          String
-  phoneNumber       String   // Encrypted
-  email             String?
-  
-  // Employment
-  position          String
-  department        String?
-  salary            Float    // Encrypted
-  hourlyRate        Float?   // Encrypted
-  
-  // Banking
-  bankAccountNumber String?  // Encrypted
-  bankName          String?
-  
-  isActive          Boolean  @default(true)
-  hiredDate         DateTime
-  terminatedDate    DateTime?
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  seller            Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  shifts            EmployeeShift[]
-  payslips          Payslip[]
-  
-  @@map("seller_employees")
-  @@index([sellerId])
-  @@index([nationalId])
-}
-
-model EmployeeShift {
-  id                String   @id @default(uuid())
-  employeeId        String
-  
-  clockInTime       DateTime
-  clockInLocation   Json     // {lat, lng, accuracy}
-  clockOutTime      DateTime?
-  clockOutLocation  Json?    // {lat, lng, accuracy}
-  
-  totalHours        Float?
-  isValidated       Boolean  @default(false) // Geo-fence validation
-  
-  createdAt         DateTime @default(now())
-
-  employee          SellerEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  
-  @@map("employee_shifts")
-  @@index([employeeId])
-  @@index([clockInTime])
-}
-
-model Payslip {
-  id                String   @id @default(uuid())
-  employeeId        String
-  
-  periodStart       DateTime
-  periodEnd         DateTime
-  
-  grossSalary       Float
-  payeDeduction     Float    // PAYE tax
-  nssaDeduction     Float    // NSSA contribution
-  otherDeductions   Float?
-  netSalary         Float
-  
-  pdfUrl            String?  // Signed PDF
-  
-  generatedAt       DateTime @default(now())
-  paidAt            DateTime?
-  
-  employee          SellerEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  
-  @@map("payslips")
-  @@index([employeeId])
-  @@index([periodEnd])
-}
-
-// ============================================================================
-// ADMIN DASHBOARD & ALERTS
-// ============================================================================
-
 enum AlertTier {
-  CRITICAL  // Tier 1 - Red
-  HIGH      // Tier 2 - Orange
-  LOW       // Tier 3 - Yellow
+  CRITICAL
+  HIGH
+  LOW
 }
 
 enum AlertStatus {
@@ -1602,94 +1393,9 @@ enum AlertStatus {
   RESOLVED
 }
 
-model AdminAlert {
-  id                String   @id @default(uuid())
-  tier              AlertTier
-  status            AlertStatus @default(OPEN)
-  
-  title             String
-  message           String   @db.Text
-  alertCode         String   // e.g., "PAYMENT_GATEWAY_DOWN", "SRI_VIOLATION"
-  
-  // Context
-  entityType        String?  // e.g., "Seller", "Order"
-  entityId          String?
-  metadata          Json?
-  
-  // Assignment
-  assignedAdminId   String?
-  acknowledgedAt    DateTime?
-  resolvedAt        DateTime?
-  resolutionNotes   String?  @db.Text
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  assignedAdmin     Admin?   @relation(fields: [assignedAdminId], references: [id])
-  
-  @@map("admin_alerts")
-  @@index([tier])
-  @@index([status])
-  @@index([alertCode])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// CUSTOM PRODUCT REQUESTS
-// ============================================================================
-
 enum CustomProductRequestStatus {
   PENDING
   APPROVED
   REJECTED
   MORE_INFO_NEEDED
-}
-
-model CustomProductRequest {
-  id                  String                      @id @default(uuid())
-  sellerId            String
-  seller              Seller                      @relation(fields: [sellerId], references: [id])
-  
-  productName         String
-  category            String
-  make                String
-  model               String
-  year                Int?
-  partCode            String?
-  description         String?                     @db.Text
-  imageUrls           Json?                       // Array of image URLs
-  
-  status              CustomProductRequestStatus  @default(PENDING)
-  adminNotes          String?                     @db.Text
-  reviewedBy          String?                     // Admin ID
-  reviewedAt          DateTime?
-  
-  // If approved, reference to created MasterProduct
-  createdProductId    String?                     @unique
-  createdProduct      MasterProduct?              @relation(fields: [createdProductId], references: [id])
-  
-  createdAt           DateTime                    @default(now())
-  updatedAt           DateTime                    @updatedAt
-  
-  @@map("custom_product_requests")
-  @@index([sellerId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// SYSTEM CONFIGURATION
-// ============================================================================
-
-model SystemSetting {
-  id                String   @id @default(uuid())
-  key               String   @unique
-  value             String   @db.Text
-  dataType          String   // e.g., "string", "number", "boolean", "json"
-  description       String?  @db.Text
-  
-  updatedBy         String?  // Admin ID
-  updatedAt         DateTime @updatedAt
-  
-  @@map("system_settings")
 }

@@ -13,8 +13,6 @@ interface ClockOutDTO {
 }
 
 export class StaffTimeTrackingService {
-  private prisma = prisma;
-
   /**
    * Clock in - staff member starts their shift
    */
@@ -23,7 +21,7 @@ export class StaffTimeTrackingService {
     today.setHours(0, 0, 0, 0);
 
     // Check if already clocked in today
-    const existingLog = await this.prisma.staffTimeLog.findFirst({
+    const existingLog = await prisma.staffTimeLog.findFirst({
       where: {
         staffId,
         date: today,
@@ -38,7 +36,7 @@ export class StaffTimeTrackingService {
     const clockInTime = new Date();
 
     // Create time log
-    const timeLog = await this.prisma.staffTimeLog.create({
+    const timeLog = await prisma.staffTimeLog.create({
       data: {
         staffId,
         sellerId,
@@ -49,7 +47,7 @@ export class StaffTimeTrackingService {
     });
 
     // Log activity
-    await this.prisma.staffActivityLog.create({
+    await prisma.staffActivityLog.create({
       data: {
         staffId,
         sellerId,
@@ -80,7 +78,7 @@ export class StaffTimeTrackingService {
     today.setHours(0, 0, 0, 0);
 
     // Find active clock-in for today
-    const activeLog = await this.prisma.staffTimeLog.findFirst({
+    const activeLog = await prisma.staffTimeLog.findFirst({
       where: {
         staffId,
         date: today,
@@ -100,7 +98,7 @@ export class StaffTimeTrackingService {
       (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
     // Update time log
-    const timeLog = await this.prisma.staffTimeLog.update({
+    const timeLog = await prisma.staffTimeLog.update({
       where: { id: activeLog.id },
       data: {
         clockOut: clockOutTime,
@@ -110,7 +108,7 @@ export class StaffTimeTrackingService {
     });
 
     // Log activity
-    await this.prisma.staffActivityLog.create({
+    await prisma.staffActivityLog.create({
       data: {
         staffId,
         sellerId,
@@ -155,7 +153,7 @@ export class StaffTimeTrackingService {
       if (endDate) where.date.lte = endDate;
     }
 
-    const timeLogs = await this.prisma.staffTimeLog.findMany({
+    const timeLogs = await prisma.staffTimeLog.findMany({
       where,
       orderBy: { date: "desc" },
       take: limit,
@@ -186,7 +184,7 @@ export class StaffTimeTrackingService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const activeLog = await this.prisma.staffTimeLog.findFirst({
+    const activeLog = await prisma.staffTimeLog.findFirst({
       where: {
         staffId,
         date: today,

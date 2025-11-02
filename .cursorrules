@@ -1,0 +1,89 @@
+# Cursor AI Rules - Simbi Marketplace
+
+## ⚠️ CRITICAL: DO NOT RUN THESE COMMANDS
+
+### **THOU SHALT NOT RUN PRISMA COMMANDS IN TERMINAL:**
+- ❌ DO NOT run `npx prisma migrate dev`
+- ❌ DO NOT run `npx prisma db push`
+- ❌ DO NOT run `npx prisma migrate reset`
+- ❌ DO NOT run `npx prisma generate` (unless explicitly requested)
+- ❌ DO NOT run any `prisma` commands automatically
+
+**Why:** These commands modify the database schema and migration history. Only the developer should run them after reviewing changes.
+
+**What to do instead:**
+- ✅ Just update the `prisma/schema.prisma` file
+- ✅ Tell the user to run migrations manually
+- ✅ Provide instructions on what commands to run
+- ✅ Never automatically execute prisma commands
+
+---
+
+### **THOU SHALT NOT RUN GIT COMMANDS IN TERMINAL:**
+- ❌ DO NOT run `git add`
+- ❌ DO NOT run `git commit`
+- ❌ DO NOT run `git push`
+- ❌ DO NOT run `git pull`
+- ❌ DO NOT run `git merge`
+- ❌ DO NOT run any `git` commands automatically
+
+**Why:** Git operations affect version control history. Only the developer should manage git operations.
+
+**What to do instead:**
+- ✅ Just make code changes to files
+- ✅ Tell the user what files were changed
+- ✅ Never automatically commit or push changes
+- ✅ Never automatically run git commands
+
+---
+
+## ✅ What You CAN Do
+
+You CAN:
+- ✅ Read files
+- ✅ Write/edit files
+- ✅ Search codebase
+- ✅ Run terminal commands for:
+  - Testing (e.g., `npm test`)
+  - Building (e.g., `npm run build`)
+  - Starting dev server (only if user explicitly asks)
+- ✅ Check lint errors
+- ✅ Read package.json scripts
+
+You CANNOT:
+- ❌ Run Prisma commands (migrate, db push, etc.)
+- ❌ Run Git commands (add, commit, push, pull, etc.)
+- ❌ Automatically modify database schema
+- ❌ Automatically commit code changes
+
+---
+
+## 📋 Standard Workflow
+
+When schema changes are needed:
+1. ✅ Update `prisma/schema.prisma` file
+2. ✅ Tell user: "Schema updated. Run `npx prisma migrate dev` to create migration"
+3. ❌ DO NOT run the migration command yourself
+
+When code changes are made:
+1. ✅ Update the code files
+2. ✅ Tell user what was changed
+3. ❌ DO NOT commit or push changes
+
+---
+
+## 🎯 Key Principle
+
+**"Modify code, not databases or git history"**
+
+Always let the developer control:
+- Database migrations
+- Git operations
+- Schema deployment
+- Production changes
+
+---
+
+**This file prevents accidental database and git operations.**
+
+
