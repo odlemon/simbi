@@ -127,6 +127,8 @@ model Seller {
   emailVerified             Boolean                @default(false)
   verificationCode          String?
   verificationCodeExpiresAt DateTime?
+  passwordResetToken        String?
+  passwordResetExpires      DateTime?
   bulkUploads               BulkUpload[]
   customProductRequests     CustomProductRequest[]
   disputes                  Dispute[]
@@ -522,6 +524,8 @@ model Buyer {
   emailVerified             Boolean               @default(false)
   verificationCode          String?
   verificationCodeExpiresAt DateTime?
+  passwordResetToken        String?
+  passwordResetExpires      DateTime?
   approvalWorkflows         ApprovalWorkflow[]
   addresses                 BuyerAddress[]
   cart                      Cart?
@@ -813,6 +817,11 @@ model Order {
   actualDeliveryDate    DateTime?
   ipAddress             String?
   userAgent             String?
+  // Driver dispatch fields (admin managed)
+  driverId              String?
+  dispatchNotes         String?                     @db.Text
+  dispatchedAt          DateTime?
+  dispatchedBy          String?                     // Admin ID who dispatched
   createdAt             DateTime                    @default(now())
   updatedAt             DateTime                    @updatedAt
   disputes              Dispute?
@@ -820,6 +829,7 @@ model Order {
   shippingAddress       BuyerAddress                @relation(fields: [addressId], references: [id])
   buyer                 Buyer                       @relation(fields: [buyerId], references: [id])
   seller                Seller                      @relation(fields: [sellerId], references: [id])
+  driver                Driver?                     @relation(fields: [driverId], references: [id])
   gatewayTransactions   PaymentGatewayTransaction[]
   payment               Payment?
   payout                Payout?
@@ -830,6 +840,7 @@ model Order {
   @@index([orderNumber])
   @@index([status])
   @@index([createdAt])
+  @@index([driverId])
   @@index([addressId], map: "orders_addressId_fkey")
   @@map("orders")
 }
@@ -996,6 +1007,26 @@ model Shipment {
   @@index([status])
   @@index([carrierId], map: "shipments_carrierId_fkey")
   @@map("shipments")
+}
+
+model Driver {
+  id              String        @id @default(uuid())
+  firstName       String
+  lastName        String
+  phoneNumber     String        @unique
+  email           String?       @unique
+  licenseNumber   String?       @unique
+  vehicleType     String?       // e.g., "Motorcycle", "Van", "Truck"
+  vehiclePlate    String?       // Vehicle registration plate
+  status          DriverStatus  @default(AVAILABLE)
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  orders          Order[]
+
+  @@index([status])
+  @@index([phoneNumber])
+  @@map("drivers")
 }
 
 model SellerEmployee {
@@ -1370,6 +1401,13 @@ enum DisputeStatus {
 enum CarrierStatus {
   ACTIVE
   INACTIVE
+}
+
+enum DriverStatus {
+  AVAILABLE
+  UNAVAILABLE
+  ON_DELIVERY
+  OFF_DUTY
 }
 
 enum ShipmentStatus {

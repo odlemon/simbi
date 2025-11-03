@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
+import { AuthenticatedRequest } from "../../../middleware/authenticate";
 
 export class OrderController {
   constructor() {
@@ -52,9 +53,9 @@ export class OrderController {
       }
 
       if (sellerId) {
-        where.orderItems = {
+        where.items = {
           some: {
-            product: {
+            inventory: {
               sellerId: sellerId
             }
           }
@@ -103,15 +104,24 @@ export class OrderController {
                 province: true,
               }
             },
-            orderItems: {
+            items: {
               select: {
                 id: true,
                 quantity: true,
-                price: true,
-                product: {
+                unitPrice: true,
+                displayPrice: true,
+                inventory: {
                   select: {
                     id: true,
-                    name: true,
+                    sellerSku: true,
+                    masterProduct: {
+                      select: {
+                        id: true,
+                        name: true,
+                        oemPartNumber: true,
+                        manufacturer: true,
+                      }
+                    },
                     seller: {
                       select: {
                         id: true,
@@ -124,7 +134,7 @@ export class OrderController {
             },
             _count: {
               select: {
-                orderItems: true,
+                items: true,
               }
             }
           },
@@ -278,9 +288,9 @@ export class OrderController {
       }
 
       if (sellerId) {
-        where.orderItems = {
+        where.items = {
           some: {
-            product: {
+            inventory: {
               sellerId: sellerId
             }
           }
@@ -318,15 +328,24 @@ export class OrderController {
               province: true,
             }
           },
-          orderItems: {
+          items: {
             select: {
               id: true,
               quantity: true,
-              price: true,
-              product: {
+              unitPrice: true,
+              displayPrice: true,
+              inventory: {
                 select: {
                   id: true,
-                  name: true,
+                  sellerSku: true,
+                  masterProduct: {
+                    select: {
+                      id: true,
+                      name: true,
+                      oemPartNumber: true,
+                      manufacturer: true,
+                    }
+                  },
                   seller: {
                     select: {
                       id: true,
@@ -337,9 +356,20 @@ export class OrderController {
               }
             }
           },
+          driver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+              vehicleType: true,
+              vehiclePlate: true,
+              status: true
+            }
+          },
           _count: {
             select: {
-              orderItems: true,
+              items: true,
             }
           }
         },
@@ -404,10 +434,18 @@ export class OrderController {
               postalCode: true,
             }
           },
-          orderItems: {
+          items: {
             include: {
-              product: {
+              inventory: {
                 include: {
+                  masterProduct: {
+                    select: {
+                      id: true,
+                      name: true,
+                      oemPartNumber: true,
+                      manufacturer: true,
+                    }
+                  },
                   seller: {
                     select: {
                       id: true,
@@ -625,6 +663,252 @@ export class OrderController {
         message: "Failed to update order status",
         error: error.message,
         timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * PATCH /api/admin/orders/:id/dispatch
+   * Dispatch order with driver (Admin only)
+   * Only fully paid orders (paymentStatus = COMPLETED) can be dispatched
+   */
+  async dispatchOrder(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { driverId, estimatedDeliveryDate, dispatchNotes } = req.body;
+      const adminId = req.admin?.id;
+
+      if (!adminId) {
+        res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
+      // Validate required fields
+      if (!driverId) {
+        res.status(400).json({
+          success: false,
+          message: 'driverId is required',
+          error: 'MISSING_DRIVER_ID'
+        });
+        return;
+      }
+
+      // Get order
+      const order = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          payment: true,
+          driver: true
+        }
+      });
+
+      if (!order) {
+        res.status(404).json({
+          success: false,
+          message: 'Order not found',
+          error: 'ORDER_NOT_FOUND'
+        });
+        return;
+      }
+
+      // Check if order is fully paid
+      if (order.paymentStatus !== 'COMPLETED') {
+        res.status(400).json({
+          success: false,
+          message: 'Order must be fully paid before dispatch. Current payment status: ' + order.paymentStatus,
+          error: 'PAYMENT_NOT_COMPLETED'
+        });
+        return;
+      }
+
+      // Check if order is in correct status (must be PROCESSING)
+      if (order.status !== 'PROCESSING') {
+        res.status(400).json({
+          success: false,
+          message: `Cannot dispatch order. Order must be in PROCESSING status. Current status: ${order.status}`,
+          error: 'INVALID_ORDER_STATUS'
+        });
+        return;
+      }
+
+      // Check if driver exists and is available
+      const driver = await prisma.driver.findUnique({
+        where: { id: driverId }
+      });
+
+      if (!driver) {
+        res.status(404).json({
+          success: false,
+          message: 'Driver not found',
+          error: 'DRIVER_NOT_FOUND'
+        });
+        return;
+      }
+
+      if (driver.status !== 'AVAILABLE') {
+        res.status(400).json({
+          success: false,
+          message: `Driver is not available. Current status: ${driver.status}`,
+          error: 'DRIVER_UNAVAILABLE'
+        });
+        return;
+      }
+
+      // Update order: assign driver, set status to SHIPPED, add dispatch info
+      const updatedOrder = await prisma.order.update({
+        where: { id },
+        data: {
+          driverId,
+          status: 'SHIPPED',
+          dispatchedAt: new Date(),
+          dispatchedBy: adminId,
+          estimatedDeliveryDate: estimatedDeliveryDate ? new Date(estimatedDeliveryDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Default 7 days
+          dispatchNotes
+        },
+        include: {
+          driver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+              vehicleType: true,
+              vehiclePlate: true
+            }
+          },
+          buyer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      // Mark driver as UNAVAILABLE
+      await prisma.driver.update({
+        where: { id: driverId },
+        data: { status: 'UNAVAILABLE' }
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Order dispatched successfully',
+        data: updatedOrder,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error('Dispatch order error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to dispatch order',
+        error: error.message || 'INTERNAL_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * PATCH /api/admin/orders/:id/mark-delivered
+   * Mark order as delivered (Admin only)
+   */
+  async markOrderDelivered(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      // Get order
+      const order = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          driver: true
+        }
+      });
+
+      if (!order) {
+        res.status(404).json({
+          success: false,
+          message: 'Order not found',
+          error: 'ORDER_NOT_FOUND'
+        });
+        return;
+      }
+
+      // Check if order is SHIPPED
+      if (order.status !== 'SHIPPED') {
+        res.status(400).json({
+          success: false,
+          message: `Cannot mark order as delivered. Order must be SHIPPED. Current status: ${order.status}`,
+          error: 'INVALID_ORDER_STATUS'
+        });
+        return;
+      }
+
+      // Update order to DELIVERED and mark driver as AVAILABLE in a transaction
+      // Use longer timeout and optimize queries
+      const updatedOrder = await prisma.$transaction(async (tx) => {
+        // Update order to DELIVERED (minimal include for transaction speed)
+        await tx.order.update({
+          where: { id },
+          data: {
+            status: 'DELIVERED',
+            actualDeliveryDate: new Date()
+          }
+        });
+
+        // Mark driver as AVAILABLE again (if driver was assigned)
+        if (order.driverId) {
+          await tx.driver.update({
+            where: { id: order.driverId },
+            data: { status: 'AVAILABLE' }
+          });
+        }
+      }, {
+        maxWait: 10000, // 10 seconds
+        timeout: 10000  // 10 seconds
+      });
+
+      // Fetch the updated order with full details after transaction
+      const updatedOrderWithDetails = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          driver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true
+            }
+          },
+          buyer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Order marked as delivered successfully',
+        data: updatedOrderWithDetails,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error('Mark order delivered error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark order as delivered',
+        error: error.message || 'INTERNAL_ERROR',
+        timestamp: new Date().toISOString()
       });
     }
   }

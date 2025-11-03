@@ -14,6 +14,7 @@ import settingsRoutes from "./settings/settingsRoutes";
 import complianceRoutes from "./compliance/complianceRoutes";
 import inventoryRoutes from "./inventory/inventoryRoutes";
 import catalogRoutes from "./catalog.routes";
+import driverRoutes from "./drivers/driverRoutes";
 
 const router = Router();
 
@@ -58,6 +59,9 @@ router.use("/compliance", complianceRoutes);
 
 // Inventory routes
 router.use("/inventory", inventoryRoutes);
+
+// Driver routes
+router.use("/drivers", driverRoutes);
 
 export default router;
 

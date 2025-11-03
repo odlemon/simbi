@@ -806,40 +806,120 @@ export class OrderService {
   }
 
   /**
-   * Cancel order
+   * Cancel order - handles refunds based on order stage and payment status
    */
   async cancelOrder(orderId: string, buyerId: string, reason?: string): Promise<OrderResult> {
     try {
-      // Check if order can be cancelled
+      // Get order with payment details
       const order = await prisma.order.findFirst({
         where: {
           id: orderId,
-          buyerId,
-          status: { in: ['PENDING_PAYMENT', 'AWAITING_SELLER_ACCEPTANCE'] }
+          buyerId
+        },
+        include: {
+          payment: true
         }
       });
 
       if (!order) {
         return {
           success: false,
-          message: 'Order cannot be cancelled',
+          message: 'Order not found',
+          error: 'ORDER_NOT_FOUND'
+        };
+      }
+
+      // Check if order can be cancelled based on status
+      const cancellableStatuses = [
+        'PENDING_PAYMENT',
+        'PAYMENT_FAILED',
+        'AWAITING_SELLER_ACCEPTANCE',
+        'SELLER_REJECTED',
+        'AWAITING_PAYMENT',
+        'PROCESSING'
+      ];
+
+      const nonCancellableStatuses = [
+        'DELIVERED',
+        'CANCELLED',
+        'REFUNDED',
+        'PARTIALLY_REFUNDED',
+        'DISPUTED'
+      ];
+
+      if (nonCancellableStatuses.includes(order.status)) {
+        return {
+          success: false,
+          message: `Order cannot be cancelled. Current status: ${order.status}`,
           error: 'ORDER_CANNOT_BE_CANCELLED'
         };
       }
 
-      // Update order status
+      if (!cancellableStatuses.includes(order.status)) {
+        // For SHIPPED orders, allow cancellation but may require admin approval
+        if (order.status === 'SHIPPED') {
+          return {
+            success: false,
+            message: 'Order has been shipped. Please contact support to cancel.',
+            error: 'ORDER_ALREADY_SHIPPED'
+          };
+        }
+      }
+
+      // Check if payment was made (to inform buyer about refund process)
+      const paymentStatus = order.paymentStatus;
+      const hasPayment = order.payment && (
+        paymentStatus === 'COMPLETED' || 
+        paymentStatus === 'PARTIAL'
+      );
+
+      let refundInfo = null;
+      
+      if (hasPayment && order.payment) {
+        // Determine refund amount for information purposes only
+        let refundAmount = 0;
+        if (paymentStatus === 'COMPLETED') {
+          refundAmount = order.totalAmount;
+        } else if (paymentStatus === 'PARTIAL') {
+          refundAmount = order.payment.amount || 0;
+        }
+        
+        refundInfo = {
+          refundRequired: true,
+          refundAmount: refundAmount,
+          currency: order.currency
+        };
+      }
+
+      // Simply cancel the order - refunds handled manually by admin
       const updatedOrder = await prisma.order.update({
         where: { id: orderId },
         data: {
           status: 'CANCELLED',
           updatedAt: new Date()
+        },
+        include: {
+          payment: true
         }
       });
 
+      // Prepare response message
+      let message = 'Order cancelled successfully';
+      if (refundInfo) {
+        message += `. A refund of ${refundInfo.refundAmount} ${refundInfo.currency} may be processed. Please contact support for refund details.`;
+      }
+
       return {
         success: true,
-        message: 'Order cancelled successfully',
-        data: updatedOrder
+        message,
+        data: {
+          ...updatedOrder,
+          cancellationDetails: {
+            refundInfo: refundInfo,
+            cancelledAt: new Date(),
+            reason: reason || null
+          }
+        }
       };
 
     } catch (error) {

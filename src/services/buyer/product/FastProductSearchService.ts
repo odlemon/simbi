@@ -12,16 +12,27 @@ const searchCriteriaSchema = z.object({
   year: z.number().optional(),
   yearFrom: z.number().optional(),
   yearTo: z.number().optional(),
-  category: z.string().optional(),
-  subcategory: z.string().optional(),
-  manufacturer: z.string().optional(),
+  category: z.union([z.string(), z.array(z.string())]).optional(),
+  categories: z.union([z.string(), z.array(z.string())]).optional(),
+  subcategory: z.union([z.string(), z.array(z.string())]).optional(),
+  manufacturer: z.union([z.string(), z.array(z.string())]).optional(),
+  brand: z.union([z.string(), z.array(z.string())]).optional(),
+  brands: z.union([z.string(), z.array(z.string())]).optional(),
   minPrice: z.number().optional(),
   maxPrice: z.number().optional(),
-  inStock: z.boolean().optional(),
+  inStock: z.union([z.boolean(), z.string()]).optional().transform(val => {
+    if (val === undefined) return undefined;
+    if (typeof val === 'boolean') return val;
+    if (val === 'true' || val === '1') return true;
+    if (val === 'false' || val === '0') return false;
+    return undefined;
+  }),
   productType: z.string().optional(),
   sortBy: z.string().optional(),
+  sort: z.string().optional(),
   page: z.number().default(1),
-  limit: z.number().default(20)
+  limit: z.number().default(20),
+  onlyCheapest: z.boolean().optional() // When true, return only cheapest product per master product
 });
 
 interface FastProductResult {
@@ -45,6 +56,7 @@ interface FastProductResult {
   description: string;
   sellerId: string; // Seller ID
   sellerName: string; // Seller business name
+  sku?: string; // Seller SKU
 }
 
 export class FastProductSearchService {
@@ -52,26 +64,61 @@ export class FastProductSearchService {
   /**
    * ULTRA-FAST: Single query with all pricing calculated in memory
    */
-  async fastSearch(criteria: z.infer<typeof searchCriteriaSchema>): Promise<{ success: boolean; data?: FastProductResult[]; error?: string }> {
+  async fastSearch(criteria: z.infer<typeof searchCriteriaSchema>): Promise<{ success: boolean; data?: FastProductResult[]; pagination?: any; error?: string }> {
     try {
       const validatedCriteria = searchCriteriaSchema.parse(criteria);
-      const { page = 1, limit = 20 } = validatedCriteria;
-      const skip = (page - 1) * limit;
-
+      const { page = 1, limit = 20, onlyCheapest = false } = validatedCriteria;
+      
       // Build optimized where clause
       const whereClause = this.buildWhereClause(validatedCriteria);
 
+      // If onlyCheapest is true, we need to fetch more listings to ensure we have
+      // all products for deduplication, then group and paginate in memory
+      const fetchLimit = onlyCheapest ? limit * 50 : limit; // Fetch more when deduplicating
+      const skip = onlyCheapest ? 0 : (page - 1) * limit; // Don't skip initially if deduplicating
+
+      // Build inventory where clause
+      // SKU search is handled separately since it's in SellerInventory, not MasterProduct
+      const searchTerm = criteria.q || criteria.search;
+      const inventoryWhereClause: any = {
+        isActive: true,
+        seller: {
+          isEligible: true,
+          sriScore: { gte: 70 }
+        }
+      };
+
+      // Handle stock filter - if inStock is explicitly provided, use it; otherwise default to in-stock only
+      if (criteria.inStock !== undefined) {
+        if (criteria.inStock === true) {
+          inventoryWhereClause.quantity = { gte: 1 }; // inStock=true: stock >= 1
+        } else if (criteria.inStock === false) {
+          inventoryWhereClause.quantity = { lte: 0 }; // inStock=false: stock <= 0
+        }
+      } else {
+        // Default: only show in-stock items (quantity > 0)
+        inventoryWhereClause.quantity = { gt: 0 };
+      }
+
+      // If search term exists, combine masterProduct search with SKU search using OR
+      // Otherwise, just use masterProduct where clause
+      if (searchTerm) {
+        inventoryWhereClause.OR = [
+          { 
+            masterProduct: whereClause 
+          },
+          { 
+            sellerSku: { contains: searchTerm } 
+          }
+        ];
+      } else {
+        // No search term, just use masterProduct filters
+        inventoryWhereClause.masterProduct = whereClause;
+      }
+
       // SINGLE QUERY - Get seller listings directly (not master products)
       const sellerListings = await prisma.sellerInventory.findMany({
-        where: {
-          quantity: { gt: 0 },
-          isActive: true,
-          seller: {
-            isEligible: true,
-            sriScore: { gte: 70 }
-          },
-          masterProduct: whereClause // Apply search criteria to the master product
-        },
+        where: inventoryWhereClause,
         include: {
           masterProduct: {
             select: {
@@ -81,7 +128,14 @@ export class FastProductSearchService {
               manufacturer: true,
               description: true,
               vehicleCompatibility: true,
-              imageUrls: true
+              imageUrls: true,
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true
+                }
+              }
             }
           },
           seller: {
@@ -94,15 +148,38 @@ export class FastProductSearchService {
           }
         },
         skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' }
+        take: fetchLimit,
+        orderBy: onlyCheapest 
+          ? { sellerPrice: 'asc' } // Order by price ascending to get cheapest first
+          : { createdAt: 'desc' }
       });
 
       // Calculate pricing in memory (NO DATABASE QUERIES!)
-      const results = sellerListings.map(listing => this.calculateFastPricingFromListing(listing));
+      let results = sellerListings.map(listing => this.calculateFastPricingFromListing(listing));
 
       // Apply filters in memory
-      const filteredResults = this.applyFilters(results, validatedCriteria);
+      let filteredResults = this.applyFilters(results, validatedCriteria);
+
+      // If onlyCheapest is true, deduplicate by master product ID and keep only cheapest
+      if (onlyCheapest) {
+        filteredResults = this.deduplicateProducts(filteredResults);
+        
+        // Apply pagination after deduplication
+        const paginatedResults = filteredResults.slice((page - 1) * limit, page * limit);
+        
+        return {
+          success: true,
+          data: paginatedResults,
+          pagination: {
+            page,
+            limit,
+            total: filteredResults.length,
+            totalPages: Math.ceil(filteredResults.length / limit),
+            hasNext: page * limit < filteredResults.length,
+            hasPrev: page > 1
+          }
+        };
+      }
 
       return {
         success: true,
@@ -125,29 +202,97 @@ export class FastProductSearchService {
   private buildWhereClause(criteria: any): any {
     const whereClause: any = {};
 
-    // Search in name and OEM part number (MySQL compatible - no mode option)
+    // Search in name, OEM part number, description, manufacturer (MySQL compatible)
+    // Note: SKU search will be handled at the SellerInventory level
     const searchTerm = criteria.q || criteria.search;
     if (searchTerm) {
       whereClause.OR = [
         { name: { contains: searchTerm } },
         { oemPartNumber: { contains: searchTerm } },
-        { description: { contains: searchTerm } }
+        { description: { contains: searchTerm } },
+        { manufacturer: { contains: searchTerm } },
+        { category: { name: { contains: searchTerm } } }
       ];
     }
 
-    // Search in manufacturer (MySQL compatible)
-    if (criteria.manufacturer) {
-      whereClause.manufacturer = { contains: criteria.manufacturer };
+    // Manufacturer/Brand filters - support single and comma-separated values
+    // Multiple brands use OR (any of the brands)
+    const brandValues = this.parseCommaSeparated(criteria.brands || criteria.brand || criteria.manufacturer);
+    if (brandValues.length > 0) {
+      if (brandValues.length === 1) {
+        // Single brand - use contains
+        whereClause.manufacturer = { contains: brandValues[0] };
+      } else {
+        // Multiple brands - use OR with contains for each brand
+        const brandOrConditions = brandValues.map(brand => ({
+          manufacturer: { contains: brand }
+        }));
+        
+        // If we already have an OR clause from search, combine using AND
+        if (whereClause.OR && !whereClause.AND) {
+          whereClause.AND = [
+            { OR: whereClause.OR },
+            { OR: brandOrConditions }
+          ];
+          delete whereClause.OR;
+        } else if (whereClause.AND) {
+          // Already using AND, add brand OR to it
+          whereClause.AND.push({ OR: brandOrConditions });
+        } else {
+          // No search term, just brand filter
+          whereClause.OR = brandOrConditions;
+        }
+      }
     }
 
-    // Category filter
-    if (criteria.category) {
-      whereClause.category = { contains: criteria.category };
+    // Category filters - support single and comma-separated values
+    // Multiple categories use OR (any of the categories)
+    const categoryValues = this.parseCommaSeparated(criteria.categories || criteria.category);
+    if (categoryValues.length > 0) {
+      if (categoryValues.length === 1) {
+        // Single category - use contains
+        whereClause.category = { name: { contains: categoryValues[0] } };
+      } else {
+        // Multiple categories - use OR with contains for each category
+        const categoryOrConditions = categoryValues.map(cat => ({
+          category: { name: { contains: cat } }
+        }));
+        
+        // Combine with existing conditions using AND
+        if (whereClause.AND) {
+          whereClause.AND.push({ OR: categoryOrConditions });
+        } else if (whereClause.OR && !whereClause.manufacturer) {
+          // We have search OR, combine with category OR using AND
+          whereClause.AND = [
+            { OR: whereClause.OR },
+            { OR: categoryOrConditions }
+          ];
+          delete whereClause.OR;
+        } else if (whereClause.manufacturer || whereClause.OR) {
+          // We have brand filter, combine with category OR using AND
+          const existingConditions: any[] = [];
+          if (whereClause.OR) {
+            existingConditions.push({ OR: whereClause.OR });
+            delete whereClause.OR;
+          }
+          if (whereClause.manufacturer) {
+            existingConditions.push({ manufacturer: whereClause.manufacturer });
+            delete whereClause.manufacturer;
+          }
+          existingConditions.push({ OR: categoryOrConditions });
+          whereClause.AND = existingConditions;
+        } else {
+          // Standalone category filter
+          whereClause.OR = categoryOrConditions;
+        }
+      }
     }
 
-    // Subcategory filter
-    if (criteria.subcategory) {
-      whereClause.subcategory = { contains: criteria.subcategory };
+    // Subcategory filter - support comma-separated values
+    const subcategoryValues = this.parseCommaSeparated(criteria.subcategory);
+    if (subcategoryValues.length > 0) {
+      // Subcategory is stored in vehicleCompatibility JSON, will be filtered in memory
+      // We'll handle this in applyFilters method
     }
 
     // Vehicle compatibility filters will be handled in-memory
@@ -155,6 +300,22 @@ export class FastProductSearchService {
     // This avoids complex JSON path queries that might not work with all database setups
 
     return whereClause;
+  }
+
+  /**
+   * Parse comma-separated string or array into array of trimmed values
+   * Supports both comma-separated strings and arrays
+   */
+  private parseCommaSeparated(value: string | string[] | undefined): string[] {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      // Flatten and process array values
+      return value.flatMap(v => 
+        String(v).split(',').map(item => item.trim())
+      ).filter(v => v.length > 0);
+    }
+    // Handle comma-separated string
+    return String(value).split(',').map(v => v.trim()).filter(v => v.length > 0);
   }
 
   /**
@@ -167,13 +328,15 @@ export class FastProductSearchService {
     const quantity = listing.quantity;
     const inventoryId = listing.id; // Seller inventory ID
     const seller = listing.seller;
+    const sellerSku = listing.sellerSku || '';
     
     // Extract vehicle compatibility info
     const compatibility = product.vehicleCompatibility || {};
     const make = compatibility.make || 'Unknown';
     const model = compatibility.model || 'Unknown';
     const year = compatibility.year || 0;
-    const category = compatibility.category || 'General';
+    // Use category from relationship if available, otherwise fallback to compatibility JSON
+    const category = product.category?.name || compatibility.category || 'General';
     const subcategory = compatibility.subcategory || 'General';
     
     // Calculate commission (in memory - no database query!)
@@ -217,7 +380,8 @@ export class FastProductSearchService {
       manufacturer: product.manufacturer || '',
       description: product.description || '',
       sellerId: seller.id,
-      sellerName: seller.businessName
+      sellerName: seller.businessName,
+      sku: sellerSku // Include SKU for search
     };
   }
 
@@ -303,10 +467,60 @@ export class FastProductSearchService {
 
 
   /**
+   * Deduplicate products by master product ID, keeping only the cheapest one
+   */
+  private deduplicateProducts(results: FastProductResult[]): FastProductResult[] {
+    const productMap = new Map<string, FastProductResult>();
+
+    // Group by master product ID and keep only the cheapest
+    for (const product of results) {
+      const masterProductId = product.id;
+      const existing = productMap.get(masterProductId);
+
+      // If no existing product or this one is cheaper, keep this one
+      if (!existing || product.displayPrice < existing.displayPrice) {
+        productMap.set(masterProductId, product);
+      }
+    }
+
+    // Return array of deduplicated products (already sorted by price from query)
+    return Array.from(productMap.values());
+  }
+
+  /**
    * Apply filters in memory
    */
   private applyFilters(results: FastProductResult[], criteria: any): FastProductResult[] {
     let filtered = results;
+
+    // Text search in SKU (handled in-memory since SKU is in SellerInventory)
+    const searchTerm = criteria.q || criteria.search;
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(r => {
+        // Already filtered at DB level, but also check SKU here
+        if (r.sku && r.sku.toLowerCase().includes(searchLower)) {
+          return true;
+        }
+        // Check if it matches other fields (should already be in results, but double-check)
+        return r.name.toLowerCase().includes(searchLower) ||
+               r.oemPartNumber.toLowerCase().includes(searchLower) ||
+               r.manufacturer.toLowerCase().includes(searchLower) ||
+               r.description.toLowerCase().includes(searchLower) ||
+               r.category.toLowerCase().includes(searchLower);
+      });
+    }
+
+    // Subcategory filter (stored in vehicleCompatibility JSON)
+    const subcategoryValues = this.parseCommaSeparated(criteria.subcategory);
+    if (subcategoryValues.length > 0) {
+      filtered = filtered.filter(r => {
+        const subcategoryLower = r.subcategory.toLowerCase();
+        return subcategoryValues.some(val => 
+          subcategoryLower.includes(val.toLowerCase())
+        );
+      });
+    }
 
     // Price range filters
     if (criteria.minPrice) {
@@ -316,9 +530,13 @@ export class FastProductSearchService {
       filtered = filtered.filter(r => r.displayPrice <= criteria.maxPrice);
     }
     
-    // Stock filter
-    if (criteria.inStock) {
-      filtered = filtered.filter(r => r.inStock);
+    // Stock filter - handled at database level, but also double-check here for consistency
+    if (criteria.inStock !== undefined) {
+      if (criteria.inStock === true) {
+        filtered = filtered.filter(r => r.inStock && r.inStock === true);
+      } else if (criteria.inStock === false) {
+        filtered = filtered.filter(r => !r.inStock || r.inStock === false);
+      }
     }
 
     // Vehicle compatibility filters (in-memory filtering)
@@ -331,41 +549,51 @@ export class FastProductSearchService {
     if (criteria.year) {
       filtered = filtered.filter(r => r.year === criteria.year);
     }
+    if (criteria.yearFrom) {
+      filtered = filtered.filter(r => r.year >= criteria.yearFrom);
+    }
+    if (criteria.yearTo) {
+      filtered = filtered.filter(r => r.year <= criteria.yearTo);
+    }
 
-    // Sorting
-    if (criteria.sortBy) {
-      switch (criteria.sortBy.toLowerCase()) {
-        case 'price_low':
-        case 'price_low_to_high':
-          filtered = filtered.sort((a, b) => a.displayPrice - b.displayPrice);
-          break;
-        case 'price_high':
-        case 'price_high_to_low':
-          filtered = filtered.sort((a, b) => b.displayPrice - a.displayPrice);
-          break;
-        case 'name':
-        case 'name_a_to_z':
-          filtered = filtered.sort((a, b) => a.name.localeCompare(b.name));
-          break;
-        case 'name_z_to_a':
-          filtered = filtered.sort((a, b) => b.name.localeCompare(a.name));
-          break;
-        case 'newest':
-          filtered = filtered.sort((a, b) => b.year - a.year);
-          break;
-        case 'oldest':
-          filtered = filtered.sort((a, b) => a.year - b.year);
-          break;
-        case 'top':
-        case 'popular':
-        default:
-          // Default sorting by display price (low to high)
-          filtered = filtered.sort((a, b) => a.displayPrice - b.displayPrice);
-          break;
-      }
-    } else {
-      // Default sorting by display price (low to high)
-      filtered = filtered.sort((a, b) => a.displayPrice - b.displayPrice);
+    // Sorting - support both sortBy and sort parameters
+    const sortValue = criteria.sortBy || criteria.sort || 'featured';
+    switch (sortValue.toLowerCase()) {
+      case 'price-asc':
+      case 'price_low':
+      case 'price_low_to_high':
+        filtered = filtered.sort((a, b) => a.displayPrice - b.displayPrice);
+        break;
+      case 'price-desc':
+      case 'price_high':
+      case 'price_high_to_low':
+        filtered = filtered.sort((a, b) => b.displayPrice - a.displayPrice);
+        break;
+      case 'name-asc':
+      case 'name':
+      case 'name_a_to_z':
+        filtered = filtered.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case 'name-desc':
+      case 'name_z_to_a':
+        filtered = filtered.sort((a, b) => b.name.localeCompare(a.name));
+        break;
+      case 'newest':
+        filtered = filtered.sort((a, b) => b.year - a.year);
+        break;
+      case 'oldest':
+        // Note: oldest products by year
+        filtered = filtered.sort((a, b) => a.year - b.year);
+        break;
+      case 'rating-desc':
+      case 'popularity':
+      case 'popular':
+      case 'top':
+      case 'featured':
+      default:
+        // Default sorting by display price (low to high) for featured/popular
+        filtered = filtered.sort((a, b) => a.displayPrice - b.displayPrice);
+        break;
     }
 
     return filtered;

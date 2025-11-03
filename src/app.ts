@@ -27,6 +27,7 @@ app.use(cors({
     "172.20.20.10.9:3001",
     "172.20.20.10.9:3000",
     "http://localhost:3001",
+    "http://localhost:3005",
     "http://localhost:5001",
     "http://localhost:5000",
     "http://172.20.20.10.9:5001",
@@ -35,7 +36,8 @@ app.use(cors({
     "https://simbi-seller.vercel.app",
     "https://carspain.vercel.app",
     "https://simbi-buyer.vercel.app",
-    "https://simbi-seller-kappa.vercel.app"
+    "https://simbi-seller-kappa.vercel.app",
+    "https://simbi-admin-one.vercel.app"
 
   ],
   credentials: true
@@ -94,6 +96,10 @@ app.get("/", (req, res) => {
 // Admin routes
 import adminRoutes from "./routes/admin/index";
 app.use("/api/admin", adminRoutes);
+
+// Unified Auth routes (forgot/reset password)
+import passwordResetRoutes from "./routes/auth/passwordReset.routes";
+app.use("/api/auth", passwordResetRoutes);
 
 // Seller routes
 import sellerRoutes from "./routes/seller/index";

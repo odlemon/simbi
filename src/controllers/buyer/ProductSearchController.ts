@@ -17,19 +17,36 @@ export class ProductSearchController {
   async getMarketplaceProducts(req: Request, res: Response): Promise<void> {
     try {
       const {
-        page = 1,
-        limit = 20,
-        category,
-        manufacturer,
+        // Text search - support both q and search
+        q,
         search,
-        inStock,
+        // Category filters - support both category/categories
+        category,
+        categories,
+        // Brand/Manufacturer filters - support brands/brand/manufacturer
+        brands,
+        brand,
+        manufacturer,
+        // Subcategory
+        subcategory,
+        // Price range
         minPrice,
         maxPrice,
+        // Vehicle compatibility
         make,
         model,
         year,
+        yearFrom,
+        yearTo,
+        // Other filters
+        inStock,
         productType,
-        sortBy
+        // Pagination
+        page = 1,
+        limit = 20,
+        // Sorting - support both sortBy and sort
+        sortBy,
+        sort
       } = req.query;
 
       const criteria: any = {
@@ -37,12 +54,34 @@ export class ProductSearchController {
         limit: parseInt(limit as string) || 20
       };
 
-      // Basic filters
-      if (category) criteria.category = category;
-      if (manufacturer) criteria.manufacturer = manufacturer;
-      if (search) criteria.q = search; // Use 'q' for search query
-      if (inStock) criteria.inStock = inStock === 'true';
-      
+      // Text search - prioritize q, fallback to search
+      if (q) {
+        criteria.q = q;
+      } else if (search) {
+        criteria.q = search;
+      }
+
+      // Category filters - support both singular and plural
+      if (categories) {
+        criteria.categories = categories;
+      } else if (category) {
+        criteria.category = category;
+      }
+
+      // Brand/Manufacturer filters - support brands/brand/manufacturer
+      if (brands) {
+        criteria.brands = brands;
+      } else if (brand) {
+        criteria.brand = brand;
+      } else if (manufacturer) {
+        criteria.manufacturer = manufacturer;
+      }
+
+      // Subcategory filter
+      if (subcategory) {
+        criteria.subcategory = subcategory;
+      }
+
       // Price range filters
       if (minPrice) criteria.minPrice = parseFloat(minPrice as string);
       if (maxPrice) criteria.maxPrice = parseFloat(maxPrice as string);
@@ -51,12 +90,26 @@ export class ProductSearchController {
       if (make) criteria.make = make;
       if (model) criteria.model = model;
       if (year) criteria.year = parseInt(year as string);
+      if (yearFrom) criteria.yearFrom = parseInt(yearFrom as string);
+      if (yearTo) criteria.yearTo = parseInt(yearTo as string);
+      
+      // Stock filter - parse string to boolean
+      if (inStock !== undefined) {
+        criteria.inStock = inStock === 'true' || inStock === true || inStock === '1';
+      }
       
       // Product type filter (for future implementation)
       if (productType) criteria.productType = productType;
       
-      // Sorting
-      if (sortBy) criteria.sortBy = sortBy;
+      // Sorting - support both sortBy and sort parameters
+      if (sortBy) {
+        criteria.sortBy = sortBy;
+      } else if (sort) {
+        criteria.sortBy = sort;
+      }
+
+      // For marketplace, only show cheapest product per master product
+      criteria.onlyCheapest = true;
 
       // Use FAST search service for marketplace products
       const result = await this.fastSearchService.fastSearch(criteria);
@@ -66,7 +119,10 @@ export class ProductSearchController {
           success: true,
           message: 'Marketplace products retrieved successfully',
           data: result.data,
-          pagination: result.pagination,
+          pagination: result.pagination || {
+            page: parseInt(page as string) || 1,
+            limit: parseInt(limit as string) || 20
+          },
           timestamp: new Date().toISOString()
         });
       } else {

@@ -283,6 +283,9 @@ export class SellerOrderService {
 
   /**
    * Update order fulfillment status
+   * NOTE: Sellers can no longer ship or mark orders as delivered.
+   * Only admins can dispatch orders (assign driver and mark as shipped).
+   * This endpoint now returns an error directing sellers to contact admin.
    */
   async updateFulfillmentStatus(
     sellerId: string,
@@ -291,6 +294,15 @@ export class SellerOrderService {
     trackingNumber?: string,
     estimatedDeliveryDate?: Date
   ): Promise<OrderUpdateResult> {
+    // Sellers can no longer ship or mark orders as delivered
+    // Only admins can dispatch orders after payment is completed
+    return {
+      success: false,
+      message: 'Sellers can no longer ship or mark orders as delivered. Please contact admin to dispatch the order after payment is completed.',
+      error: 'SELLER_SHIPPING_DISABLED'
+    };
+    
+    /* DISABLED - Admin-controlled workflow
     try {
       // Verify the order belongs to this seller
       // For SHIPPED: order must be in PROCESSING status
@@ -479,6 +491,7 @@ export class SellerOrderService {
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+    */
   }
 
   /**
