@@ -15,6 +15,7 @@ import complianceRoutes from "./compliance/complianceRoutes";
 import inventoryRoutes from "./inventory/inventoryRoutes";
 import catalogRoutes from "./catalog.routes";
 import driverRoutes from "./drivers/driverRoutes";
+import analyticsRoutes from "./analytics/analyticsRoutes";
 
 const router = Router();
 
@@ -62,6 +63,9 @@ router.use("/inventory", inventoryRoutes);
 
 // Driver routes
 router.use("/drivers", driverRoutes);
+
+// Analytics routes
+router.use("/analytics", analyticsRoutes);
 
 export default router;
 

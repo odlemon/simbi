@@ -711,6 +711,25 @@ export class DashboardService {
       complianceViolations: number;
       lastAuditCheck: Date;
     };
+    
+    // Revenue Trends (for graphs)
+    revenueTrends: {
+      daily: Array<{
+        date: string;
+        revenue: number;
+        orders: number;
+      }>;
+      weekly: Array<{
+        week: string;
+        revenue: number;
+        orders: number;
+      }>;
+      monthly: Array<{
+        month: string;
+        revenue: number;
+        orders: number;
+      }>;
+    };
   }> {
     try {
       // Test database connection first
@@ -780,6 +799,104 @@ export class DashboardService {
       const complianceScore = Math.max(0, 100 - sriViolationRate);
       const totalCommissions = totalPayouts * 0.1; // Assuming 10% commission
       const systemHealth = "HEALTHY"; // Since we're getting data successfully
+
+      // =================================================================
+      // REVENUE TRENDS CALCULATION (for graphs)
+      // Platform Commission Revenue - not seller revenue
+      // =================================================================
+      
+      // Get delivered orders for platform commission revenue calculation
+      const deliveredOrders = await prisma.order.findMany({
+        where: {
+          status: "DELIVERED"
+        },
+        select: {
+          platformCommission: true,
+          createdAt: true
+        },
+        orderBy: {
+          createdAt: "desc"
+        }
+      });
+
+      // Daily trends (last 30 days) - Platform commission only
+      const dailyTrends: Array<{ date: string; revenue: number; orders: number }> = [];
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        date.setHours(0, 0, 0, 0);
+        
+        const nextDate = new Date(date);
+        nextDate.setDate(nextDate.getDate() + 1);
+        
+        const dayOrders = deliveredOrders.filter(order => {
+          const orderDate = new Date(order.createdAt);
+          orderDate.setHours(0, 0, 0, 0);
+          return orderDate >= date && orderDate < nextDate;
+        });
+        
+        const dayRevenue = dayOrders.reduce((sum, order) => sum + (order.platformCommission || 0), 0);
+        
+        dailyTrends.push({
+          date: date.toISOString().split('T')[0], // YYYY-MM-DD format
+          revenue: Math.round(dayRevenue * 100) / 100,
+          orders: dayOrders.length
+        });
+      }
+
+      // Weekly trends (last 12 weeks) - Platform commission only
+      const weeklyTrends: Array<{ week: string; revenue: number; orders: number }> = [];
+      for (let i = 11; i >= 0; i--) {
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - (i * 7));
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Start of week (Sunday)
+        weekStart.setHours(0, 0, 0, 0);
+        
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        
+        const weekOrders = deliveredOrders.filter(order => {
+          const orderDate = new Date(order.createdAt);
+          return orderDate >= weekStart && orderDate < weekEnd;
+        });
+        
+        const weekRevenue = weekOrders.reduce((sum, order) => sum + (order.platformCommission || 0), 0);
+        
+        const weekLabel = `Week ${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
+        
+        weeklyTrends.push({
+          week: weekLabel,
+          revenue: Math.round(weekRevenue * 100) / 100,
+          orders: weekOrders.length
+        });
+      }
+
+      // Monthly trends (last 12 months) - Platform commission only
+      const monthlyTrends: Array<{ month: string; revenue: number; orders: number }> = [];
+      for (let i = 11; i >= 0; i--) {
+        const monthStart = new Date();
+        monthStart.setMonth(monthStart.getMonth() - i);
+        monthStart.setDate(1);
+        monthStart.setHours(0, 0, 0, 0);
+        
+        const monthEnd = new Date(monthStart);
+        monthEnd.setMonth(monthEnd.getMonth() + 1);
+        
+        const monthOrders = deliveredOrders.filter(order => {
+          const orderDate = new Date(order.createdAt);
+          return orderDate >= monthStart && orderDate < monthEnd;
+        });
+        
+        const monthRevenue = monthOrders.reduce((sum, order) => sum + (order.platformCommission || 0), 0);
+        
+        const monthLabel = monthStart.toLocaleString('default', { month: 'short', year: 'numeric' });
+        
+        monthlyTrends.push({
+          month: monthLabel,
+          revenue: Math.round(monthRevenue * 100) / 100,
+          orders: monthOrders.length
+        });
+      }
 
       return {
         // Basic KPIs (real data)
@@ -892,6 +1009,13 @@ export class DashboardService {
           recentAuditActions: 0, // Would need recent activity query
           complianceViolations: sriViolations,
           lastAuditCheck: new Date()
+        },
+        
+        // Revenue Trends (for graphs)
+        revenueTrends: {
+          daily: dailyTrends,
+          weekly: weeklyTrends,
+          monthly: monthlyTrends
         }
       };
 

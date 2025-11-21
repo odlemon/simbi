@@ -45,3 +45,5 @@ async function updateBuyerTypesWithSQL() {
 updateBuyerTypesWithSQL();
 
 
+
+
