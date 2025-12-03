@@ -225,14 +225,14 @@ export class SellerOrderService {
       }
 
       const updateData: any = {
-        status: status === 'ACCEPTED' ? 'AWAITING_PAYMENT' : 'SELLER_REJECTED',
+        status: status === 'ACCEPTED' ? 'PROCESSING' : 'SELLER_REJECTED',
         updatedAt: new Date()
       };
 
       if (status === 'ACCEPTED') {
         updateData.sellerAcceptedAt = new Date();
-        // When seller accepts, order status changes to AWAITING_PAYMENT
-        // Payment can then be recorded
+        // When seller accepts, order status changes to PROCESSING
+        // No payment required - admin will record payment when order is delivered
       } else {
         updateData.sellerRejectedAt = new Date();
         updateData.rejectionReason = rejectionReason;

@@ -16,6 +16,8 @@ import inventoryRoutes from "./inventory/inventoryRoutes";
 import catalogRoutes from "./catalog.routes";
 import driverRoutes from "./drivers/driverRoutes";
 import analyticsRoutes from "./analytics/analyticsRoutes";
+import userRoutes from "./users/userRoutes";
+import payoutRoutes from "./payouts/payoutRoutes";
 
 const router = Router();
 
@@ -66,6 +68,12 @@ router.use("/drivers", driverRoutes);
 
 // Analytics routes
 router.use("/analytics", analyticsRoutes);
+
+// User routes (sellers and buyers)
+router.use("/users", userRoutes);
+
+// Payout routes
+router.use("/payouts", payoutRoutes);
 
 export default router;
 

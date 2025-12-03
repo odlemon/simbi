@@ -1143,35 +1143,49 @@ export class OrderService {
         };
       }
 
+      // Extract payment history from metadata
+      const partialPayments = order.payment?.metadata 
+        ? (order.payment.metadata as any).partialPayments || [] 
+        : [];
+
+      const paidAmount = order.payment?.amount || 0;
+      const totalToBePaid = order.totalAmount;
+      const remainingBalance = totalToBePaid - paidAmount;
+
+      // Format payment history
+      const paymentHistory = partialPayments.map((pp: any) => ({
+        amount: pp.amount,
+        date: pp.date,
+        notes: pp.notes || null,
+        recordedBy: pp.recordedBy || null
+      }));
+
       // Format payment details
       const paymentData = {
         order: {
           id: order.id,
           orderNumber: order.orderNumber,
-          totalAmount: order.totalAmount,
-          currency: order.currency,
           status: order.status,
           paymentStatus: order.paymentStatus,
+          currency: order.currency,
           createdAt: order.createdAt
         },
-        payment: order.payment ? {
-          id: order.payment.id,
-          amount: order.payment.amount,
-          currency: order.payment.currency,
-          paymentMethod: order.payment.paymentMethod,
-          status: order.payment.status,
-          paidAt: order.payment.paidAt,
-          partialPayments: order.payment.metadata ? (order.payment.metadata as any).partialPayments || [] : []
-        } : null,
-        summary: {
-          orderTotal: order.totalAmount,
-          amountPaid: order.payment?.amount || 0,
-          remainingBalance: order.totalAmount - (order.payment?.amount || 0),
-          paymentStatus: order.paymentStatus,
+        payment: {
+          totalToBePaid: totalToBePaid,
+          paid: paidAmount,
+          remaining: remainingBalance,
           isFullyPaid: order.paymentStatus === 'COMPLETED',
           isPartiallyPaid: order.paymentStatus === 'PARTIAL',
           hasNoPayment: !order.payment || order.paymentStatus === 'PENDING'
         },
+        paymentDetails: order.payment ? {
+          id: order.payment.id,
+          status: order.payment.status,
+          paymentMethod: order.payment.paymentMethod,
+          paidAt: order.payment.paidAt,
+          currency: order.payment.currency
+        } : null,
+        paymentHistory: paymentHistory,
         seller: order.seller
       };
 

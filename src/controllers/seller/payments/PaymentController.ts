@@ -17,6 +17,15 @@ export class PaymentController {
    */
   async recordCashPayment(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      // DISABLED: Sellers can no longer record payments
+      // Payments are now recorded by admin when marking orders as delivered
+      res.status(403).json({
+        success: false,
+        message: "Seller payment recording is disabled. Payments are recorded by admin when orders are delivered.",
+        error: "SELLER_PAYMENT_DISABLED"
+      });
+      return;
+      
       const { orderId, amount, notes } = req.body;
       const sellerId = req.seller?.id;
 
@@ -323,34 +332,44 @@ export class PaymentController {
       const payment = order.payment;
       const partialPayments = payment?.metadata ? (payment.metadata as any).partialPayments || [] : [];
 
+      const paidAmount = payment?.amount || 0;
+      const totalToBePaid = order.totalAmount;
+      const remainingBalance = totalToBePaid - paidAmount;
+
+      // Format payment history
+      const paymentHistory = partialPayments.map((pp: any) => ({
+        amount: pp.amount,
+        date: pp.date,
+        notes: pp.notes || null,
+        recordedBy: pp.recordedBy || null
+      }));
+
       res.status(200).json({
         success: true,
         data: {
           order: {
             id: order.id,
             orderNumber: order.orderNumber,
-            totalAmount: order.totalAmount,
-            currency: order.currency,
             status: order.status,
-            paymentStatus: order.paymentStatus
+            paymentStatus: order.paymentStatus,
+            currency: order.currency
           },
-          payment: payment ? {
+          payment: {
+            totalToBePaid: totalToBePaid,
+            paid: paidAmount,
+            remaining: remainingBalance,
+            isFullyPaid: order.paymentStatus === 'COMPLETED',
+            isPartiallyPaid: order.paymentStatus === 'PARTIAL',
+            hasNoPayment: !payment || order.paymentStatus === 'PENDING'
+          },
+          paymentDetails: payment ? {
             id: payment.id,
-            amount: payment.amount,
-            currency: payment.currency,
-            paymentMethod: payment.paymentMethod,
             status: payment.status,
+            paymentMethod: payment.paymentMethod,
             paidAt: payment.paidAt,
-            partialPayments: partialPayments,
-            totalPaid: payment.amount,
-            remainingBalance: order.totalAmount - payment.amount,
-            isFullyPaid: payment.amount >= order.totalAmount
+            currency: payment.currency
           } : null,
-          paymentHistory: partialPayments.map((pp: any) => ({
-            amount: pp.amount,
-            date: pp.date,
-            notes: pp.notes || null
-          }))
+          paymentHistory: paymentHistory
         },
         timestamp: new Date().toISOString()
       });

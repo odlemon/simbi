@@ -24,6 +24,7 @@ app.use(helmet({
 app.use(cors({
   origin: [
     "http://localhost:3000",
+    "http://localhost:3003",
     "172.20.20.10.9:3001",
     "172.20.20.10.9:3000",
     "http://localhost:3001",
@@ -92,6 +93,10 @@ app.get("/", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Shared routes (works for admin, buyer, seller)
+import sharedPaymentRoutes from "./routes/shared/payment.routes";
+app.use("/api/orders", sharedPaymentRoutes);
 
 // Admin routes
 import adminRoutes from "./routes/admin/index";

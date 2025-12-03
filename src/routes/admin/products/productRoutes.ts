@@ -1,11 +1,13 @@
 // @ts-nocheck
 import { Router } from "express";
 import { ProductController } from "../../../controllers/admin/products/ProductController";
+import { SellerProductController } from "../../../controllers/admin/products/SellerProductController";
 import { authenticateAdmin } from "../../../middleware/authenticate";
 import { requireSuperAdmin, requireAnyAdmin, requireCompliance } from "../../../middleware/rbac";
 
 const router = Router();
 const controller = new ProductController();
+const sellerProductController = new SellerProductController();
 
 /**
  * @route   GET /api/admin/products
@@ -69,6 +71,13 @@ router.post("/custom-requests/:id/request-info", authenticateAdmin, requireCompl
  * @access  Private (Any Admin)
  */
 router.get("/search/vehicle", authenticateAdmin, requireAnyAdmin, controller.searchByVehicle);
+
+/**
+ * @route   GET /api/admin/products/seller-products
+ * @desc    Get all products from sellers with pagination and filters
+ * @access  Private (Any Admin)
+ */
+router.get("/seller-products", authenticateAdmin, requireAnyAdmin, sellerProductController.getAllSellerProducts.bind(sellerProductController));
 
 /**
  * @route   GET /api/admin/products/:id

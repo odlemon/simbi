@@ -3,10 +3,13 @@ import { Request, Response } from "express";
 import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
 import { AuthenticatedRequest } from "../../../middleware/authenticate";
+import { AccountingService } from "../../../services/seller/accounting/AccountingService";
 
 export class OrderController {
+  private accountingService: AccountingService;
+
   constructor() {
-    // No need for private prisma property - use imported prisma directly
+    this.accountingService = new AccountingService();
   }
 
   /**
@@ -420,7 +423,7 @@ export class OrderController {
               lastName: true,
               companyName: true,
               email: true,
-              phone: true,
+              phoneNumber: true,
             }
           },
           shippingAddress: {
@@ -457,7 +460,18 @@ export class OrderController {
               }
             }
           },
-          shipments: {
+          payment: true,
+          driver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+              vehicleType: true,
+              vehiclePlate: true,
+            }
+          },
+          shipment: {
             include: {
               carrier: {
                 select: {
@@ -670,7 +684,7 @@ export class OrderController {
   /**
    * PATCH /api/admin/orders/:id/dispatch
    * Dispatch order with driver (Admin only)
-   * Only fully paid orders (paymentStatus = COMPLETED) can be dispatched
+   * Payment is not required - driver will collect cash on delivery
    */
   async dispatchOrder(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -715,15 +729,8 @@ export class OrderController {
         return;
       }
 
-      // Check if order is fully paid
-      if (order.paymentStatus !== 'COMPLETED') {
-        res.status(400).json({
-          success: false,
-          message: 'Order must be fully paid before dispatch. Current payment status: ' + order.paymentStatus,
-          error: 'PAYMENT_NOT_COMPLETED'
-        });
-        return;
-      }
+      // Payment requirement removed - orders can be dispatched without payment
+      // Payment will be collected by driver on delivery and recorded by admin
 
       // Check if order is in correct status (must be PROCESSING)
       if (order.status !== 'PROCESSING') {
@@ -908,6 +915,350 @@ export class OrderController {
         success: false,
         message: 'Failed to mark order as delivered',
         error: error.message || 'INTERNAL_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * POST /api/admin/orders/:id/record-payment
+   * Record cash payment for an order (Admin only)
+   * Supports partial payments
+   */
+  async recordPayment(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { amount, notes } = req.body;
+      const adminId = req.admin?.id;
+
+      if (!adminId) {
+        res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
+      // Validate required fields
+      if (!amount || amount <= 0) {
+        res.status(400).json({
+          success: false,
+          message: 'Payment amount is required and must be greater than 0',
+          error: 'INVALID_AMOUNT'
+        });
+        return;
+      }
+
+      // Get order with payment info
+      const order = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          payment: true,
+          seller: {
+            select: {
+              id: true
+            }
+          }
+        }
+      });
+
+      if (!order) {
+        res.status(404).json({
+          success: false,
+          message: 'Order not found',
+          error: 'ORDER_NOT_FOUND'
+        });
+        return;
+      }
+
+      // Payment should be recorded after delivery
+      // Allow payment recording for SHIPPED or DELIVERED orders
+      if (order.status !== 'SHIPPED' && order.status !== 'DELIVERED') {
+        res.status(400).json({
+          success: false,
+          message: `Payment can only be recorded for SHIPPED or DELIVERED orders. Current status: ${order.status}`,
+          error: 'INVALID_ORDER_STATUS'
+        });
+        return;
+      }
+
+      // Get or create payment record for this order
+      let payment = await prisma.payment.findUnique({
+        where: { orderId: id }
+      });
+
+      const existingPaymentAmount = payment?.amount || 0;
+      const newTotalAmount = existingPaymentAmount + amount;
+      const remainingAmount = order.totalAmount - existingPaymentAmount;
+
+      // Validate payment doesn't exceed order total
+      if (amount > remainingAmount) {
+        res.status(400).json({
+          success: false,
+          message: `Payment amount (${amount}) exceeds remaining balance (${remainingAmount}). Total paid: ${existingPaymentAmount}, Order total: ${order.totalAmount}`,
+          error: 'AMOUNT_EXCEEDS_BALANCE',
+          data: {
+            orderTotal: order.totalAmount,
+            alreadyPaid: existingPaymentAmount,
+            remainingBalance: remainingAmount,
+            requestedAmount: amount
+          }
+        });
+        return;
+      }
+
+      const isFullyPaid = newTotalAmount >= order.totalAmount;
+
+      // Update or create payment record
+      if (payment) {
+        // Update existing payment with new total
+        payment = await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            amount: newTotalAmount,
+            status: isFullyPaid ? "COMPLETED" : "PARTIAL",
+            paidAt: new Date(),
+            metadata: {
+              ...(payment.metadata as any || {}),
+              partialPayments: [
+                ...((payment.metadata as any)?.partialPayments || []),
+                {
+                  amount,
+                  date: new Date().toISOString(),
+                  notes: notes || null,
+                  recordedBy: adminId
+                }
+              ]
+            }
+          }
+        });
+      } else {
+        // Create new payment record
+        payment = await prisma.payment.create({
+          data: {
+            orderId: id,
+            amount: amount,
+            currency: order.currency || "USD",
+            paymentMethod: "CASH_ON_DELIVERY",
+            status: isFullyPaid ? "COMPLETED" : "PARTIAL",
+            paidAt: new Date(),
+            metadata: {
+              partialPayments: [
+                {
+                  amount,
+                  date: new Date().toISOString(),
+                  notes: notes || null,
+                  recordedBy: adminId
+                }
+              ]
+            }
+          }
+        });
+      }
+
+      // Update order payment status
+      const orderUpdateData: any = {
+        paymentStatus: isFullyPaid ? "COMPLETED" : "PARTIAL",
+        updatedAt: new Date()
+      };
+
+      await prisma.order.update({
+        where: { id },
+        data: orderUpdateData
+      });
+
+      // Create accounting entries for the payment (for the amount just paid, not total)
+      const orderCommissionRate = order.platformCommission / order.totalAmount;
+      const accountingResult = await this.accountingService.createPaymentAccountingEntries(
+        order.sellerId,
+        id,
+        amount, // Only the amount just paid
+        orderCommissionRate || 0.1, // Use order's commission rate
+        !isFullyPaid // Mark as partial if not fully paid
+      );
+
+      if (!accountingResult.success) {
+        logger.error('Failed to create accounting entries for payment', {
+          sellerId: order.sellerId,
+          orderId: id,
+          amount,
+          error: accountingResult.error
+        });
+        // Continue with payment recording even if accounting fails
+      }
+
+      // Log payment activity
+      logger.info('Cash payment recorded by admin', {
+        adminId,
+        sellerId: order.sellerId,
+        orderId: id,
+        orderNumber: order.orderNumber,
+        amount,
+        paymentId: payment.id,
+        isFullyPaid,
+        totalPaid: newTotalAmount,
+        remainingBalance: order.totalAmount - newTotalAmount,
+        accountingEntries: accountingResult.success ? accountingResult.data.entries.length : 0
+      });
+
+      const partialPayments = payment.metadata ? (payment.metadata as any).partialPayments || [] : [];
+
+      res.status(200).json({
+        success: true,
+        message: isFullyPaid ? "Payment completed successfully" : `Partial payment recorded. Remaining balance: ${order.totalAmount - newTotalAmount}`,
+        data: {
+          payment: {
+            id: payment.id,
+            orderId: payment.orderId,
+            amount: newTotalAmount, // Total amount paid (including previous payments)
+            amountPaid: amount, // Amount just paid in this transaction
+            currency: payment.currency,
+            paymentMethod: payment.paymentMethod,
+            status: payment.status,
+            paidAt: payment.paidAt,
+            partialPayments: partialPayments
+          },
+          order: {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+            paymentStatus: orderUpdateData.paymentStatus,
+            totalAmount: order.totalAmount,
+            paidAmount: newTotalAmount,
+            remainingBalance: order.totalAmount - newTotalAmount
+          },
+          accounting: accountingResult.success ? {
+            entriesCreated: accountingResult.data.entries.length,
+            summary: accountingResult.data.summary,
+            commission: accountingResult.data.summary.commission,
+            netRevenue: accountingResult.data.summary.netRevenue
+          } : {
+            error: "Accounting entries failed to create",
+            entriesCreated: 0
+          }
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error: any) {
+      logger.error("Error recording cash payment", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to record cash payment",
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * GET /api/admin/orders/:id/payment
+   * Get payment details for a specific order (Admin only)
+   * Returns: total to be paid, paid amount, remaining balance, and payment history
+   */
+  async getOrderPaymentDetails(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const adminId = req.admin?.id;
+
+      if (!adminId) {
+        res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
+      // Get order with payment info
+      const order = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          payment: true,
+          buyer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              companyName: true,
+              email: true
+            }
+          },
+          seller: {
+            select: {
+              id: true,
+              businessName: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      if (!order) {
+        res.status(404).json({
+          success: false,
+          message: 'Order not found',
+          error: 'ORDER_NOT_FOUND'
+        });
+        return;
+      }
+
+      // Extract payment history from metadata
+      const partialPayments = order.payment?.metadata 
+        ? (order.payment.metadata as any).partialPayments || [] 
+        : [];
+
+      const paidAmount = order.payment?.amount || 0;
+      const totalToBePaid = order.totalAmount;
+      const remainingBalance = totalToBePaid - paidAmount;
+
+      // Format payment history
+      const paymentHistory = partialPayments.map((pp: any) => ({
+        amount: pp.amount,
+        date: pp.date,
+        notes: pp.notes || null,
+        recordedBy: pp.recordedBy || null
+      }));
+
+      res.status(200).json({
+        success: true,
+        data: {
+          order: {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+            paymentStatus: order.paymentStatus,
+            currency: order.currency
+          },
+          payment: {
+            totalToBePaid: totalToBePaid,
+            paid: paidAmount,
+            remaining: remainingBalance,
+            isFullyPaid: order.paymentStatus === 'COMPLETED',
+            isPartiallyPaid: order.paymentStatus === 'PARTIAL',
+            hasNoPayment: !order.payment || order.paymentStatus === 'PENDING'
+          },
+          paymentDetails: order.payment ? {
+            id: order.payment.id,
+            status: order.payment.status,
+            paymentMethod: order.payment.paymentMethod,
+            paidAt: order.payment.paidAt,
+            currency: order.payment.currency
+          } : null,
+          paymentHistory: paymentHistory,
+          buyer: order.buyer,
+          seller: order.seller
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error: any) {
+      logger.error("Error getting order payment details", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to get payment details",
+        error: error.message,
         timestamp: new Date().toISOString()
       });
     }
