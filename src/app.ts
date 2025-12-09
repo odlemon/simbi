@@ -17,13 +17,14 @@ const port = process.env.PORT || 3000;
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: false
+  contentSecurityPolicy: false  
 }));
 
 // CORS configuration
 app.use(cors({
   origin: [
     "http://localhost:3000",
+    "http://localhost:3008",
     "http://31.220.82.129:5000",
     "http://localhost:3003",
     "172.20.20.10.9:3001",

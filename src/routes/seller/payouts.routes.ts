@@ -26,3 +26,5 @@ router.get("/summary", authenticateSeller, controller.getPayoutSummary.bind(cont
 
 export default router;
 
+
+
