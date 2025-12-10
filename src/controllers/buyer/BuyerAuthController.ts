@@ -46,7 +46,9 @@ export class BuyerAuthController {
    */
   async login(req: Request, res: Response): Promise<void> {
     try {
-      const result = await this.authService.login(req.body);
+      // Get IP address from request
+      const ipAddress = req.ip || req.socket.remoteAddress || "unknown";
+      const result = await this.authService.login(req.body, ipAddress);
       
       if (result.success) {
         res.status(200).json({

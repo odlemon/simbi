@@ -41,7 +41,9 @@ export class SellerAuthController {
         });
       }
 
-      const result = await this.service.login(email, password);
+      // Get IP address from request
+      const ipAddress = req.ip || req.socket.remoteAddress || "unknown";
+      const result = await this.service.login(email, password, ipAddress);
 
       res.json({
         success: true,

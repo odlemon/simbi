@@ -8,23 +8,25 @@ datasource db {
 }
 
 model Admin {
-  id              String                @id @default(uuid())
-  email           String                @unique
-  password        String
-  firstName       String
-  lastName        String
-  role            UserRole
-  status          UserStatus            @default(ACTIVE)
-  mfaEnabled      Boolean               @default(false)
-  mfaSecret       String?
-  lastLoginAt     DateTime?
-  lastLoginIp     String?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  activityLogs    ActivityLog[]
-  alertsHandled   AdminAlert[]
-  disputesHandled Dispute[]
-  integrations    ExternalIntegration[]
+  id                    String                @id @default(uuid())
+  email                 String                @unique
+  password              String
+  firstName             String
+  lastName              String
+  role                  UserRole
+  status                UserStatus            @default(ACTIVE)
+  mfaEnabled            Boolean               @default(false)
+  mfaSecret             String?
+  lastLoginAt           DateTime?
+  lastLoginIp           String?
+  failedLoginAttempts   Int                   @default(0)
+  accountLockedUntil    DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  activityLogs          ActivityLog[]
+  alertsHandled         AdminAlert[]
+  disputesHandled       Dispute[]
+  integrations          ExternalIntegration[]
 
   @@index([email])
   @@index([role])
@@ -122,6 +124,8 @@ model Seller {
   mfaSecret                 String?
   isEligible                Boolean                @default(true)
   isShadowBanned            Boolean                @default(false)
+  failedLoginAttempts       Int                    @default(0)
+  accountLockedUntil        DateTime?
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
   emailVerified             Boolean                @default(false)
@@ -347,28 +351,30 @@ model SellerExpense {
 }
 
 model SellerStaff {
-  id           String             @id @default(uuid())
-  sellerId     String
-  email        String             @unique
-  firstName    String
-  lastName     String
-  phone        String
-  role         StaffRole          @default(DISPATCHER)
-  hourlyRate   Float?
-  isActive     Boolean            @default(true)
-  lastLogin    DateTime?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  department   StaffDepartment
-  endDate      DateTime?
-  passwordHash String
-  position     String
-  salary       Float
-  startDate    DateTime
-  status       StaffStatus        @default(ACTIVE)
-  seller       Seller             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  activityLogs StaffActivityLog[]
-  timeLogs     StaffTimeLog[]
+  id                  String             @id @default(uuid())
+  sellerId            String
+  email               String             @unique
+  firstName           String
+  lastName            String
+  phone               String
+  role                StaffRole          @default(DISPATCHER)
+  hourlyRate          Float?
+  isActive            Boolean            @default(true)
+  lastLogin           DateTime?
+  failedLoginAttempts Int                @default(0)
+  accountLockedUntil   DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  department          StaffDepartment
+  endDate             DateTime?
+  passwordHash        String
+  position            String
+  salary              Float
+  startDate           DateTime
+  status              StaffStatus        @default(ACTIVE)
+  seller              Seller             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  activityLogs        StaffActivityLog[]
+  timeLogs            StaffTimeLog[]
 
   @@index([sellerId])
   @@index([email])
@@ -497,6 +503,8 @@ model Buyer {
   creditLimit               Float?                @default(0)
   creditUsed                Float?                @default(0)
   paymentTermDays           Int?
+  failedLoginAttempts       Int                   @default(0)
+  accountLockedUntil        DateTime?
   createdAt                 DateTime              @default(now())
   updatedAt                 DateTime              @updatedAt
   addressLine1              String?
@@ -1157,6 +1165,23 @@ model SystemSetting {
   updatedAt   DateTime @updatedAt
 
   @@map("system_settings")
+}
+
+model FailedLoginAttempt {
+  id            String    @id @default(uuid())
+  email         String?
+  ipAddress     String
+  userType      String    // 'admin', 'seller', 'buyer', 'staff'
+  accountExists Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  @@index([email])
+  @@index([ipAddress])
+  @@index([userType])
+  @@index([createdAt])
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+  @@map("failed_login_attempts")
 }
 
 enum UserRole {

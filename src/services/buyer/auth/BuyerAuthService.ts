@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from "../../../utils/database";
 import { EmailVerificationService } from "../../EmailVerificationService";
+import { AccountLockoutService } from "../../AccountLockoutService";
 
 
 
@@ -281,10 +282,39 @@ export class BuyerAuthService {
   /**
    * Login buyer
    */
-  async login(data: z.infer<typeof loginSchema>): Promise<BuyerAuthResult> {
+  async login(data: z.infer<typeof loginSchema>, ipAddress?: string): Promise<BuyerAuthResult> {
     try {
       // Validate input
       const validatedData = loginSchema.parse(data);
+      const clientIp = ipAddress || "unknown";
+
+      // Check IP rate limiting first (applies to all attempts)
+      const ipRateLimit = await AccountLockoutService.isIPRateLimited(
+        clientIp,
+        "buyer"
+      );
+      if (ipRateLimit.isLimited) {
+        await AccountLockoutService.recordFailedAttempt(
+          validatedData.email,
+          clientIp,
+          "buyer",
+          false
+        );
+        const recentAttempts = await prisma.failedLoginAttempt.count({
+          where: {
+            ipAddress: clientIp,
+            userType: "buyer",
+            createdAt: {
+              gte: new Date(Date.now() - 15 * 60 * 1000),
+            },
+          },
+        });
+        return {
+          success: false,
+          message: AccountLockoutService.getIPRateLimitErrorMessage(ipRateLimit.resetAt, recentAttempts),
+          error: 'IP_RATE_LIMITED'
+        };
+      }
 
       // Find buyer
       const buyer = await prisma.buyer.findUnique({
@@ -292,10 +322,51 @@ export class BuyerAuthService {
       });
 
       if (!buyer) {
+        // Record failed attempt for non-existent email
+        await AccountLockoutService.recordFailedAttempt(
+          validatedData.email,
+          clientIp,
+          "buyer",
+          false
+        );
+
+        // Check email rate limiting
+        const emailRateLimit = await AccountLockoutService.isEmailRateLimited(
+          validatedData.email,
+          "buyer"
+        );
+        if (emailRateLimit.isLimited) {
+          return {
+            success: false,
+            message: AccountLockoutService.getEmailRateLimitErrorMessage(emailRateLimit.attemptCount),
+            error: 'EMAIL_RATE_LIMITED'
+          };
+        }
+
         return {
           success: false,
           message: 'Invalid email or password',
           error: 'INVALID_CREDENTIALS'
+        };
+      }
+
+      // Check if account is locked
+      if (AccountLockoutService.isAccountLocked(buyer.accountLockedUntil)) {
+        // Record attempt on locked account
+        await AccountLockoutService.recordFailedAttempt(
+          validatedData.email,
+          clientIp,
+          "buyer",
+          true
+        );
+
+        const errorMessage = AccountLockoutService.getLockoutErrorMessage(
+          buyer.accountLockedUntil
+        );
+        return {
+          success: false,
+          message: errorMessage,
+          error: 'ACCOUNT_LOCKED'
         };
       }
 
@@ -320,21 +391,59 @@ export class BuyerAuthService {
       // Verify password
       const isPasswordValid = await bcrypt.compare(validatedData.password, buyer.password);
       if (!isPasswordValid) {
+        // Record failed attempt
+        await AccountLockoutService.recordFailedAttempt(
+          validatedData.email,
+          clientIp,
+          "buyer",
+          true
+        );
+
+        // Handle failed login attempt (account-level lockout)
+        const lockoutResult = AccountLockoutService.handleFailedLogin(
+          buyer.failedLoginAttempts,
+          buyer.accountLockedUntil
+        );
+
+        // Update failed attempts and lockout status
+        await prisma.buyer.update({
+          where: { id: buyer.id },
+          data: {
+            failedLoginAttempts: lockoutResult.failedAttempts,
+            accountLockedUntil: lockoutResult.lockedUntil,
+          },
+        });
+
+        if (lockoutResult.isLocked) {
+          return {
+            success: false,
+            message: lockoutResult.message,
+            error: 'ACCOUNT_LOCKED'
+          };
+        }
+
         return {
           success: false,
-          message: 'Invalid email or password',
+          message: lockoutResult.message,
           error: 'INVALID_CREDENTIALS'
         };
       }
 
-      // Generate tokens
-      const { accessToken, refreshToken } = this.generateTokens(buyer);
+      // Reset failed login attempts on successful login
+      const resetResult = AccountLockoutService.resetFailedAttempts();
 
-      // Update last login
+      // Update buyer to reset failed attempts and last login
       await prisma.buyer.update({
         where: { id: buyer.id },
-        data: { updatedAt: new Date() }
+        data: {
+          failedLoginAttempts: resetResult.failedAttempts,
+          accountLockedUntil: resetResult.lockedUntil,
+          updatedAt: new Date(),
+        },
       });
+
+      // Generate tokens
+      const { accessToken, refreshToken } = this.generateTokens(buyer);
 
       // Return buyer data (excluding password)
       const { password, ...buyerResponse } = buyer;

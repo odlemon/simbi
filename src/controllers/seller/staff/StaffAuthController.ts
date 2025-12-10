@@ -57,7 +57,9 @@ export class StaffAuthController {
    */
   async login(req: Request, res: Response): Promise<void> {
     try {
-      const result = await staffAuthService.login(req.body);
+      // Get IP address from request
+      const ipAddress = req.ip || req.socket.remoteAddress || "unknown";
+      const result = await staffAuthService.login(req.body, ipAddress);
 
       const response: ApiResponse = {
         success: true,

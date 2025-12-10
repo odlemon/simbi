@@ -5,6 +5,7 @@ import { UserRole, UserStatus, Admin } from "@prisma/client";
 import { prisma } from "../../../utils/database";
 import { envConfig } from "../../../utils/env";
 import { logger } from "../../../utils/logger";
+import { AccountLockoutService } from "../../AccountLockoutService";
 
 interface LoginResult {
   admin: Omit<Admin, "password" | "mfaSecret">;
@@ -77,13 +78,81 @@ export class AuthService {
     ipAddress?: string
   ): Promise<LoginResult> {
     try {
+      const clientIp = ipAddress || "unknown";
+
+      // Check IP rate limiting first (applies to all attempts)
+      const ipRateLimit = await AccountLockoutService.isIPRateLimited(
+        clientIp,
+        "admin"
+      );
+      if (ipRateLimit.isLimited) {
+        await AccountLockoutService.recordFailedAttempt(
+          email,
+          clientIp,
+          "admin",
+          false
+        );
+        const recentAttempts = await prisma.failedLoginAttempt.count({
+          where: {
+            ipAddress: clientIp,
+            userType: "admin",
+            createdAt: {
+              gte: new Date(Date.now() - 15 * 60 * 1000),
+            },
+          },
+        });
+        throw new Error(
+          AccountLockoutService.getIPRateLimitErrorMessage(ipRateLimit.resetAt, recentAttempts)
+        );
+      }
+
       // Find admin by email
       const admin = await prisma.admin.findUnique({
         where: { email },
       });
 
       if (!admin) {
+        // Record failed attempt for non-existent email
+        await AccountLockoutService.recordFailedAttempt(
+          email,
+          clientIp,
+          "admin",
+          false
+        );
+
+        // Check email rate limiting
+        const emailRateLimit = await AccountLockoutService.isEmailRateLimited(
+          email,
+          "admin"
+        );
+        if (emailRateLimit.isLimited) {
+          throw new Error(
+            AccountLockoutService.getEmailRateLimitErrorMessage(emailRateLimit.attemptCount)
+          );
+        }
+
         throw new Error("Invalid email or password");
+      }
+
+      // Check if account is locked
+      if (AccountLockoutService.isAccountLocked(admin.accountLockedUntil)) {
+        const errorMessage = AccountLockoutService.getLockoutErrorMessage(
+          admin.accountLockedUntil
+        );
+        // Record attempt on locked account
+        await AccountLockoutService.recordFailedAttempt(
+          email,
+          clientIp,
+          "admin",
+          true
+        );
+
+        logger.warn("Login attempt on locked account", {
+          email,
+          ipAddress: clientIp,
+          lockedUntil: admin.accountLockedUntil,
+        });
+        throw new Error(errorMessage);
       }
 
       // Check if account is active
@@ -97,11 +166,42 @@ export class AuthService {
       const isPasswordValid = await bcrypt.compare(password, admin.password);
 
       if (!isPasswordValid) {
+        // Record failed attempt
+        await AccountLockoutService.recordFailedAttempt(
+          email,
+          clientIp,
+          "admin",
+          true
+        );
+
+        // Handle failed login attempt (account-level lockout)
+        const lockoutResult = AccountLockoutService.handleFailedLogin(
+          admin.failedLoginAttempts,
+          admin.accountLockedUntil
+        );
+
+        // Update failed attempts and lockout status
+        await prisma.admin.update({
+          where: { id: admin.id },
+          data: {
+            failedLoginAttempts: lockoutResult.failedAttempts,
+            accountLockedUntil: lockoutResult.lockedUntil,
+          },
+        });
+
         logger.warn("Failed login attempt", {
           email,
-          ipAddress,
+          ipAddress: clientIp,
+          failedAttempts: lockoutResult.failedAttempts,
+          remainingAttempts: lockoutResult.remainingAttempts,
+          isLocked: lockoutResult.isLocked,
         });
-        throw new Error("Invalid email or password");
+
+        if (lockoutResult.isLocked) {
+          throw new Error(lockoutResult.message);
+        }
+
+        throw new Error(lockoutResult.message);
       }
 
       // Check if MFA is enabled (future enhancement)
@@ -112,12 +212,17 @@ export class AuthService {
         );
       }
 
-      // Update last login info
+      // Reset failed login attempts on successful login
+      const resetResult = AccountLockoutService.resetFailedAttempts();
+
+      // Update last login info and reset failed attempts
       await prisma.admin.update({
         where: { id: admin.id },
         data: {
           lastLoginAt: new Date(),
           lastLoginIp: ipAddress || null,
+          failedLoginAttempts: resetResult.failedAttempts,
+          accountLockedUntil: resetResult.lockedUntil,
         },
       });
 
