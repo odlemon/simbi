@@ -349,6 +349,291 @@ This is an automated message. Please do not reply to this email.
   }
 
   /**
+   * Send order acceptance email to buyer
+   */
+  async sendOrderAcceptanceEmail(
+    buyerEmail: string,
+    buyerName: string,
+    orderNumber: string,
+    orderId: string,
+    sellerBusinessName: string,
+    orderTotal: number,
+    currency: string = 'USD'
+  ): Promise<boolean> {
+    const subject = `Order Accepted - ${orderNumber}`;
+
+    const htmlBody = this.getOrderAcceptanceHtmlTemplate(
+      buyerName,
+      orderNumber,
+      sellerBusinessName,
+      orderTotal,
+      currency
+    );
+
+    const textBody = this.getOrderAcceptanceTextTemplate(
+      buyerName,
+      orderNumber,
+      sellerBusinessName,
+      orderTotal,
+      currency
+    );
+
+    return await this.sendEmail({
+      to: buyerEmail,
+      toName: buyerName,
+      subject,
+      htmlBody,
+      textBody,
+    });
+  }
+
+  /**
+   * HTML template for order acceptance email
+   */
+  private getOrderAcceptanceHtmlTemplate(
+    buyerName: string,
+    orderNumber: string,
+    sellerBusinessName: string,
+    orderTotal: number,
+    currency: string
+  ): string {
+    const formattedTotal = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+    }).format(orderTotal);
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Accepted</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+    .container {
+      background-color: #ffffff;
+      border-radius: 8px;
+      padding: 40px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #0066cc;
+      margin-bottom: 30px;
+    }
+    .logo {
+      font-size: 32px;
+      font-weight: bold;
+      color: #0066cc;
+      margin-bottom: 10px;
+    }
+    h1 {
+      color: #0066cc;
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .success-badge {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      color: white;
+      padding: 15px 25px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      margin: 25px 0;
+    }
+    .order-info {
+      background-color: #f8f9fa;
+      border-left: 4px solid #0066cc;
+      padding: 20px;
+      margin: 25px 0;
+      border-radius: 4px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .info-row:last-child {
+      border-bottom: none;
+    }
+    .info-label {
+      font-weight: bold;
+      color: #666;
+    }
+    .info-value {
+      color: #000;
+      text-align: right;
+    }
+    .total-amount {
+      font-size: 24px;
+      font-weight: bold;
+      color: #0066cc;
+    }
+    .next-steps {
+      background-color: #e7f3ff;
+      border-left: 4px solid #0066cc;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    .button {
+      display: inline-block;
+      padding: 12px 30px;
+      background-color: #0066cc;
+      color: #ffffff;
+      text-decoration: none;
+      border-radius: 5px;
+      font-weight: bold;
+      margin: 20px 0;
+      text-align: center;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+      color: #666;
+      font-size: 14px;
+    }
+    ul {
+      padding-left: 20px;
+    }
+    li {
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🚗 Simbi Market</div>
+      <p style="margin: 0; color: #666;">Zimbabwe AutoParts Marketplace</p>
+    </div>
+
+    <h1>Great News, ${buyerName}!</h1>
+    
+    <div class="success-badge">
+      ✅ Your Order Has Been Accepted
+    </div>
+    
+    <p>We're excited to let you know that <strong>${sellerBusinessName}</strong> has accepted your order and is preparing it for shipment.</p>
+    
+    <div class="order-info">
+      <h3 style="margin-top: 0; color: #0066cc;">Order Details</h3>
+      
+      <div class="info-row">
+        <span class="info-label">Order Number:</span>
+        <span class="info-value"><strong>${orderNumber}</strong></span>
+      </div>
+      
+      <div class="info-row">
+        <span class="info-label">Seller:</span>
+        <span class="info-value">${sellerBusinessName}</span>
+      </div>
+      
+      <div class="info-row">
+        <span class="info-label">Order Total:</span>
+        <span class="info-value total-amount">${formattedTotal}</span>
+      </div>
+    </div>
+
+    <div class="next-steps">
+      <strong>📦 What Happens Next?</strong>
+      <ul style="margin: 10px 0;">
+        <li>The seller is now preparing your order for shipment</li>
+        <li>You'll receive another email when your order is shipped</li>
+        <li>You can track your order status in your account dashboard</li>
+        <li>If you have any questions, please contact the seller directly</li>
+      </ul>
+    </div>
+
+    <div style="text-align: center;">
+      <a href="https://simbi-market.vercel.app/buyer/orders" class="button">View Your Orders</a>
+    </div>
+
+    <div style="margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">
+      <strong>📱 Need Help?</strong>
+      <p style="margin: 10px 0 0 0;">
+        If you have any questions about your order, please contact the seller or 
+        reach out to support at <a href="mailto:support@simbimarket.com">support@simbimarket.com</a>
+      </p>
+    </div>
+
+    <div class="footer">
+      <p><strong>Simbi Market</strong></p>
+      <p style="font-size: 12px; color: #999;">
+        Zimbabwe AutoParts Marketplace<br>
+        This is an automated message. Please do not reply to this email.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  /**
+   * Plain text template for order acceptance email
+   */
+  private getOrderAcceptanceTextTemplate(
+    buyerName: string,
+    orderNumber: string,
+    sellerBusinessName: string,
+    orderTotal: number,
+    currency: string
+  ): string {
+    const formattedTotal = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+    }).format(orderTotal);
+
+    return `
+SIMBI MARKET - ORDER ACCEPTED
+
+Great News, ${buyerName}!
+
+✅ YOUR ORDER HAS BEEN ACCEPTED
+
+We're excited to let you know that ${sellerBusinessName} has accepted your order and is preparing it for shipment.
+
+ORDER DETAILS:
+==============
+Order Number: ${orderNumber}
+Seller: ${sellerBusinessName}
+Order Total: ${formattedTotal}
+
+WHAT HAPPENS NEXT?
+==================
+- The seller is now preparing your order for shipment
+- You'll receive another email when your order is shipped
+- You can track your order status in your account dashboard
+- If you have any questions, please contact the seller directly
+
+VIEW YOUR ORDERS: https://simbi-market.vercel.app/buyer/orders
+
+NEED HELP?
+If you have any questions about your order, please contact the seller or 
+reach out to support at support@simbimarket.com
+
+---
+Simbi Market
+Zimbabwe AutoParts Marketplace
+This is an automated message. Please do not reply to this email.
+    `;
+  }
+
+  /**
    * Strip HTML tags for plain text version
    */
   private stripHtml(html: string): string {

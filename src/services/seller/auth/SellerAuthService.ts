@@ -120,15 +120,23 @@ export class SellerAuthService {
         "seller",
         false
       );
-      const recentAttempts = await prisma.failedLoginAttempt.count({
-        where: {
-          ipAddress: clientIp,
-          userType: "seller",
-          createdAt: {
-            gte: new Date(Date.now() - 15 * 60 * 1000),
-          },
-        },
-      });
+      // Get recent attempts count across ALL user types for this IP (only if model exists)
+      let recentAttempts = 0;
+      if (prisma.failedLoginAttempt) {
+        try {
+          recentAttempts = await prisma.failedLoginAttempt.count({
+            where: {
+              ipAddress: clientIp,
+              // Don't filter by userType - check all attempts from this IP
+              createdAt: {
+                gte: new Date(Date.now() - 15 * 60 * 1000),
+              },
+            },
+          });
+        } catch (error) {
+          // Ignore errors - rate limiting is optional
+        }
+      }
       throw new Error(
         AccountLockoutService.getIPRateLimitErrorMessage(ipRateLimit.resetAt, recentAttempts)
       );
@@ -140,7 +148,7 @@ export class SellerAuthService {
     });
 
     if (!seller) {
-      // Record failed attempt for non-existent email
+      // Record failed attempt for non-existent email (for IP tracking only)
       await AccountLockoutService.recordFailedAttempt(
         email,
         clientIp,
@@ -148,45 +156,82 @@ export class SellerAuthService {
         false
       );
 
-      // Check email rate limiting
-      const emailRateLimit = await AccountLockoutService.isEmailRateLimited(
-        email,
-        "seller"
-      );
-      if (emailRateLimit.isLimited) {
-        throw new Error(
-          AccountLockoutService.getEmailRateLimitErrorMessage(emailRateLimit.attemptCount)
-        );
-      }
-
+      // Don't check email rate limiting - focus on IP only
+      // This prevents attackers from bypassing by changing emails
       throw new Error("Invalid credentials");
     }
 
-    // Check if account is locked
-    if (AccountLockoutService.isAccountLocked(seller.accountLockedUntil)) {
-      // Record attempt on locked account
-      await AccountLockoutService.recordFailedAttempt(
-        email,
-        clientIp,
-        "seller",
-        true
-      );
+    // Check if account is locked (MUST check before password verification)
+    if (seller.accountLockedUntil) {
+      const isLocked = AccountLockoutService.isAccountLocked(seller.accountLockedUntil);
+      
+      if (isLocked) {
+        // Record attempt on locked account
+        await AccountLockoutService.recordFailedAttempt(
+          email,
+          clientIp,
+          "seller",
+          true
+        );
 
-      const errorMessage = AccountLockoutService.getLockoutErrorMessage(
-        seller.accountLockedUntil
-      );
-      logger.warn("Login attempt on locked seller account", {
-        email,
-        sellerId: seller.id,
-        lockedUntil: seller.accountLockedUntil,
-      });
-      throw new Error(errorMessage);
+        const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(
+          seller.accountLockedUntil
+        );
+        const errorMessage = `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`;
+        
+        logger.warn("Login attempt on locked seller account", {
+          email,
+          sellerId: seller.id,
+          lockedUntil: seller.accountLockedUntil,
+          remainingMinutes,
+          failedAttempts: seller.failedLoginAttempts,
+        });
+        
+        throw new Error(errorMessage);
+      } else {
+        // Lockout expired, reset the failed attempts in database AND update local object
+        logger.info("Lockout expired, resetting failed attempts", {
+          email,
+          sellerId: seller.id,
+          previousAttempts: seller.failedLoginAttempts,
+          previousLockedUntil: seller.accountLockedUntil,
+        });
+        
+        await prisma.seller.update({
+          where: { id: seller.id },
+          data: {
+            failedLoginAttempts: 0,
+            accountLockedUntil: null,
+          },
+        });
+        // Update local seller object to reflect reset
+        seller.failedLoginAttempts = 0;
+        seller.accountLockedUntil = null;
+        
+        logger.info("Lockout reset complete", {
+          email,
+          sellerId: seller.id,
+          newAttempts: seller.failedLoginAttempts,
+        });
+      }
     }
 
     // Check password
+    logger.info("Checking password", {
+      email,
+      sellerId: seller.id,
+      currentFailedAttempts: seller.failedLoginAttempts,
+      currentLockedUntil: seller.accountLockedUntil,
+    });
+    
     const isValidPassword = await bcrypt.compare(password, seller.password);
 
     if (!isValidPassword) {
+      logger.warn("Password check failed", {
+        email,
+        sellerId: seller.id,
+        currentFailedAttempts: seller.failedLoginAttempts,
+      });
       // Record failed attempt
       await AccountLockoutService.recordFailedAttempt(
         email,
@@ -196,8 +241,9 @@ export class SellerAuthService {
       );
 
       // Handle failed login attempt (account-level lockout)
+      // Use current seller values (which may have been reset if lockout expired)
       const lockoutResult = AccountLockoutService.handleFailedLogin(
-        seller.failedLoginAttempts,
+        seller.failedLoginAttempts || 0,
         seller.accountLockedUntil
       );
 
@@ -216,13 +262,15 @@ export class SellerAuthService {
         failedAttempts: lockoutResult.failedAttempts,
         remainingAttempts: lockoutResult.remainingAttempts,
         isLocked: lockoutResult.isLocked,
+        lockedUntil: lockoutResult.lockedUntil,
+        message: lockoutResult.message,
       });
 
-      if (lockoutResult.isLocked) {
-        throw new Error(lockoutResult.message);
-      }
-
-      throw new Error(lockoutResult.message);
+      // Always throw with the message from lockoutResult
+      // This will include attempt count warnings or lockout message
+      const errorMessage = lockoutResult.message || "Invalid credentials";
+      logger.info("Throwing login error", { email, message: errorMessage, isLocked: lockoutResult.isLocked });
+      throw new Error(errorMessage);
     }
 
     // Check status
@@ -248,6 +296,12 @@ export class SellerAuthService {
     }
 
     // Reset failed login attempts on successful login
+    logger.info("Password correct, resetting failed attempts", {
+      email,
+      sellerId: seller.id,
+      previousAttempts: seller.failedLoginAttempts,
+    });
+    
     const resetResult = AccountLockoutService.resetFailedAttempts();
 
     // Update seller to reset failed attempts
@@ -257,6 +311,12 @@ export class SellerAuthService {
         failedLoginAttempts: resetResult.failedAttempts,
         accountLockedUntil: resetResult.lockedUntil,
       },
+    });
+    
+    logger.info("Failed attempts reset on successful login", {
+      email,
+      sellerId: seller.id,
+      newAttempts: resetResult.failedAttempts,
     });
 
     // Generate token (single token like admin)

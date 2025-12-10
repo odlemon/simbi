@@ -12,12 +12,12 @@ import { prisma } from "../utils/database";
  * - Failed attempts reset on successful login
  * - Lockout automatically expires after 15 minutes
  * - Tracks all login attempts (including non-existent emails) by email and IP
- * - Rate limits by IP address (10 attempts per 15 minutes)
+ * - Rate limits by device/IP address (5 attempts per 15 minutes)
  */
 export class AccountLockoutService {
   private static readonly MAX_FAILED_ATTEMPTS = 3;
   private static readonly LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes in milliseconds
-  private static readonly MAX_IP_ATTEMPTS = 10; // Maximum attempts from same IP in 15 minutes
+  private static readonly MAX_IP_ATTEMPTS = 5; // Maximum attempts from same IP in 15 minutes (across ALL user types combined - prevents bypass)
   private static readonly RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
   /**
@@ -74,8 +74,24 @@ export class AccountLockoutService {
       };
     }
 
-    // If lockout expired, reset failed attempts
-    let newFailedAttempts = currentLockedUntil ? 1 : currentFailedAttempts + 1;
+    // If lockout expired (currentLockedUntil exists but isAccountLocked returned false),
+    // OR if currentFailedAttempts is still high from previous lockout,
+    // start fresh at 1 attempt (lockout period served its purpose)
+    // Otherwise, increment the failed attempts normally
+    let newFailedAttempts: number;
+    if (currentLockedUntil || currentFailedAttempts >= this.MAX_FAILED_ATTEMPTS) {
+      // Lockout expired OR we're recovering from a lockout - start fresh at 1 attempt
+      // This ensures that after lockout expires, we don't immediately lock again
+      newFailedAttempts = 1;
+      logger.info("Starting fresh after lockout expiration", {
+        previousAttempts: currentFailedAttempts,
+        previousLockedUntil: currentLockedUntil,
+        newAttempts: newFailedAttempts,
+      });
+    } else {
+      // No previous lockout - increment normally
+      newFailedAttempts = currentFailedAttempts + 1;
+    }
     let newLockedUntil: Date | null = null;
     const remainingAttempts = Math.max(0, this.MAX_FAILED_ATTEMPTS - newFailedAttempts);
 
@@ -144,6 +160,12 @@ export class AccountLockoutService {
     accountExists: boolean = false
   ): Promise<void> {
     try {
+      // Check if failedLoginAttempt model exists (Prisma client may not be regenerated)
+      if (!prisma.failedLoginAttempt) {
+        logger.warn("FailedLoginAttempt model not available - Prisma client needs regeneration");
+        return;
+      }
+
       await prisma.failedLoginAttempt.create({
         data: {
           email: email || null,
@@ -163,20 +185,32 @@ export class AccountLockoutService {
   }
 
   /**
-   * Check if IP address is rate limited
+   * Check if device/IP address is rate limited
    * Returns true if IP has exceeded maximum attempts in the time window
+   * Checks across ALL user types to prevent bypass by switching user types
    */
   static async isIPRateLimited(
     ipAddress: string,
     userType: "admin" | "seller" | "buyer" | "staff"
   ): Promise<{ isLimited: boolean; remainingAttempts: number; resetAt: Date | null }> {
     try {
+      // Check if failedLoginAttempt model exists (Prisma client may not be regenerated)
+      if (!prisma.failedLoginAttempt) {
+        logger.warn("FailedLoginAttempt model not available - skipping IP rate limit check");
+        return {
+          isLimited: false,
+          remainingAttempts: this.MAX_IP_ATTEMPTS,
+          resetAt: null,
+        };
+      }
+
       const windowStart = new Date(Date.now() - this.RATE_LIMIT_WINDOW_MS);
 
+      // Check across ALL user types - prevents bypass by switching between admin/seller/buyer/staff
       const recentAttempts = await prisma.failedLoginAttempt.count({
         where: {
           ipAddress,
-          userType,
+          // Don't filter by userType - check all attempts from this IP
           createdAt: {
             gte: windowStart,
           },
@@ -186,13 +220,15 @@ export class AccountLockoutService {
       const isLimited = recentAttempts >= this.MAX_IP_ATTEMPTS;
       const remainingAttempts = Math.max(0, this.MAX_IP_ATTEMPTS - recentAttempts);
 
-      // Calculate when the rate limit resets (oldest attempt + window)
+      // Calculate when the rate limit resets (when the 5th attempt was made + 15 minutes)
       let resetAt: Date | null = null;
       if (isLimited) {
-        const oldestAttempt = await prisma.failedLoginAttempt.findFirst({
+        // Find the attempt that triggered the lockout (the 5th attempt = MAX_IP_ATTEMPTS)
+        // Get attempts ordered by time, and find the one at position MAX_IP_ATTEMPTS
+        const allAttempts = await prisma.failedLoginAttempt.findMany({
           where: {
             ipAddress,
-            userType,
+            // Don't filter by userType - check all attempts from this IP
             createdAt: {
               gte: windowStart,
             },
@@ -205,9 +241,11 @@ export class AccountLockoutService {
           },
         });
 
-        if (oldestAttempt) {
+        // The lockout was triggered when the MAX_IP_ATTEMPTS-th attempt was made
+        if (allAttempts.length >= this.MAX_IP_ATTEMPTS) {
+          const lockoutTriggerAttempt = allAttempts[this.MAX_IP_ATTEMPTS - 1];
           resetAt = new Date(
-            oldestAttempt.createdAt.getTime() + this.RATE_LIMIT_WINDOW_MS
+            lockoutTriggerAttempt.createdAt.getTime() + this.RATE_LIMIT_WINDOW_MS
           );
         }
       }
@@ -239,6 +277,15 @@ export class AccountLockoutService {
     userType: "admin" | "seller" | "buyer" | "staff"
   ): Promise<{ isLimited: boolean; attemptCount: number }> {
     try {
+      // Check if failedLoginAttempt model exists (Prisma client may not be regenerated)
+      if (!prisma.failedLoginAttempt) {
+        logger.warn("FailedLoginAttempt model not available - skipping email rate limit check");
+        return {
+          isLimited: false,
+          attemptCount: 0,
+        };
+      }
+
       const windowStart = new Date(Date.now() - this.RATE_LIMIT_WINDOW_MS);
 
       const recentAttempts = await prisma.failedLoginAttempt.count({
@@ -270,12 +317,11 @@ export class AccountLockoutService {
 
   /**
    * Get IP rate limit error message
+   * Shows the actual remaining time from when the lockout started
    */
   static getIPRateLimitErrorMessage(resetAt: Date | null, attemptCount?: number): string {
-    const attempts = attemptCount || this.MAX_IP_ATTEMPTS;
-    
     if (!resetAt) {
-      return `Too many login attempts from this IP address (${attempts} attempts exceeded). Please try again later.`;
+      return `Too many login attempts from this device. Please try again in 15 minutes.`;
     }
 
     const now = new Date();
@@ -286,7 +332,8 @@ export class AccountLockoutService {
       return "Rate limit has expired. Please try again.";
     }
 
-    return `Too many login attempts from this IP address (${attempts} attempts exceeded). Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`;
+    // Show the actual remaining time from when lockout started
+    return `Too many login attempts from this device. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`;
   }
 
   /**
@@ -302,6 +349,11 @@ export class AccountLockoutService {
    */
   static async cleanupOldAttempts(): Promise<number> {
     try {
+      // Check if failedLoginAttempt model exists
+      if (!prisma.failedLoginAttempt) {
+        return 0;
+      }
+
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
       const result = await prisma.failedLoginAttempt.deleteMany({

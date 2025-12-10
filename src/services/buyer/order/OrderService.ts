@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { prisma } from "../../../utils/database";
+import { CouponService } from "../../CouponService";
 
 
 
@@ -15,14 +16,16 @@ const createOrderSchema = z.object({
   shippingAddressId: z.string(),
   poNumber: z.string().optional(),
   costCenter: z.string().optional(),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  couponCode: z.string().optional() // Optional coupon code
 });
 
 const createOrderFromCartSchema = z.object({
   shippingAddressId: z.string().optional(), // Optional - will use default address if not provided
   poNumber: z.string().optional(), // Optional - can be auto-generated for commercial buyers
   costCenter: z.string().optional(),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  couponCode: z.string().optional() // Optional coupon code
 });
 
 const updateOrderStatusSchema = z.object({
@@ -119,6 +122,12 @@ export interface CommissionBreakdown {
 }
 
 export class OrderService {
+  private couponService: CouponService;
+
+  constructor() {
+    this.couponService = new CouponService();
+  }
+
   /**
    * Get commission rate based on product category
    */
@@ -145,7 +154,8 @@ export class OrderService {
         shippingAddressId: orderData.shippingAddressId,
         poNumber: orderData.poNumber,
         costCenter: orderData.costCenter,
-        notes: orderData.notes
+        notes: orderData.notes,
+        couponCode: orderData.couponCode
       });
 
       // Generate order number
@@ -256,13 +266,92 @@ export class OrderService {
         itemsBySeller.set(item.sellerId, sellerItems);
       }
 
+      // Calculate total order amount (across all sellers) for coupon validation
+      let totalOrderSubtotal = 0;
+      const sellerTotals = new Map<string, number>();
+      
+      for (const [sellerId, sellerItems] of itemsBySeller.entries()) {
+        const sellerSubtotal = sellerItems.reduce((sum, item) => sum + (item.displayPrice * item.quantity), 0);
+        sellerTotals.set(sellerId, sellerSubtotal);
+        totalOrderSubtotal += sellerSubtotal;
+      }
+
+      // Validate coupon if provided
+      let couponValidation: any = null;
+      let totalDiscountAmount = 0;
+      
+      if (validatedData.couponCode) {
+        // Get product IDs (inventory IDs) for coupon validation
+        const productIds = processedItems.map(item => item.inventoryId);
+        
+        // Validate coupon against total order amount
+        // For product-specific coupons, we need to check if the product is in the order
+        couponValidation = await this.couponService.validateCoupon(
+          validatedData.couponCode,
+          orderData.buyerId,
+          totalOrderSubtotal,
+          undefined, // Will validate per seller order
+          productIds,
+          undefined // No category IDs needed
+        );
+
+        if (!couponValidation.isValid) {
+          return {
+            success: false,
+            message: couponValidation.error || "Invalid coupon code",
+            error: "INVALID_COUPON"
+          };
+        }
+
+        // For product-specific coupons, discount will be calculated per seller order
+        // We just need to validate the coupon is valid here
+        totalDiscountAmount = 0; // Will be calculated per seller order based on matching products
+      }
+
       // Create one order per seller (grouped by supplier)
       const orders = await Promise.all(
         Array.from(itemsBySeller.entries()).map(async ([sellerId, sellerItems]) => {
           // Calculate totals for this seller's order
           const sellerSubtotal = sellerItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
           const sellerCommission = sellerItems.reduce((sum, item) => sum + (item.commission * item.quantity), 0);
-          const sellerTotal = sellerItems.reduce((sum, item) => sum + (item.displayPrice * item.quantity), 0);
+          const sellerTotalBeforeDiscount = sellerItems.reduce((sum, item) => sum + (item.displayPrice * item.quantity), 0);
+          
+          // Calculate discount for this seller's order
+          let sellerDiscountAmount = 0;
+          if (couponValidation && couponValidation.isValid) {
+            // For product-specific coupons, check if this seller has the product
+            if (couponValidation.coupon.couponType === 'PRODUCT_SPECIFIC') {
+              const applicableProducts = (couponValidation.coupon.applicableProducts as string[]) || [];
+              const sellerHasProduct = sellerItems.some(item => 
+                applicableProducts.includes(item.inventoryId)
+              );
+              
+              if (sellerHasProduct && couponValidation.coupon.sellerId === sellerId) {
+                // Calculate discount only for items that match the coupon product
+                const matchingItems = sellerItems.filter(item => 
+                  applicableProducts.includes(item.inventoryId)
+                );
+                const matchingItemsTotal = matchingItems.reduce(
+                  (sum, item) => sum + (item.displayPrice * item.quantity), 
+                  0
+                );
+                
+                // Calculate discount for matching items only
+                const discountResult = this.couponService.calculateDiscount(
+                  couponValidation.coupon,
+                  matchingItemsTotal
+                );
+                sellerDiscountAmount = discountResult.discountAmount;
+              } else {
+                sellerDiscountAmount = 0; // This seller's order doesn't qualify
+              }
+            } else {
+              // Should not happen for seller-created coupons, but handle gracefully
+              sellerDiscountAmount = 0;
+            }
+          }
+          
+          const sellerTotal = sellerTotalBeforeDiscount - sellerDiscountAmount;
 
           // Generate unique order number for this seller
           const sellerOrderNumber = await this.generateOrderNumber();
@@ -279,6 +368,8 @@ export class OrderService {
               subtotal: sellerSubtotal,
               shippingCost: 0, // TODO: Calculate shipping cost
               platformCommission: sellerCommission,
+              discountAmount: sellerDiscountAmount,
+              couponCode: couponValidation?.isValid ? couponValidation.coupon.code : null,
               totalAmount: sellerTotal,
               currency: 'USD', // TODO: Get from buyer preferences
               status: 'PENDING_PAYMENT',
@@ -313,10 +404,42 @@ export class OrderService {
 
           return {
             ...order,
-            items: orderItems
+            items: orderItems,
+            discountAmount: sellerDiscountAmount // Include in returned object
           };
         })
       );
+
+      // Record coupon usage if coupon was applied and discount was actually given
+      if (couponValidation && couponValidation.isValid) {
+        // Find the order that actually got the discount
+        const orderWithDiscount = orders.find((order: any) => order.discountAmount > 0);
+        if (orderWithDiscount) {
+          const totalDiscount = orders.reduce((sum: number, order: any) => sum + (order.discountAmount || 0), 0);
+          
+          // Only record if discount was actually applied (greater than 0)
+          if (totalDiscount > 0) {
+            try {
+              await this.couponService.recordCouponUsage(
+                couponValidation.coupon.id,
+                orderWithDiscount.id,
+                orderData.buyerId,
+                totalDiscount,
+                totalOrderSubtotal,
+                totalOrderSubtotal - totalDiscount
+              );
+              console.log('✅ Coupon usage recorded successfully', {
+                couponId: couponValidation.coupon.id,
+                orderId: orderWithDiscount.id,
+                discountAmount: totalDiscount
+              });
+            } catch (error: any) {
+              console.error('❌ Error recording coupon usage:', error.message);
+              // Don't fail the order if coupon usage recording fails
+            }
+          }
+        }
+      }
 
       return {
         success: true,
@@ -497,7 +620,8 @@ export class OrderService {
         shippingAddressId: shippingAddressId,
         poNumber: poNumber,
         costCenter: validatedData.costCenter || undefined,
-        notes: validatedData.notes || undefined
+        notes: validatedData.notes || undefined,
+        couponCode: validatedData.couponCode || undefined
       };
 
       const orderResult = await this.createOrder(orderData);

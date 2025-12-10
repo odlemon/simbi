@@ -92,15 +92,23 @@ export class AuthService {
           "admin",
           false
         );
-        const recentAttempts = await prisma.failedLoginAttempt.count({
-          where: {
-            ipAddress: clientIp,
-            userType: "admin",
-            createdAt: {
-              gte: new Date(Date.now() - 15 * 60 * 1000),
-            },
-          },
-        });
+        // Get recent attempts count across ALL user types for this IP (only if model exists)
+        let recentAttempts = 0;
+        if (prisma.failedLoginAttempt) {
+          try {
+            recentAttempts = await prisma.failedLoginAttempt.count({
+              where: {
+                ipAddress: clientIp,
+                // Don't filter by userType - check all attempts from this IP
+                createdAt: {
+                  gte: new Date(Date.now() - 15 * 60 * 1000),
+                },
+              },
+            });
+          } catch (error) {
+            // Ignore errors - rate limiting is optional
+          }
+        }
         throw new Error(
           AccountLockoutService.getIPRateLimitErrorMessage(ipRateLimit.resetAt, recentAttempts)
         );
@@ -112,7 +120,7 @@ export class AuthService {
       });
 
       if (!admin) {
-        // Record failed attempt for non-existent email
+        // Record failed attempt for non-existent email (for IP tracking only)
         await AccountLockoutService.recordFailedAttempt(
           email,
           clientIp,
@@ -120,39 +128,51 @@ export class AuthService {
           false
         );
 
-        // Check email rate limiting
-        const emailRateLimit = await AccountLockoutService.isEmailRateLimited(
-          email,
-          "admin"
-        );
-        if (emailRateLimit.isLimited) {
-          throw new Error(
-            AccountLockoutService.getEmailRateLimitErrorMessage(emailRateLimit.attemptCount)
-          );
-        }
-
+        // Don't check email rate limiting - focus on IP only
+        // This prevents attackers from bypassing by changing emails
         throw new Error("Invalid email or password");
       }
 
-      // Check if account is locked
-      if (AccountLockoutService.isAccountLocked(admin.accountLockedUntil)) {
-        const errorMessage = AccountLockoutService.getLockoutErrorMessage(
-          admin.accountLockedUntil
-        );
-        // Record attempt on locked account
-        await AccountLockoutService.recordFailedAttempt(
-          email,
-          clientIp,
-          "admin",
-          true
-        );
+      // Check if account is locked (MUST check before password verification)
+      if (admin.accountLockedUntil) {
+        const isLocked = AccountLockoutService.isAccountLocked(admin.accountLockedUntil);
+        
+        if (isLocked) {
+          // Record attempt on locked account
+          await AccountLockoutService.recordFailedAttempt(
+            email,
+            clientIp,
+            "admin",
+            true
+          );
 
-        logger.warn("Login attempt on locked account", {
-          email,
-          ipAddress: clientIp,
-          lockedUntil: admin.accountLockedUntil,
-        });
-        throw new Error(errorMessage);
+          const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(
+            admin.accountLockedUntil
+          );
+          const errorMessage = `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`;
+          
+          logger.warn("Login attempt on locked account", {
+            email,
+            ipAddress: clientIp,
+            lockedUntil: admin.accountLockedUntil,
+            remainingMinutes,
+            failedAttempts: admin.failedLoginAttempts,
+          });
+          
+          throw new Error(errorMessage);
+        } else {
+          // Lockout expired, reset the failed attempts in database AND update local object
+          await prisma.admin.update({
+            where: { id: admin.id },
+            data: {
+              failedLoginAttempts: 0,
+              accountLockedUntil: null,
+            },
+          });
+          // Update local admin object to reflect reset
+          admin.failedLoginAttempts = 0;
+          admin.accountLockedUntil = null;
+        }
       }
 
       // Check if account is active
@@ -175,8 +195,9 @@ export class AuthService {
         );
 
         // Handle failed login attempt (account-level lockout)
+        // Use current admin values (which may have been reset if lockout expired)
         const lockoutResult = AccountLockoutService.handleFailedLogin(
-          admin.failedLoginAttempts,
+          admin.failedLoginAttempts || 0,
           admin.accountLockedUntil
         );
 
@@ -195,12 +216,12 @@ export class AuthService {
           failedAttempts: lockoutResult.failedAttempts,
           remainingAttempts: lockoutResult.remainingAttempts,
           isLocked: lockoutResult.isLocked,
+          lockedUntil: lockoutResult.lockedUntil,
+          message: lockoutResult.message,
         });
 
-        if (lockoutResult.isLocked) {
-          throw new Error(lockoutResult.message);
-        }
-
+        // Always throw with the message from lockoutResult
+        // This will include attempt count warnings or lockout message
         throw new Error(lockoutResult.message);
       }
 

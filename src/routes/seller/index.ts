@@ -9,6 +9,7 @@ import loansRoutes from "./loans.routes";
 import ordersRoutes from "./orders.routes";
 import paymentsRoutes from "./payments.routes";
 import payoutsRoutes from "./payouts.routes";
+import couponRoutes from "./coupons";
 
 const router = Router();
 
@@ -38,6 +39,9 @@ router.use("/payments", paymentsRoutes);
 
 // Payout Management
 router.use("/payouts", payoutsRoutes);
+
+// Coupon Management
+router.use("/coupons", couponRoutes);
 
 export default router;
 

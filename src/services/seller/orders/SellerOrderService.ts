@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { prisma } from "../../../utils/database";
+import { logger } from "../../../utils/logger";
 import { Order, OrderStatus, PaymentStatus } from '@prisma/client';
 
 export interface OrderListResult {
@@ -251,6 +252,12 @@ export class SellerOrderService {
               companyName: true
             }
           },
+          seller: {
+            select: {
+              id: true,
+              businessName: true
+            }
+          },
           shippingAddress: {
             select: {
               id: true,
@@ -264,6 +271,39 @@ export class SellerOrderService {
           }
         }
       });
+
+      // Send email notification to buyer when order is accepted
+      if (status === 'ACCEPTED' && updatedOrder.buyer) {
+        try {
+          const { emailService } = await import('../../EmailService');
+          const buyerName = `${updatedOrder.buyer.firstName} ${updatedOrder.buyer.lastName}`.trim() || updatedOrder.buyer.email;
+          const sellerBusinessName = updatedOrder.seller?.businessName || 'Seller';
+          
+          await emailService.sendOrderAcceptanceEmail(
+            updatedOrder.buyer.email,
+            buyerName,
+            updatedOrder.orderNumber,
+            updatedOrder.id,
+            sellerBusinessName,
+            updatedOrder.totalAmount,
+            updatedOrder.currency || 'USD'
+          );
+
+          logger.info('Order acceptance email sent to buyer', {
+            orderId: updatedOrder.id,
+            orderNumber: updatedOrder.orderNumber,
+            buyerEmail: updatedOrder.buyer.email,
+            sellerBusinessName
+          });
+        } catch (emailError: any) {
+          // Log error but don't fail the order update
+          logger.error('Failed to send order acceptance email', {
+            orderId: updatedOrder.id,
+            buyerEmail: updatedOrder.buyer.email,
+            error: emailError.message
+          });
+        }
+      }
 
       return {
         success: true,

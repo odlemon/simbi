@@ -97,6 +97,19 @@ export class PaymentController {
       const newTotalAmount = existingPaymentAmount + amount;
       const remainingAmount = order.totalAmount - existingPaymentAmount;
 
+      // Log discount information for verification
+      if (order.discountAmount && order.discountAmount > 0) {
+        logger.info("Payment with discount", {
+          orderId: order.id,
+          orderSubtotal: order.subtotal,
+          discountAmount: order.discountAmount,
+          couponCode: order.couponCode,
+          totalAmount: order.totalAmount,
+          paymentAmount: amount,
+          remainingAmount
+        });
+      }
+
       // Validate payment doesn't exceed order total
       if (amount > remainingAmount) {
         res.status(400).json({
@@ -107,7 +120,9 @@ export class PaymentController {
             orderTotal: order.totalAmount,
             alreadyPaid: existingPaymentAmount,
             remainingBalance: remainingAmount,
-            requestedAmount: amount
+            requestedAmount: amount,
+            discountApplied: order.discountAmount || 0,
+            couponCode: order.couponCode || null
           }
         });
         return;
@@ -169,7 +184,23 @@ export class PaymentController {
       }
 
       // Update order payment status based on payment amount
+      // Note: order.totalAmount already includes discount, so payment should match discounted amount
       const isFullyPaid = newTotalAmount >= order.totalAmount;
+      
+      // Log payment completion with discount info for verification
+      if (isFullyPaid && order.discountAmount && order.discountAmount > 0) {
+        logger.info("Order fully paid with discount", {
+          orderId: order.id,
+          originalSubtotal: order.subtotal,
+          platformCommission: order.platformCommission,
+          discountAmount: order.discountAmount,
+          totalPaid: newTotalAmount,
+          couponCode: order.couponCode,
+          savings: order.discountAmount,
+          buyerSaved: `${order.discountAmount} (${((order.discountAmount / (order.subtotal + order.platformCommission)) * 100).toFixed(2)}%)`
+        });
+      }
+      
       const orderUpdateData: any = {
         paymentStatus: isFullyPaid ? "COMPLETED" : "PARTIAL",
         updatedAt: new Date()

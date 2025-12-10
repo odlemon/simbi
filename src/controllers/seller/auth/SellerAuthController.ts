@@ -51,6 +51,13 @@ export class SellerAuthController {
         data: result,
       });
     } catch (error: any) {
+      // Log the error for debugging
+      console.error("Seller login error:", {
+        message: error.message,
+        stack: error.stack,
+        email: req.body.email,
+      });
+      
       res.status(401).json({
         success: false,
         message: error.message || "Login failed",

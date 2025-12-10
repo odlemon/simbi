@@ -149,6 +149,7 @@ model Seller {
   ledgerEntries             SellerLedger[]
   staff                     SellerStaff[]
   sriHistory                SRIHistory[]
+  coupons                   Coupon[]
 
   @@index([email])
   @@index([status])
@@ -507,6 +508,7 @@ model Buyer {
   accountLockedUntil        DateTime?
   createdAt                 DateTime              @default(now())
   updatedAt                 DateTime              @updatedAt
+  couponUsages              CouponUsage[]
   addressLine1              String?
   addressLine2              String?
   billingAddress            String?
@@ -812,6 +814,8 @@ model Order {
   subtotal              Float
   shippingCost          Float
   platformCommission    Float
+  discountAmount        Float                        @default(0) // Coupon discount amount
+  couponCode            String?                     // Applied coupon code
   totalAmount           Float
   currency              Currency
   exchangeRate          Float?
@@ -842,6 +846,7 @@ model Order {
   payment               Payment?
   payout                Payout?
   shipment              Shipment?
+  couponUsage           CouponUsage?
 
   @@index([buyerId])
   @@index([sellerId])
@@ -1167,6 +1172,60 @@ model SystemSetting {
   @@map("system_settings")
 }
 
+model Coupon {
+  id                  String        @id @default(uuid())
+  code                String        @unique
+  name                String
+  description         String?       @db.Text
+  discountType        DiscountType
+  discountValue       Float         // Percentage (0-100) or fixed amount
+  minimumOrderAmount  Float?        // Minimum order amount to use coupon
+  maximumDiscount     Float?        // Maximum discount amount (for percentage coupons)
+  couponType          CouponType    @default(PLATFORM_WIDE)
+  sellerId            String?       // If seller-specific, which seller
+  applicableCategories Json?        // Array of category IDs (if product-specific)
+  applicableProducts   Json?        // Array of product IDs (if product-specific)
+  isActive            Boolean       @default(true)
+  usageLimit          Int?         // Total usage limit (null = unlimited)
+  usageCount          Int           @default(0)
+  userUsageLimit      Int?         // Per-user usage limit (null = unlimited)
+  validFrom           DateTime      @default(now())
+  validUntil          DateTime
+  createdBy           String        // Admin ID or Seller ID
+  createdByType       String        // 'admin' or 'seller'
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  usages              CouponUsage[]
+  seller              Seller?       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@index([sellerId])
+  @@index([isActive])
+  @@index([validUntil])
+  @@index([couponType])
+  @@map("coupons")
+}
+
+model CouponUsage {
+  id          String   @id @default(uuid())
+  couponId    String
+  orderId     String   @unique
+  buyerId     String
+  discountAmount Float
+  orderTotal  Float    // Order total before discount
+  orderTotalAfterDiscount Float // Order total after discount
+  usedAt      DateTime @default(now())
+  coupon      Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  buyer       Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([couponId])
+  @@index([buyerId])
+  @@index([orderId])
+  @@index([usedAt])
+  @@map("coupon_usages")
+}
+
 model FailedLoginAttempt {
   id            String    @id @default(uuid())
   email         String?
@@ -1461,4 +1520,17 @@ enum CustomProductRequestStatus {
   APPROVED
   REJECTED
   MORE_INFO_NEEDED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+}
+
+enum CouponType {
+  PLATFORM_WIDE
+  SELLER_SPECIFIC
+  PRODUCT_SPECIFIC
+  CATEGORY_SPECIFIC
 }
