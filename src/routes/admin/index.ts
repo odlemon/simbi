@@ -18,6 +18,7 @@ import driverRoutes from "./drivers/driverRoutes";
 import analyticsRoutes from "./analytics/analyticsRoutes";
 import userRoutes from "./users/userRoutes";
 import payoutRoutes from "./payouts/payoutRoutes";
+import reviewRoutes from "./reviews";
 
 const router = Router();
 
@@ -74,6 +75,9 @@ router.use("/users", userRoutes);
 
 // Payout routes
 router.use("/payouts", payoutRoutes);
+
+// Review moderation routes
+router.use("/reviews", reviewRoutes);
 
 export default router;
 

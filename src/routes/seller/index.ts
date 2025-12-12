@@ -10,6 +10,8 @@ import ordersRoutes from "./orders.routes";
 import paymentsRoutes from "./payments.routes";
 import payoutsRoutes from "./payouts.routes";
 import couponRoutes from "./coupons";
+import reviewRoutes from "./reviews";
+import returnRoutes from "./returns";
 
 const router = Router();
 
@@ -42,6 +44,12 @@ router.use("/payouts", payoutsRoutes);
 
 // Coupon Management
 router.use("/coupons", couponRoutes);
+
+// Review Management
+router.use("/reviews", reviewRoutes);
+
+// Return Management
+router.use("/returns", returnRoutes);
 
 export default router;
 

@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { prisma } from "../../../utils/database";
+import { logger } from "../../../utils/logger";
 import { CouponService } from "../../CouponService";
 
 
@@ -28,6 +29,14 @@ const createOrderFromCartSchema = z.object({
   couponCode: z.string().optional() // Optional coupon code
 });
 
+const reorderFromOrderSchema = z.object({
+  shippingAddressId: z.string().optional(), // Optional - will use original address if not provided
+  poNumber: z.string().optional(), // Optional - can be auto-generated for commercial buyers
+  costCenter: z.string().optional(),
+  notes: z.string().optional(),
+  couponCode: z.string().optional() // Optional coupon code
+});
+
 const updateOrderStatusSchema = z.object({
   status: z.enum(['PENDING_PAYMENT', 'PAYMENT_FAILED', 'AWAITING_SELLER_ACCEPTANCE', 'SELLER_REJECTED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED', 'DISPUTED', 'REFUNDED', 'PARTIALLY_REFUNDED']),
   notes: z.string().optional()
@@ -40,6 +49,7 @@ export interface OrderData {
   poNumber?: string;
   costCenter?: string;
   notes?: string;
+  couponCode?: string;
 }
 
 export interface OrderItemData {
@@ -410,6 +420,116 @@ export class OrderService {
         })
       );
 
+      // Send email notifications to sellers and check for low stock
+      for (const order of orders) {
+        try {
+          // Get seller information for email
+          const seller = await prisma.seller.findUnique({
+            where: { id: order.sellerId },
+            select: {
+              id: true,
+              email: true,
+              businessName: true
+            }
+          });
+
+          // Get buyer information
+          const buyer = await prisma.buyer.findUnique({
+            where: { id: order.buyerId },
+            select: {
+              firstName: true,
+              lastName: true,
+              companyName: true
+            }
+          });
+
+          if (seller && buyer) {
+            // Send new order email to seller
+            const { emailService } = await import('../../EmailService');
+            const buyerName = `${buyer.firstName} ${buyer.lastName}`.trim();
+            const itemCount = (order as any).items?.length || 0;
+            
+            await emailService.sendNewOrderEmail(
+              seller.email,
+              seller.businessName,
+              order.orderNumber,
+              order.id,
+              buyerName,
+              buyer.companyName || null,
+              order.totalAmount,
+              itemCount,
+              order.currency || 'USD'
+            );
+
+            logger.info('New order email sent to seller', {
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              sellerEmail: seller.email,
+              sellerId: seller.id
+            });
+
+            // Check for low stock items and send alert if needed
+            // Get order items from database to check current stock levels
+            const orderItemsFromDb = await prisma.orderItem.findMany({
+              where: { orderId: order.id },
+              include: {
+                inventory: {
+                  include: {
+                    masterProduct: {
+                      select: {
+                        name: true
+                      }
+                    }
+                  }
+                }
+              }
+            });
+
+            const lowStockItems: Array<{
+              productName: string;
+              currentQuantity: number;
+              lowStockThreshold: number;
+              inventoryId: string;
+            }> = [];
+
+            for (const item of orderItemsFromDb) {
+              // Check if current quantity is at or below threshold
+              if (item.inventory.quantity <= item.inventory.lowStockThreshold) {
+                lowStockItems.push({
+                  productName: item.inventory.masterProduct.name,
+                  currentQuantity: item.inventory.quantity,
+                  lowStockThreshold: item.inventory.lowStockThreshold,
+                  inventoryId: item.inventory.id
+                });
+              }
+            }
+
+            // Send low stock alert if any items are low
+            if (lowStockItems.length > 0) {
+              await emailService.sendLowStockAlertEmail(
+                seller.email,
+                seller.businessName,
+                lowStockItems
+              );
+
+              logger.info('Low stock alert email sent to seller', {
+                sellerId: seller.id,
+                sellerEmail: seller.email,
+                lowStockItemsCount: lowStockItems.length,
+                orderId: order.id
+              });
+            }
+          }
+        } catch (emailError: any) {
+          // Log error but don't fail the order creation
+          logger.error('Failed to send seller notification emails', {
+            orderId: order.id,
+            sellerId: order.sellerId,
+            error: emailError.message
+          });
+        }
+      }
+
       // Record coupon usage if coupon was applied and discount was actually given
       if (couponValidation && couponValidation.isValid) {
         // Find the order that actually got the discount
@@ -464,6 +584,202 @@ export class OrderService {
       return {
         success: false,
         message: 'Failed to create order',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Reorder items from a previous order
+   * Creates a new order with the same items from an existing order
+   */
+  async reorderFromOrder(
+    buyerId: string,
+    orderId: string,
+    data: z.infer<typeof reorderFromOrderSchema> = {}
+  ): Promise<OrderResult> {
+    try {
+      // Validate input
+      const validatedData = reorderFromOrderSchema.parse(data);
+
+      // Get the original order with all items
+      const originalOrder = await prisma.order.findFirst({
+        where: {
+          id: orderId,
+          buyerId: buyerId // Ensure order belongs to buyer
+        },
+        include: {
+          items: {
+            include: {
+              inventory: {
+                include: {
+                  masterProduct: true,
+                  seller: {
+                    select: {
+                      id: true,
+                      businessName: true,
+                      isEligible: true,
+                      sriScore: true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          shippingAddress: true,
+          buyer: {
+            select: {
+              id: true,
+              email: true,
+              status: true,
+              buyerType: true,
+              companyName: true,
+              registrationNumber: true,
+              addresses: {
+                where: { isDefault: true },
+                take: 1
+              }
+            }
+          }
+        }
+      });
+
+      if (!originalOrder) {
+        return {
+          success: false,
+          message: 'Order not found or does not belong to you',
+          error: 'ORDER_NOT_FOUND'
+        };
+      }
+
+      if (originalOrder.items.length === 0) {
+        return {
+          success: false,
+          message: 'Original order has no items to reorder',
+          error: 'ORDER_EMPTY'
+        };
+      }
+
+      // Determine shipping address - use provided one, or original, or buyer's default
+      let shippingAddressId = validatedData.shippingAddressId;
+      if (!shippingAddressId) {
+        // Use original order's address if available, otherwise buyer's default
+        shippingAddressId = originalOrder.addressId || originalOrder.buyer.addresses[0]?.id;
+      }
+
+      if (!shippingAddressId) {
+        return {
+          success: false,
+          message: 'Shipping address is required. Please provide a shipping address.',
+          error: 'SHIPPING_ADDRESS_REQUIRED'
+        };
+      }
+
+      // Verify the shipping address belongs to the buyer
+      const address = await prisma.buyerAddress.findUnique({
+        where: { id: shippingAddressId },
+        select: { id: true, buyerId: true }
+      });
+
+      if (!address || address.buyerId !== buyerId) {
+        return {
+          success: false,
+          message: 'Shipping address not found or does not belong to you',
+          error: 'INVALID_ADDRESS'
+        };
+      }
+
+      // Convert order items to order creation format
+      const orderItems = originalOrder.items.map(item => ({
+        productId: item.inventoryId, // Use inventoryId from order item
+        quantity: item.quantity
+      }));
+
+      // Check for unavailable items
+      const unavailableItems: string[] = [];
+      for (const item of originalOrder.items) {
+        const inventory = await prisma.sellerInventory.findUnique({
+          where: { id: item.inventoryId },
+          select: {
+            id: true,
+            quantity: true,
+            isActive: true,
+            seller: {
+              select: {
+                isEligible: true,
+                sriScore: true
+              }
+            }
+          }
+        });
+
+        if (!inventory) {
+          unavailableItems.push(`${item.inventory.masterProduct.name} (Product no longer available)`);
+        } else if (!inventory.isActive) {
+          unavailableItems.push(`${item.inventory.masterProduct.name} (Product is inactive)`);
+        } else if (inventory.quantity < item.quantity) {
+          unavailableItems.push(`${item.inventory.masterProduct.name} (Only ${inventory.quantity} available, requested ${item.quantity})`);
+        } else if (!inventory.seller.isEligible || inventory.seller.sriScore < 70) {
+          unavailableItems.push(`${item.inventory.masterProduct.name} (Seller no longer eligible)`);
+        }
+      }
+
+      // If some items are unavailable, return error with details
+      if (unavailableItems.length > 0) {
+        return {
+          success: false,
+          message: 'Some items from the original order are no longer available',
+          error: 'ITEMS_UNAVAILABLE',
+          data: {
+            unavailableItems,
+            availableItems: originalOrder.items.length - unavailableItems.length,
+            totalItems: originalOrder.items.length
+          }
+        };
+      }
+
+      // Generate PO number if not provided (for commercial buyers)
+      let poNumber = validatedData.poNumber;
+      if (!poNumber && originalOrder.buyer.buyerType === 'COMMERCIAL') {
+        const companyIdentifier = originalOrder.buyer.companyName || 
+                                  originalOrder.buyer.registrationNumber || 
+                                  buyerId.substring(0, 8);
+        const timestamp = Date.now();
+        poNumber = `PO-${companyIdentifier.toUpperCase().replace(/\s+/g, '-')}-${timestamp}`;
+      }
+
+      // Create new order using existing createOrder method
+      const orderData: OrderData = {
+        buyerId,
+        items: orderItems,
+        shippingAddressId: shippingAddressId,
+        poNumber: poNumber || originalOrder.poNumber || undefined,
+        costCenter: validatedData.costCenter || originalOrder.costCenter || undefined,
+        notes: validatedData.notes || `Reordered from order ${originalOrder.orderNumber}`,
+        couponCode: validatedData.couponCode || undefined
+      };
+
+      const orderResult = await this.createOrder(orderData);
+
+      if (orderResult.success) {
+        return {
+          success: true,
+          message: `Order recreated successfully from order ${originalOrder.orderNumber}`,
+          data: {
+            ...orderResult.data,
+            originalOrderNumber: originalOrder.orderNumber,
+            originalOrderId: originalOrder.id
+          }
+        };
+      } else {
+        return orderResult;
+      }
+
+    } catch (error) {
+      console.error('Reorder from order error:', error);
+      return {
+        success: false,
+        message: 'Failed to reorder items',
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
@@ -704,7 +1020,315 @@ export class OrderService {
   }
 
   /**
-   * Get orders for buyer
+   * Get comprehensive order history for buyer with all order data
+   */
+  async getOrderHistory(buyerId: string, page: number = 1, limit: number = 20): Promise<{ success: boolean; data?: any[]; total?: number; error?: string }> {
+    try {
+      const skip = (page - 1) * limit;
+
+      const [orders, total] = await Promise.all([
+        prisma.order.findMany({
+          where: { buyerId },
+          include: {
+            // Payment information
+            payment: {
+              select: {
+                id: true,
+                amount: true,
+                currency: true,
+                paymentMethod: true,
+                status: true,
+                gatewayProvider: true,
+                gatewayTransactionId: true,
+                paidAt: true,
+                failedAt: true,
+                failureReason: true,
+                refundedAt: true,
+                refundAmount: true,
+                metadata: true
+              }
+            },
+            // Order items with full product details
+            items: {
+              include: {
+                inventory: {
+                  include: {
+                    masterProduct: {
+                      include: {
+                        category: {
+                          select: {
+                            id: true,
+                            name: true,
+                            description: true
+                          }
+                        }
+                      }
+                    },
+                    seller: {
+                      select: {
+                        id: true,
+                        businessName: true,
+                        email: true,
+                        contactNumber: true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            // Shipping address
+            shippingAddress: {
+              select: {
+                id: true,
+                fullName: true,
+                addressLine1: true,
+                addressLine2: true,
+                city: true,
+                province: true,
+                postalCode: true,
+                phoneNumber: true,
+                isDefault: true
+              }
+            },
+            // Seller information
+            seller: {
+              select: {
+                id: true,
+                businessName: true,
+                email: true,
+                contactNumber: true,
+                businessAddress: true,
+                isEligible: true,
+                sriScore: true
+              }
+            },
+            // Driver information (if dispatched)
+            driver: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                phoneNumber: true,
+                vehicleType: true,
+                vehiclePlate: true,
+                status: true
+              }
+            },
+            // Shipment information
+            shipment: {
+              include: {
+                carrier: {
+                  select: {
+                    id: true,
+                    name: true,
+                    contactPhone: true
+                  }
+                }
+              }
+            },
+            // Coupon usage (if coupon was applied)
+            couponUsage: {
+              select: {
+                id: true,
+                discountAmount: true,
+                orderTotal: true,
+                orderTotalAfterDiscount: true,
+                usedAt: true,
+                coupon: {
+                  select: {
+                    id: true,
+                    code: true,
+                    name: true,
+                    description: true,
+                    discountType: true,
+                    discountValue: true
+                  }
+                }
+              }
+            },
+            // Buyer information
+            buyer: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                companyName: true,
+                buyerType: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit
+        }),
+        prisma.order.count({
+          where: { buyerId }
+        })
+      ]);
+
+      // Format orders with all data
+      const formattedOrders = orders.map(order => ({
+        // Order basic information
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        currency: order.currency,
+        
+        // Pricing breakdown
+        pricing: {
+          subtotal: order.subtotal,
+          shippingCost: order.shippingCost,
+          platformCommission: order.platformCommission,
+          discountAmount: order.discountAmount || 0,
+          totalAmount: order.totalAmount,
+          exchangeRate: order.exchangeRate,
+          exchangeRateTimestamp: order.exchangeRateTimestamp
+        },
+        
+        // Coupon information
+        coupon: order.couponCode ? {
+          code: order.couponCode,
+          discountAmount: order.discountAmount || 0,
+          usage: order.couponUsage ? {
+            discountAmount: order.couponUsage.discountAmount,
+            orderTotal: order.couponUsage.orderTotal,
+            orderTotalAfterDiscount: order.couponUsage.orderTotalAfterDiscount,
+            usedAt: order.couponUsage.usedAt,
+            couponDetails: order.couponUsage.coupon
+          } : null
+        } : null,
+        
+        // Order items with full details
+        items: order.items.map(item => ({
+          id: item.id,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          displayPrice: item.displayPrice,
+          commission: item.commission,
+          product: {
+            inventoryId: item.inventory.id,
+            sellerSku: item.inventory.sellerSku,
+            productName: item.inventory.masterProduct.name,
+            oemPartNumber: item.inventory.masterProduct.oemPartNumber,
+            manufacturer: item.inventory.masterProduct.manufacturer,
+            category: item.inventory.masterProduct.category ? {
+              id: item.inventory.masterProduct.category.id,
+              name: item.inventory.masterProduct.category.name,
+              description: item.inventory.masterProduct.category.description
+            } : null
+          },
+          seller: {
+            id: item.inventory.seller.id,
+            businessName: item.inventory.seller.businessName,
+            email: item.inventory.seller.email,
+            contactNumber: item.inventory.seller.contactNumber
+          }
+        })),
+        
+        // Seller information
+        seller: {
+          id: order.seller.id,
+          businessName: order.seller.businessName,
+          email: order.seller.email,
+          contactNumber: order.seller.contactNumber,
+          businessAddress: order.seller.businessAddress,
+          isEligible: order.seller.isEligible,
+          sriScore: order.seller.sriScore
+        },
+        
+        // Shipping information
+        shipping: {
+          address: order.shippingAddress,
+          estimatedDeliveryDate: order.estimatedDeliveryDate,
+          actualDeliveryDate: order.actualDeliveryDate
+        },
+        
+        // Payment information
+        payment: order.payment ? {
+          id: order.payment.id,
+          amount: order.payment.amount,
+          currency: order.payment.currency,
+          paymentMethod: order.payment.paymentMethod,
+          status: order.payment.status,
+          gatewayProvider: order.payment.gatewayProvider,
+          gatewayTransactionId: order.payment.gatewayTransactionId,
+          paidAt: order.payment.paidAt,
+          failedAt: order.payment.failedAt,
+          failureReason: order.payment.failureReason,
+          refundedAt: order.payment.refundedAt,
+          refundAmount: order.payment.refundAmount,
+          metadata: order.payment.metadata
+        } : null,
+        
+        // Shipment/tracking information
+        shipment: order.shipment ? {
+          id: order.shipment.id,
+          trackingNumber: order.shipment.trackingNumber,
+          carrier: order.shipment.carrier ? {
+            id: order.shipment.carrier.id,
+            name: order.shipment.carrier.name,
+            contactPhone: order.shipment.carrier.contactPhone
+          } : null,
+          status: order.shipment.status,
+          estimatedDelivery: order.shipment.estimatedDelivery,
+          actualDelivery: order.shipment.actualDelivery,
+          weight: order.shipment.weight,
+          length: order.shipment.length,
+          width: order.shipment.width,
+          height: order.shipment.height,
+          trackingHistory: order.shipment.trackingHistory,
+          createdAt: order.shipment.createdAt
+        } : null,
+        
+        // Driver information (if dispatched)
+        driver: order.driver ? {
+          id: order.driver.id,
+          firstName: order.driver.firstName,
+          lastName: order.driver.lastName,
+          phoneNumber: order.driver.phoneNumber,
+          vehicleType: order.driver.vehicleType,
+          vehiclePlate: order.driver.vehiclePlate,
+          status: order.driver.status
+        } : null,
+        
+        // Order metadata
+        metadata: {
+          poNumber: order.poNumber,
+          costCenter: order.costCenter,
+          sellerAcceptedAt: order.sellerAcceptedAt,
+          sellerRejectedAt: order.sellerRejectedAt,
+          rejectionReason: order.rejectionReason,
+          dispatchNotes: order.dispatchNotes,
+          dispatchedAt: order.dispatchedAt,
+          dispatchedBy: order.dispatchedBy,
+          ipAddress: order.ipAddress,
+          userAgent: order.userAgent
+        },
+        
+        // Timestamps
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt
+      }));
+
+      return {
+        success: true,
+        data: formattedOrders,
+        total
+      };
+
+    } catch (error) {
+      console.error('Get order history error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Get orders for buyer (simplified version - kept for backward compatibility)
    */
   async getBuyerOrders(buyerId: string, page: number = 1, limit: number = 20): Promise<{ success: boolean; data?: Order[]; total?: number; error?: string }> {
     try {

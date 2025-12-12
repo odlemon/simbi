@@ -3,6 +3,7 @@ import { Router } from "express";
 import { FinancialController } from "../../../controllers/admin/financial/FinancialController";
 import { authenticateAdmin } from "../../../middleware/authenticate";
 import { requireFinOps, requireAnyAdmin } from "../../../middleware/rbac";
+import threeWayMatchRoutes from "./three-way-match";
 
 const router = Router();
 const controller = new FinancialController();
@@ -16,6 +17,9 @@ router.post("/exchange-rate", authenticateAdmin, requireFinOps, controller.updat
 router.post("/chargebacks", authenticateAdmin, requireFinOps, controller.createChargeback.bind(controller));
 router.post("/refunds", authenticateAdmin, requireFinOps, controller.processRefund.bind(controller));
 router.post("/disputes/:id/generate-return-label", authenticateAdmin, requireFinOps, controller.generateReturnLabel.bind(controller));
+
+// Three-Way Match routes
+router.use("/three-way-match", threeWayMatchRoutes);
 
 export default router;
 

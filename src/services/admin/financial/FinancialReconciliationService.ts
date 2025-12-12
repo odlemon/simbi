@@ -163,7 +163,7 @@ export class FinancialReconciliationService {
           const netAmount = grossAmount - gatewayFee;
 
           // Create payout
-          await prisma.payout.create({
+          const payout = await prisma.payout.create({
             data: {
               sellerId: order.sellerId,
               orderId: order.id,
@@ -176,6 +176,37 @@ export class FinancialReconciliationService {
               scheduledDate: new Date(),
             },
           });
+
+          // Send payout notification email to seller
+          try {
+            if (order.seller) {
+              const { emailService } = await import('../../EmailService');
+              const sellerName = order.seller.businessName || order.seller.email;
+              
+              await emailService.sendPayoutProcessedEmail(
+                order.seller.email,
+                sellerName,
+                netAmount,
+                order.currency,
+                payout.id,
+                1 // Single order payout
+              );
+
+              logger.info('Payout notification email sent to seller', {
+                payoutId: payout.id,
+                sellerId: order.sellerId,
+                sellerEmail: order.seller.email,
+                amount: netAmount,
+              });
+            }
+          } catch (emailError: any) {
+            // Log error but don't fail payout creation
+            logger.error('Failed to send payout notification email', {
+              payoutId: payout.id,
+              sellerId: order.sellerId,
+              error: emailError.message,
+            });
+          }
 
           processed++;
           totalAmount += netAmount;
@@ -740,6 +771,127 @@ export class FinancialReconciliationService {
       logger.error("Error fetching refunds", {
         error: error.message,
       });
+      throw error;
+    }
+  }
+
+  /**
+   * Freeze a payout (e.g., when return request is initiated)
+   */
+  async freezePayout(
+    payoutId: string,
+    reason: string,
+    frozenBy: string
+  ): Promise<void> {
+    try {
+      await prisma.payout.update({
+        where: { id: payoutId },
+        data: {
+          status: "FROZEN",
+          frozenReason: reason,
+          frozenAt: new Date(),
+          frozenBy: frozenBy,
+        },
+      });
+
+      logger.info(`Payout ${payoutId} frozen by ${frozenBy}: ${reason}`);
+    } catch (error: any) {
+      logger.error("Error freezing payout:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unfreeze a payout (e.g., when buyer fault is confirmed)
+   */
+  async unfreezePayout(payoutId: string, adminId: string): Promise<void> {
+    try {
+      const payout = await prisma.payout.findUnique({
+        where: { id: payoutId },
+      });
+
+      if (!payout) {
+        throw new Error("Payout not found");
+      }
+
+      if (payout.status !== "FROZEN") {
+        logger.warn(`Payout ${payoutId} is not frozen, cannot unfreeze`);
+        return;
+      }
+
+      await prisma.payout.update({
+        where: { id: payoutId },
+        data: {
+          status: "PENDING", // Return to pending status
+          frozenReason: null,
+          frozenAt: null,
+          frozenBy: null,
+        },
+      });
+
+      logger.info(`Payout ${payoutId} unfrozen by admin ${adminId}`);
+    } catch (error: any) {
+      logger.error("Error unfreezing payout:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Chargeback logistics cost to seller or buyer
+   */
+  async chargebackLogisticsCost(
+    orderId: string,
+    logisticsCost: number,
+    chargedTo: "SELLER" | "BUYER" | "PLATFORM",
+    reason: string
+  ): Promise<void> {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          payout: true,
+        },
+      });
+
+      if (!order) {
+        throw new Error("Order not found");
+      }
+
+      if (chargedTo === "SELLER" && order.payout) {
+        // Deduct from seller payout
+        await prisma.payout.update({
+          where: { id: order.payout.id },
+          data: {
+            netAmount: {
+              decrement: logisticsCost,
+            },
+          },
+        });
+
+        logger.info(`Logistics cost ${logisticsCost} charged back to seller for order ${orderId}`);
+      } else if (chargedTo === "BUYER") {
+        // Deduct from refund amount (handled in refund processing)
+        logger.info(`Logistics cost ${logisticsCost} to be deducted from buyer refund for order ${orderId}`);
+      }
+      // PLATFORM absorbs the cost (no action needed)
+
+      // Create ledger entry for audit
+      await prisma.sellerLedger.create({
+        data: {
+          sellerId: order.sellerId,
+          orderId: orderId,
+          transactionType: "ADJUSTMENT",
+          amount: chargedTo === "SELLER" ? -logisticsCost : 0,
+          description: `Logistics cost chargeback: ${reason}`,
+          metadata: {
+            logisticsCost,
+            chargedTo,
+            reason,
+          },
+        },
+      });
+    } catch (error: any) {
+      logger.error("Error charging back logistics cost:", error);
       throw error;
     }
   }

@@ -126,6 +126,21 @@ app.use("/api/webhooks/logistics", logisticsWebhooks);
 import buyerRoutes from "./routes/buyer/index";
 app.use("/api/buyer", buyerRoutes);
 
+// Public product review routes
+import productReviewRoutes from "./routes/products/reviews";
+app.use("/api/products", productReviewRoutes);
+
+// Guest checkout routes (public)
+import guestCheckoutRoutes from "./routes/guest/checkout";
+app.use("/api/guest", guestCheckoutRoutes);
+
+// Media upload routes
+import mediaRoutes from "./routes/media";
+app.use("/api/media", mediaRoutes);
+
+// Static file serving for uploaded images (not needed on Vercel, files are on Ubuntu server)
+// Images are served directly from http://31.220.82.129/uploads
+
 // Load Swagger spec with fallback
 let specs: any = {
   openapi: "3.0.0",

@@ -804,6 +804,41 @@ export class OrderController {
         data: { status: 'UNAVAILABLE' }
       });
 
+      // Send order shipped email to buyer
+      try {
+        if (updatedOrder.buyer) {
+          const { emailService } = await import('../../EmailService');
+          const buyerName = `${updatedOrder.buyer.firstName} ${updatedOrder.buyer.lastName}`.trim() || updatedOrder.buyer.email;
+          
+          // Get tracking number from shipment if exists
+          const shipment = await prisma.shipment.findUnique({
+            where: { orderId: id },
+            select: { trackingNumber: true },
+          });
+
+          await emailService.sendOrderShippedEmail(
+            updatedOrder.buyer.email,
+            buyerName,
+            updatedOrder.orderNumber,
+            shipment?.trackingNumber || null,
+            updatedOrder.estimatedDeliveryDate ? new Date(updatedOrder.estimatedDeliveryDate).toLocaleDateString() : null
+          );
+
+          logger.info('Order shipped email sent to buyer', {
+            orderId: id,
+            orderNumber: updatedOrder.orderNumber,
+            buyerEmail: updatedOrder.buyer.email,
+          });
+        }
+      } catch (emailError: any) {
+        // Log error but don't fail the dispatch
+        logger.error('Failed to send order shipped email', {
+          orderId: id,
+          buyerEmail: updatedOrder.buyer?.email,
+          error: emailError.message,
+        });
+      }
+
       res.status(200).json({
         success: true,
         message: 'Order dispatched successfully',
@@ -884,6 +919,14 @@ export class OrderController {
       const updatedOrderWithDetails = await prisma.order.findUnique({
         where: { id },
         include: {
+          buyer: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
           driver: {
             select: {
               id: true,
@@ -902,6 +945,37 @@ export class OrderController {
           }
         }
       });
+
+      // Send order delivered email to buyer
+      try {
+        if (updatedOrderWithDetails?.buyer) {
+          const { emailService } = await import('../../EmailService');
+          const buyerName = `${updatedOrderWithDetails.buyer.firstName} ${updatedOrderWithDetails.buyer.lastName}`.trim() || updatedOrderWithDetails.buyer.email;
+          const deliveryDate = updatedOrderWithDetails.actualDeliveryDate 
+            ? new Date(updatedOrderWithDetails.actualDeliveryDate).toLocaleDateString()
+            : new Date().toLocaleDateString();
+          
+          await emailService.sendOrderDeliveredEmail(
+            updatedOrderWithDetails.buyer.email,
+            buyerName,
+            updatedOrderWithDetails.orderNumber,
+            deliveryDate
+          );
+
+          logger.info('Order delivered email sent to buyer', {
+            orderId: id,
+            orderNumber: updatedOrderWithDetails.orderNumber,
+            buyerEmail: updatedOrderWithDetails.buyer.email,
+          });
+        }
+      } catch (emailError: any) {
+        // Log error but don't fail the delivery marking
+        logger.error('Failed to send order delivered email', {
+          orderId: id,
+          buyerEmail: updatedOrderWithDetails?.buyer?.email,
+          error: emailError.message,
+        });
+      }
 
       res.status(200).json({
         success: true,

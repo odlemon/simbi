@@ -14,11 +14,25 @@ const orderController = new OrderController();
 router.post('/', authenticateBuyer, orderController.createOrder.bind(orderController));
 
 /**
+ * @route GET /api/buyer/orders/history
+ * @desc Get comprehensive order history with all order data
+ * @access Private
+ */
+router.get('/history', authenticateBuyer, orderController.getOrderHistory.bind(orderController));
+
+/**
  * @route GET /api/buyer/orders
- * @desc Get orders for buyer
+ * @desc Get orders for buyer (simplified version)
  * @access Private
  */
 router.get('/', authenticateBuyer, orderController.getBuyerOrders.bind(orderController));
+
+/**
+ * @route POST /api/buyer/orders/:id/reorder
+ * @desc Reorder items from a previous order
+ * @access Private
+ */
+router.post('/:id/reorder', authenticateBuyer, orderController.reorderFromOrder.bind(orderController));
 
 /**
  * @route GET /api/buyer/orders/:id/payment

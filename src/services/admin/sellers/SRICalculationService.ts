@@ -339,6 +339,65 @@ export class SRICalculationService {
   }
 
   /**
+   * Apply immediate SRI penalty (e.g., on confirmed seller fault)
+   */
+  async applyImmediatePenalty(
+    sellerId: string,
+    penaltyPoints: number,
+    reason: string
+  ): Promise<void> {
+    try {
+      const seller = await prisma.seller.findUnique({
+        where: { id: sellerId },
+        select: {
+          sriScore: true,
+        },
+      });
+
+      if (!seller) {
+        throw new Error("Seller not found");
+      }
+
+      // Apply penalty (subtract points, minimum 0)
+      const newScore = Math.max(0, seller.sriScore - penaltyPoints);
+
+      // Update seller
+      await prisma.seller.update({
+        where: { id: sellerId },
+        data: {
+          sriScore: newScore,
+          isEligible: newScore >= this.SRI_ELIGIBILITY_THRESHOLD,
+          lastSriCalculation: new Date(),
+        },
+      });
+
+      // Save to history
+      await prisma.sRIHistory.create({
+        data: {
+          sellerId,
+          score: newScore,
+          fulfilmentRate: 0, // Will be recalculated on next full update
+          onTimeDeliveryRate: 0,
+          defectRate: 0,
+          complianceScore: 0,
+          calculationDate: new Date(),
+          ordersPeriodStart: new Date(Date.now() - this.ANALYSIS_PERIOD_DAYS * 24 * 60 * 60 * 1000),
+          ordersPeriodEnd: new Date(),
+          totalOrdersAnalyzed: 0,
+        },
+      });
+
+      // Trigger full recalculation to update component scores
+      await this.updateSellerSRI(sellerId);
+
+      logger.warn(`Immediate SRI penalty applied to seller ${sellerId}: -${penaltyPoints} points (${seller.sriScore} → ${newScore}). Reason: ${reason}`);
+    } catch (error: any) {
+      logger.error("Error applying immediate SRI penalty:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Batch update SRI for all active sellers (for cron job)
    */
   async batchUpdateAllSellers(): Promise<{

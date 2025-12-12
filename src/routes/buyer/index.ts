@@ -10,6 +10,8 @@ import disputeRoutes from './disputes';
 import quoteRoutes from './quotes';
 import advancedAnalyticsRoutes from './advanced-analytics';
 import cartRoutes from './cart.routes';
+import reviewRoutes from './reviews';
+import returnRoutes from './returns';
 
 const router = Router();
 
@@ -24,5 +26,7 @@ router.use('/enterprise', enterpriseRoutes);
 router.use('/disputes', disputeRoutes);
 router.use('/quotes', quoteRoutes);
 router.use('/analytics', advancedAnalyticsRoutes);
+router.use('/reviews', reviewRoutes);
+router.use('/returns', returnRoutes);
 
 export default router;

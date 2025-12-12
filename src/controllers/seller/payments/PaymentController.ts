@@ -263,6 +263,50 @@ export class PaymentController {
         accountingEntries: accountingResult.success ? accountingResult.data.entries.length : 0
       });
 
+      // Send payment recorded email to buyer
+      try {
+        const orderWithBuyer = await prisma.order.findUnique({
+          where: { id: orderId },
+          include: {
+            buyer: {
+              select: {
+                email: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        });
+
+        if (orderWithBuyer?.buyer) {
+          const { emailService } = await import('../../EmailService');
+          const buyerName = `${orderWithBuyer.buyer.firstName} ${orderWithBuyer.buyer.lastName}`.trim() || orderWithBuyer.buyer.email;
+          
+          await emailService.sendPaymentRecordedEmail(
+            orderWithBuyer.buyer.email,
+            buyerName,
+            order.orderNumber,
+            newTotalAmount,
+            order.currency || 'USD',
+            'Cash on Delivery'
+          );
+
+          logger.info('Payment recorded email sent to buyer', {
+            orderId,
+            orderNumber: order.orderNumber,
+            buyerEmail: orderWithBuyer.buyer.email,
+            amount: newTotalAmount,
+          });
+        }
+      } catch (emailError: any) {
+        // Log error but don't fail the payment recording
+        logger.error('Failed to send payment recorded email', {
+          orderId,
+          buyerEmail: order.buyerId,
+          error: emailError.message,
+        });
+      }
+
       const partialPayments = payment.metadata ? (payment.metadata as any).partialPayments || [] : [];
 
       res.status(200).json({

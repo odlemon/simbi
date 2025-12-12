@@ -639,5 +639,68 @@ export class LogisticsManagementService {
       throw error;
     }
   }
+
+  /**
+   * Generate pre-paid return label for return shipment
+   */
+  async generateReturnLabel(
+    orderId: string,
+    returnAddress: {
+      addressLine1: string;
+      addressLine2?: string;
+      city: string;
+      province: string;
+      postalCode?: string;
+      phoneNumber: string;
+    },
+    originAddress: string
+  ): Promise<{ trackingNumber: string; labelUrl: string; cost: number }> {
+    try {
+      // TODO: Integrate with actual carrier API to generate return label
+      // For now, generate a mock return label
+
+      const trackingNumber = `RET${Date.now().toString().slice(-8)}`;
+      const labelUrl = `https://labels.simbimarket.com/returns/${trackingNumber}.pdf`;
+      
+      // Calculate return shipping cost (simplified - should use carrier API)
+      const cost = 15.0; // Default return shipping cost
+
+      logger.info(`Return label generated for order ${orderId}: ${trackingNumber}`);
+
+      return {
+        trackingNumber,
+        labelUrl,
+        cost,
+      };
+    } catch (error: any) {
+      logger.error("Error generating return label:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate return shipping cost
+   */
+  async calculateReturnShippingCost(
+    originAddress: string,
+    destinationAddress: {
+      addressLine1: string;
+      city: string;
+      province: string;
+    },
+    weight: number,
+    dimensions?: { length: number; width: number; height: number }
+  ): Promise<number> {
+    try {
+      // TODO: Integrate with carrier API to get actual return shipping cost
+      // For now, return a default cost based on weight
+      const baseCost = 10.0;
+      const weightMultiplier = weight * 0.5; // $0.50 per kg
+      return baseCost + weightMultiplier;
+    } catch (error: any) {
+      logger.error("Error calculating return shipping cost:", error);
+      throw error;
+    }
+  }
 }
 

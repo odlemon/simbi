@@ -100,7 +100,56 @@ export class OrderController {
   }
 
   /**
-   * Get orders for buyer
+   * Get comprehensive order history for buyer
+   * GET /api/buyer/orders/history
+   */
+  async getOrderHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const buyerId = req.buyer?.id;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      if (!buyerId) {
+        res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+          error: 'NO_BUYER_ID'
+        });
+        return;
+      }
+
+      const result = await this.orderService.getOrderHistory(buyerId, page, limit);
+      
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          data: result.data,
+          pagination: {
+            page,
+            limit,
+            total: result.total,
+            pages: Math.ceil((result.total || 0) / limit)
+          }
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to get order history',
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('Get order history controller error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Get orders for buyer (simplified version - kept for backward compatibility)
    * GET /api/buyer/orders
    */
   async getBuyerOrders(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -388,6 +437,63 @@ export class OrderController {
       }
     } catch (error) {
       console.error('Create order from cart controller error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Reorder items from a previous order
+   * POST /api/buyer/orders/:id/reorder
+   * Creates a new order with the same items from the specified order
+   */
+  async reorderFromOrder(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const buyerId = req.buyer?.id;
+      const orderId = req.params.id;
+      
+      if (!buyerId) {
+        res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+          error: 'NO_BUYER_ID'
+        });
+        return;
+      }
+
+      if (!orderId) {
+        res.status(400).json({
+          success: false,
+          message: 'Order ID is required',
+          error: 'ORDER_ID_REQUIRED'
+        });
+        return;
+      }
+
+      // Request body is optional - can override shipping address, PO number, etc.
+      const result = await this.orderService.reorderFromOrder(buyerId, orderId, req.body || {});
+      
+      if (result.success) {
+        res.status(201).json({
+          success: true,
+          message: result.message,
+          data: result.data
+        });
+      } else {
+        const statusCode = result.error === 'ORDER_NOT_FOUND' || result.error === 'INVALID_ADDRESS' ? 404 : 
+                          result.error === 'ITEMS_UNAVAILABLE' ? 422 : 400;
+        res.status(statusCode).json({
+          success: false,
+          message: result.message,
+          error: result.error,
+          data: result.data
+        });
+      }
+    } catch (error) {
+      console.error('Reorder from order controller error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error',

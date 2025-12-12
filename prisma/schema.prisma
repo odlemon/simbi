@@ -27,6 +27,7 @@ model Admin {
   alertsHandled         AdminAlert[]
   disputesHandled       Dispute[]
   integrations          ExternalIntegration[]
+  reviewModerations     ReviewModeration[]
 
   @@index([email])
   @@index([role])
@@ -150,6 +151,7 @@ model Seller {
   staff                     SellerStaff[]
   sriHistory                SRIHistory[]
   coupons                   Coupon[]
+  reviewResponses           ReviewResponse[]
 
   @@index([email])
   @@index([status])
@@ -213,6 +215,8 @@ model SellerInventory {
   isActive          Boolean                  @default(true)
   lastPriceUpdate   DateTime?
   priceUpdateCount  Int                      @default(0)
+  averageRating     Float?                  @default(0) // Average rating from reviews
+  reviewCount       Int                      @default(0) // Total number of approved reviews
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   condition         ProductCondition         @default(NEW)
@@ -223,6 +227,7 @@ model SellerInventory {
   cartItems         CartItem[]
   adjustmentLogs    InventoryAdjustmentLog[]
   orderItems        OrderItem[]
+  reviews           Review[]
   masterProduct     MasterProduct            @relation(fields: [masterProductId], references: [id])
   seller            Seller                   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
 
@@ -545,6 +550,7 @@ model Buyer {
   orders                    Order[]
   quoteRequests             QuoteRequest[]
   savedSearches             SavedSearch[]
+  reviews                   Review[]
 
   @@index([email])
   @@index([buyerType])
@@ -834,6 +840,15 @@ model Order {
   dispatchNotes         String?                     @db.Text
   dispatchedAt          DateTime?
   dispatchedBy          String?                     // Admin ID who dispatched
+  // Evidence Chain of Custody (ECC) fields
+  eccBaselineUploaded   Boolean                     @default(false)
+  eccBaselineUploadedAt DateTime?
+  eccBaselineUrls       Json?                       // Pre-shipment evidence URLs
+  // Guest checkout fields
+  isGuestOrder          Boolean                     @default(false)
+  guestAccessToken      String?                     // Cryptographic token for guest tracking
+  mobileNumber          String?                     // For guest orders (identity anchor)
+  paymentToken          String?                     // Tokenized card data (PCI DSS compliant)
   createdAt             DateTime                    @default(now())
   updatedAt             DateTime                    @updatedAt
   disputes              Dispute?
@@ -847,6 +862,10 @@ model Order {
   payout                Payout?
   shipment              Shipment?
   couponUsage           CouponUsage?
+  reviews               Review[]
+  guestOrder            GuestOrder?
+  threeWayMatch         ThreeWayMatch?
+  taxInvoice            TaxInvoice?
 
   @@index([buyerId])
   @@index([sellerId])
@@ -869,10 +888,76 @@ model OrderItem {
   createdAt    DateTime        @default(now())
   inventory    SellerInventory @relation(fields: [inventoryId], references: [id])
   order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reviews      Review[]
 
   @@index([orderId])
   @@index([inventoryId], map: "order_items_inventoryId_fkey")
   @@map("order_items")
+}
+
+model Review {
+  id            String          @id @default(uuid())
+  inventoryId   String
+  buyerId       String
+  orderId       String
+  orderItemId   String
+  rating        Int             // 1-5 stars
+  title         String
+  comment       String?         @db.Text
+  status        ReviewStatus    @default(APPROVED) // Auto-approve
+  flaggedReason String?         @db.Text
+  moderatedBy   String?         // Admin ID who moderated
+  moderatedAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  inventory     SellerInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  buyer         Buyer           @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem     OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  response      ReviewResponse?
+  moderations   ReviewModeration[]
+
+  @@unique([buyerId, inventoryId]) // One review per buyer per inventory item
+  @@index([inventoryId])
+  @@index([buyerId])
+  @@index([orderId])
+  @@index([status])
+  @@index([rating])
+  @@index([createdAt])
+  @@map("reviews")
+}
+
+model ReviewResponse {
+  id        String   @id @default(uuid())
+  reviewId  String   @unique
+  sellerId  String
+  response  String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@index([sellerId])
+  @@map("review_responses")
+}
+
+model ReviewModeration {
+  id        String           @id @default(uuid())
+  reviewId  String
+  adminId   String
+  action    ModerationAction // APPROVE, REJECT, FLAG
+  reason    String?          @db.Text
+  notes     String?          @db.Text
+  createdAt DateTime         @default(now())
+  review    Review           @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  admin     Admin            @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@index([adminId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("review_moderations")
 }
 
 model Payment {
@@ -915,6 +1000,10 @@ model Payout {
   scheduledDate      DateTime
   processedDate      DateTime?
   bankReference      String?
+  // Payout freezing fields
+  frozenReason       String?      @db.Text
+  frozenAt           DateTime?
+  frozenBy           String?      // System or Admin ID
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   order              Order        @relation(fields: [orderId], references: [id])
@@ -923,6 +1012,7 @@ model Payout {
   @@index([sellerId])
   @@index([status])
   @@index([scheduledDate])
+  @@index([frozenAt])
   @@map("payouts")
 }
 
@@ -939,32 +1029,126 @@ model ExchangeRate {
   @@map("exchange_rates")
 }
 
+model GuestOrder {
+  id                    String              @id @default(uuid())
+  orderNumber           String              @unique
+  guestAccessToken      String              @unique // Cryptographic token for tracking
+  mobileNumber          String              // Identity anchor
+  email                 String
+  fullName              String
+  shippingAddress       Json                // Full address as JSON
+  paymentMethod         GuestPaymentMethod
+  paymentToken          String?             // Tokenized card data (PCI DSS compliant)
+  exchangeRate          Float               // Locked at checkout
+  exchangeRateTimestamp DateTime
+  threeWayMatchStatus   ThreeWayMatchStatus @default(PENDING)
+  orderId               String?             @unique // Links to Order.id if converted to account
+  taxInvoiceId         String?             @unique
+  threeWayMatchId       String?             @unique
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  order                 Order?              @relation(fields: [orderId], references: [id])
+  taxInvoice            TaxInvoice?         @relation(fields: [taxInvoiceId], references: [id])
+  threeWayMatch         ThreeWayMatch?      @relation(fields: [threeWayMatchId], references: [id])
+
+  @@index([mobileNumber])
+  @@index([guestAccessToken])
+  @@index([orderNumber])
+  @@index([threeWayMatchStatus])
+  @@map("guest_orders")
+}
+
+model ThreeWayMatch {
+  id                      String              @id @default(uuid())
+  orderId                 String              @unique
+  orderNumber             String
+  carrierRemittanceBatchId String?
+  taxInvoiceId            String?             @unique
+  matchStatus             ThreeWayMatchStatus @default(PENDING)
+  matchedAt               DateTime?
+  matchedBy               String?             // Admin ID
+  mismatchReason          String?             @db.Text
+  createdAt               DateTime            @default(now())
+  order                   Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  taxInvoice              TaxInvoice?         @relation(fields: [taxInvoiceId], references: [id])
+  guestOrder              GuestOrder?
+
+  @@index([orderId])
+  @@index([orderNumber])
+  @@index([matchStatus])
+  @@index([matchedAt])
+  @@map("three_way_matches")
+}
+
+model TaxInvoice {
+  id            String   @id @default(uuid())
+  orderId       String   @unique
+  invoiceNumber String   @unique // ZIMRA-compliant format
+  buyerName     String
+  buyerEmail    String
+  buyerMobile   String
+  items         Json     // Order items as JSON
+  subtotal      Float
+  tax           Float
+  total         Float
+  currency      Currency
+  issuedAt      DateTime @default(now())
+  pdfUrl        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  guestOrder    GuestOrder?
+  threeWayMatch ThreeWayMatch?
+
+  @@index([orderId])
+  @@index([invoiceNumber])
+  @@index([issuedAt])
+  @@map("tax_invoices")
+}
+
 model Dispute {
-  id                 String        @id @default(uuid())
-  orderId            String        @unique
-  disputeType        DisputeType
-  status             DisputeStatus @default(OPEN)
-  buyerDescription   String        @db.Text
-  sellerResponse     String?       @db.Text
-  adminNotes         String?       @db.Text
-  assignedAdminId    String?
-  buyerEvidenceUrls  Json?
-  sellerEvidenceUrls Json?
-  resolutionDate     DateTime?
-  resolutionOutcome  String?       @db.Text
-  isFaultBased       Boolean       @default(true)
-  sloTargetDate      DateTime?
-  sloStatus          String?
-  sloBreached        Boolean       @default(false)
-  metadata           Json?
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-  buyerId            String
-  sellerId           String
-  assignedAdmin      Admin?        @relation(fields: [assignedAdminId], references: [id])
-  buyer              Buyer         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  order              Order         @relation(fields: [orderId], references: [id])
-  seller             Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  id                      String                  @id @default(uuid())
+  orderId                 String                  @unique
+  disputeType             DisputeType
+  requestType             ReturnRequestType?      // RETURN, EXCHANGE, or DISPUTE
+  returnReason            ReturnReason?           // For return/exchange requests
+  status                  DisputeStatus           @default(OPEN)
+  buyerDescription        String                  @db.Text
+  sellerResponse          String?                 @db.Text
+  adminNotes              String?                @db.Text
+  assignedAdminId         String?
+  buyerEvidenceUrls       Json?
+  sellerEvidenceUrls      Json?
+  eccBaseline             Json?                   // Pre-shipment evidence (Evidence Chain of Custody)
+  resolutionDate          DateTime?
+  resolutionOutcome       String?                 @db.Text
+  isFaultBased            Boolean                 @default(true)
+  faultClassification     FaultClassification?   // SELLER_FAULT, BUYER_FAULT, NO_FAULT, LOGISTICS_FAULT
+  sloTargetDate           DateTime?
+  sloStatus               String?
+  sloBreached             Boolean                 @default(false)
+  // Return/Exchange specific fields
+  returnLabelTrackingNumber String?
+  returnLabelUrl          String?
+  returnLogisticsCost     Float?
+  logisticsCostChargedTo  LogisticsCostChargedTo?
+  exchangeOrderId         String?                 // For exchange fulfillment
+  sellerReceiptConfirmed  Boolean                 @default(false)
+  sellerReceiptConfirmedAt DateTime?
+  inspectionCompletedAt  DateTime?
+  // Tier 1 Reroute fields
+  tier1RerouteTriggered   Boolean                 @default(false)
+  tier1RerouteSellerId   String?
+  tier1RerouteCostDifference Float?
+  metadata                Json?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  buyerId                 String
+  sellerId                String
+  assignedAdmin           Admin?                  @relation(fields: [assignedAdminId], references: [id])
+  buyer                   Buyer                   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  order                   Order                   @relation(fields: [orderId], references: [id])
+  seller                  Seller                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([buyerId])
@@ -975,6 +1159,8 @@ model Dispute {
   @@index([isFaultBased])
   @@index([sloStatus])
   @@index([sloBreached])
+  @@index([faultClassification])
+  @@index([requestType])
   @@map("disputes")
 }
 
@@ -1482,6 +1668,44 @@ enum DisputeStatus {
   CLOSED_NO_FAULT
 }
 
+enum ReturnRequestType {
+  RETURN
+  EXCHANGE
+  DISPUTE
+}
+
+enum ReturnReason {
+  WRONG_PART
+  DEFECTIVE
+  CHANGE_OF_MIND
+  COUNTERFEIT
+}
+
+enum FaultClassification {
+  SELLER_FAULT
+  BUYER_FAULT
+  NO_FAULT
+  LOGISTICS_FAULT
+}
+
+enum LogisticsCostChargedTo {
+  SELLER
+  BUYER
+  PLATFORM
+}
+
+enum GuestPaymentMethod {
+  CARD_TOKENIZED
+  CASH
+  MOBILE_MONEY
+}
+
+enum ThreeWayMatchStatus {
+  PENDING
+  MATCHED
+  MISMATCH
+}
+
 enum CarrierStatus {
   ACTIVE
   INACTIVE
@@ -1533,4 +1757,17 @@ enum CouponType {
   SELLER_SPECIFIC
   PRODUCT_SPECIFIC
   CATEGORY_SPECIFIC
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FLAGGED
+}
+
+enum ModerationAction {
+  APPROVE
+  REJECT
+  FLAG
 }
