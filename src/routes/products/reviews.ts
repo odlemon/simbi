@@ -19,7 +19,6 @@ router.get("/:inventoryId/reviews", async (req, res) => {
     const result = await reviewService.getReviewsForInventory(inventoryId, {
       page,
       limit,
-      status: "APPROVED", // Only show approved reviews
       rating,
       sortBy,
     });
@@ -79,4 +78,7 @@ router.get("/:inventoryId/rating", async (req, res) => {
 });
 
 export default router;
+
+
+
 

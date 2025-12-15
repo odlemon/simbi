@@ -510,3 +510,7 @@ DELETE /api/seller/coupons/coupon-uuid-1
 | 404 | Resource not found |
 | 500 | Internal server error |
 
+
+
+
+

@@ -69,14 +69,43 @@ export class DashboardService {
 
     const totalRevenue = revenueData._sum.totalAmount || 0;
 
-    const totalExpenses = await prisma.sellerExpense.aggregate({
+    // Get current balance from ledger (accounts for commissions automatically)
+    const lastLedgerEntry = await prisma.sellerLedger.findFirst({
       where: { sellerId },
-      _sum: {
-        amount: true,
-      },
+      orderBy: { transactionDate: 'desc' },
+      select: { balance: true }
     });
 
-    const currentBalance = totalRevenue - (totalExpenses._sum.amount || 0);
+    let currentBalance = lastLedgerEntry?.balance || 0;
+
+    // If no ledger entries exist, calculate from orders and commissions
+    if (!lastLedgerEntry) {
+      // Get orders with payments to calculate commissions
+      const paidOrders = await prisma.order.findMany({
+        where: {
+          sellerId,
+          status: { in: ['PROCESSING', 'SHIPPED', 'DELIVERED'] },
+          payment: {
+            status: { in: ['COMPLETED', 'PARTIAL'] }
+          }
+        },
+        include: { payment: true }
+      });
+
+      const totalCommissions = paidOrders.reduce((sum, order) => 
+        sum + (order.platformCommission || 0), 0
+      );
+
+      const totalExpenses = await prisma.sellerExpense.aggregate({
+        where: { sellerId },
+        _sum: {
+          amount: true,
+        },
+      });
+
+      // Current balance = revenue - commissions - expenses
+      currentBalance = totalRevenue - totalCommissions - (totalExpenses._sum.amount || 0);
+    }
 
     // Staff count
     const activeStaff = await prisma.sellerStaff.count({
@@ -633,12 +662,49 @@ export class DashboardService {
     // 1. Total Revenue (all time from payments)
     const allTimeRevenue = calculateRevenue(allTimeOrders);
 
-    // 2. Current Balance (revenue - expenses)
+    // 2. Current Balance - Get from ledger (accounts for commissions automatically)
+    // Get the latest balance from ledger, ordering by both date and creation time
+    const lastLedgerEntry = await prisma.sellerLedger.findFirst({
+      where: { sellerId: sellerId },
+      orderBy: [
+        { transactionDate: 'desc' },
+        { createdAt: 'desc' }
+      ],
+      select: { balance: true }
+    });
+
+    let currentBalance = lastLedgerEntry?.balance || 0;
+
+    // Always verify balance is correct by calculating from actual transactions
+    // Calculate total commissions from orders (proportional to payment amount)
+    const paidOrders = allTimeOrders.filter(order => 
+      order.payment && (order.payment.status === 'COMPLETED' || order.payment.status === 'PARTIAL')
+    );
+    
+    let totalCommissions = 0;
+    paidOrders.forEach(order => {
+      const paymentAmount = order.payment?.amount || 0;
+      const orderTotal = order.totalAmount || 0;
+      // Calculate proportional commission based on payment amount
+      const commissionRate = orderTotal > 0 ? (order.platformCommission || 0) / orderTotal : 0;
+      totalCommissions += paymentAmount * commissionRate;
+    });
+    
+    // Get total expenses
     const totalExpenses = await prisma.sellerExpense.aggregate({
       where: { sellerId: sellerId },
       _sum: { amount: true }
     });
-    const currentBalance = allTimeRevenue - (totalExpenses._sum.amount || 0);
+    
+    // Expected balance = revenue - commissions - expenses
+    const expectedBalance = allTimeRevenue - totalCommissions - (totalExpenses._sum.amount || 0);
+    
+    // Use ledger balance if it exists and is close to expected, otherwise use calculated
+    if (lastLedgerEntry && Math.abs(lastLedgerEntry.balance - expectedBalance) < 0.01) {
+      currentBalance = lastLedgerEntry.balance;
+    } else {
+      currentBalance = expectedBalance;
+    }
 
     // 3. Total Products (active inventory)
     const totalProducts = await prisma.sellerInventory.count({
@@ -671,7 +737,7 @@ export class DashboardService {
 
     // 7. Top 10 Selling Products by Revenue
     // Get all paid orders first
-    const paidOrders = await prisma.order.findMany({
+    const topProductsPaidOrders = await prisma.order.findMany({
       where: {
         sellerId: sellerId,
         payment: {
@@ -711,7 +777,7 @@ export class DashboardService {
       orderCount: number;
     }>();
 
-    paidOrders.forEach(order => {
+    topProductsPaidOrders.forEach(order => {
       const paymentAmount = order.payment?.amount || 0;
       const orderTotal = order.items.reduce((sum, item) => 
         sum + ((item.displayPrice || item.unitPrice || 0) * (item.quantity || 1)), 0
@@ -747,7 +813,7 @@ export class DashboardService {
 
     // Count unique orders per product
     const productOrderCountMap = new Map<string, Set<string>>();
-    paidOrders.forEach(order => {
+    topProductsPaidOrders.forEach(order => {
       order.items.forEach(item => {
         if (!productOrderCountMap.has(item.inventoryId)) {
           productOrderCountMap.set(item.inventoryId, new Set());

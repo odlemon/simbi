@@ -57,6 +57,8 @@ interface FastProductResult {
   sellerId: string; // Seller ID
   sellerName: string; // Seller business name
   sku?: string; // Seller SKU
+  averageRating?: number; // Average rating (1-5 stars)
+  reviewCount?: number; // Total number of reviews
 }
 
 export class FastProductSearchService {
@@ -381,7 +383,9 @@ export class FastProductSearchService {
       description: product.description || '',
       sellerId: seller.id,
       sellerName: seller.businessName,
-      sku: sellerSku // Include SKU for search
+      sku: sellerSku, // Include SKU for search
+      averageRating: listing.averageRating || 0, // Average rating from reviews
+      reviewCount: listing.reviewCount || 0 // Total number of reviews
     };
   }
 

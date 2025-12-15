@@ -6,8 +6,6 @@ import { z } from "zod";
 
 const createReviewSchema = z.object({
   inventoryId: z.string().min(1, "Inventory ID is required"),
-  orderId: z.string().min(1, "Order ID is required"),
-  orderItemId: z.string().min(1, "Order item ID is required"),
   rating: z.number().int().min(1).max(5, "Rating must be between 1 and 5"),
   title: z.string().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
   comment: z.string().max(2000, "Comment must be less than 2000 characters").optional(),
@@ -15,8 +13,6 @@ const createReviewSchema = z.object({
 
 export interface CreateReviewData {
   inventoryId: string;
-  orderId: string;
-  orderItemId: string;
   rating: number;
   title: string;
   comment?: string;
@@ -31,49 +27,48 @@ export interface ReviewResult {
 
 export class ReviewService {
   /**
-   * Validate that buyer has a delivered order with this inventory item
+   * Validate that buyer has purchased and received this product
+   * Returns the most recent delivered order item for tracking purposes
    */
   async validatePurchase(
     buyerId: string,
-    inventoryId: string,
-    orderId: string,
-    orderItemId: string
-  ): Promise<{ isValid: boolean; error?: string; orderItem?: any }> {
+    inventoryId: string
+  ): Promise<{ isValid: boolean; error?: string; orderId?: string; orderItemId?: string }> {
     try {
-      // Check if order exists and belongs to buyer
-      const order = await prisma.order.findFirst({
+      // Find any delivered order with this inventory item
+      // Get the most recent one by ordering by orderItem createdAt
+      const orderItem = await prisma.orderItem.findFirst({
         where: {
-          id: orderId,
-          buyerId: buyerId,
-          status: OrderStatus.DELIVERED, // Only delivered orders can be reviewed
+          inventoryId: inventoryId,
+          order: {
+            buyerId: buyerId,
+            status: OrderStatus.DELIVERED, // Only delivered orders can be reviewed
+          },
         },
         include: {
-          items: {
-            where: {
-              id: orderItemId,
-              inventoryId: inventoryId,
+          order: {
+            select: {
+              id: true,
+              status: true,
             },
           },
         },
+        orderBy: {
+          createdAt: 'desc', // Get most recent order item
+        },
       });
 
-      if (!order) {
+      if (!orderItem) {
         return {
           isValid: false,
-          error: "Order not found or not delivered. Only delivered orders can be reviewed.",
-        };
-      }
-
-      if (order.items.length === 0) {
-        return {
-          isValid: false,
-          error: "Order item not found or does not match the inventory item.",
+          error: "You must purchase and receive this product before you can review it.",
         };
       }
 
       return {
         isValid: true,
-        orderItem: order.items[0],
+        orderId: orderItem.order.id,
+        orderItemId: orderItem.id,
       };
     } catch (error: any) {
       logger.error("Error validating purchase:", error);
@@ -113,12 +108,10 @@ export class ReviewService {
       // Validate input
       const validatedData = createReviewSchema.parse(data);
 
-      // Validate purchase
+      // Validate purchase - check if buyer has purchased and received this product
       const purchaseValidation = await this.validatePurchase(
         buyerId,
-        validatedData.inventoryId,
-        validatedData.orderId,
-        validatedData.orderItemId
+        validatedData.inventoryId
       );
 
       if (!purchaseValidation.isValid) {
@@ -137,17 +130,17 @@ export class ReviewService {
         };
       }
 
-      // Create review (auto-approved)
+      // Create review (orderId and orderItemId are stored for tracking but not required in request)
       const review = await prisma.review.create({
         data: {
           inventoryId: validatedData.inventoryId,
           buyerId: buyerId,
-          orderId: validatedData.orderId,
-          orderItemId: validatedData.orderItemId,
+          orderId: purchaseValidation.orderId!, // Auto-found from purchase validation
+          orderItemId: purchaseValidation.orderItemId!, // Auto-found from purchase validation
           rating: validatedData.rating,
           title: validatedData.title,
           comment: validatedData.comment,
-          status: ReviewStatus.APPROVED, // Auto-approve
+          status: ReviewStatus.APPROVED, // Default status
         },
         include: {
           buyer: {
@@ -214,14 +207,13 @@ export class ReviewService {
   }
 
   /**
-   * Get reviews for a specific inventory item (approved only for public)
+   * Get reviews for a specific inventory item (all reviews)
    */
   async getReviewsForInventory(
     inventoryId: string,
     options: {
       page?: number;
       limit?: number;
-      status?: ReviewStatus;
       rating?: number;
       sortBy?: "newest" | "oldest" | "highest" | "lowest";
     } = {}
@@ -234,13 +226,6 @@ export class ReviewService {
       const where: any = {
         inventoryId: inventoryId,
       };
-
-      // Filter by status (default to APPROVED for public)
-      if (options.status) {
-        where.status = options.status;
-      } else {
-        where.status = ReviewStatus.APPROVED; // Default to approved only
-      }
 
       // Filter by rating
       if (options.rating) {
@@ -478,26 +463,25 @@ export class ReviewService {
 
   /**
    * Calculate and update average rating for an inventory item
-   * This is called when reviews are created, approved, or rejected
+   * This is called when reviews are created
    */
   async calculateAverageRating(inventoryId: string): Promise<void> {
     try {
-      // Get all approved reviews for this inventory
-      const approvedReviews = await prisma.review.findMany({
+      // Get all reviews for this inventory
+      const reviews = await prisma.review.findMany({
         where: {
           inventoryId: inventoryId,
-          status: ReviewStatus.APPROVED,
         },
         select: {
           rating: true,
         },
       });
 
-      const reviewCount = approvedReviews.length;
+      const reviewCount = reviews.length;
       let averageRating = 0;
 
       if (reviewCount > 0) {
-        const sum = approvedReviews.reduce((acc, review) => acc + review.rating, 0);
+        const sum = reviews.reduce((acc, review) => acc + review.rating, 0);
         averageRating = sum / reviewCount;
       }
 
@@ -529,7 +513,6 @@ export class ReviewService {
       const reviews = await prisma.review.findMany({
         where: {
           inventoryId: inventoryId,
-          status: ReviewStatus.APPROVED,
         },
         select: {
           rating: true,
@@ -572,4 +555,7 @@ export class ReviewService {
 }
 
 export const reviewService = new ReviewService();
+
+
+
 

@@ -12,3 +12,7 @@ router.post("/upload/single", mediaController.uploadSingleImage.bind(mediaContro
 
 export default router;
 
+
+
+
+

@@ -185,3 +185,7 @@ Commission Amount = $10 (unchanged)
 - **Cause:** Discount amount is 0 or coupon validation failed
 - **Fix:** Check that product matches coupon product and discount was calculated
 
+
+
+
+
