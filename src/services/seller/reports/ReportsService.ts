@@ -847,6 +847,287 @@ export class ReportsService {
   }
 
   /**
+   * TOP SELLING PRODUCTS
+   * Comprehensive metrics for top performing products with graphable time-series data
+   */
+  async getTopSellingProducts(
+    sellerId: string,
+    startDate?: Date,
+    endDate?: Date,
+    limit: number = 20
+  ) {
+    // Build where clause for order items
+    const orderItemsWhere: any = {
+      inventory: {
+        sellerId,
+      },
+      order: {
+        status: {
+          in: [OrderStatus.DELIVERED, OrderStatus.SHIPPED, OrderStatus.PROCESSING],
+        },
+      },
+    };
+
+    if (startDate || endDate) {
+      orderItemsWhere.createdAt = {};
+      if (startDate) orderItemsWhere.createdAt.gte = startDate;
+      if (endDate) orderItemsWhere.createdAt.lte = endDate;
+    }
+
+    // Get all order items with product details
+    const orderItems = await prisma.orderItem.findMany({
+      where: orderItemsWhere,
+      include: {
+        inventory: {
+          include: {
+            masterProduct: {
+              include: {
+                category: {
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        order: {
+          select: {
+            id: true,
+            createdAt: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    // Aggregate product data
+    const productMap = new Map<string, {
+      inventoryId: string;
+      productName: string;
+      oemPartNumber: string;
+      manufacturer: string;
+      category: string;
+      categoryId: string;
+      currentPrice: number;
+      currency: string;
+      imageUrls: string[] | null;
+      totalRevenue: number;
+      totalQuantity: number;
+      orderCount: number;
+      uniqueOrders: Set<string>;
+      salesData: Array<{
+        date: string;
+        revenue: number;
+        quantity: number;
+      }>;
+    }>();
+
+    orderItems.forEach(item => {
+      const invId = item.inventoryId;
+      const revenue = (item.unitPrice || 0) * (item.quantity || 0);
+      const date = item.order.createdAt.toISOString().split("T")[0]; // YYYY-MM-DD
+
+      if (!productMap.has(invId)) {
+        const inventory = item.inventory;
+        const masterProduct = inventory?.masterProduct;
+        productMap.set(invId, {
+          inventoryId: invId,
+          productName: masterProduct?.name || "Unknown Product",
+          oemPartNumber: masterProduct?.oemPartNumber || "",
+          manufacturer: masterProduct?.manufacturer || "",
+          category: masterProduct?.category?.name || "Uncategorized",
+          categoryId: masterProduct?.categoryId || "",
+          currentPrice: inventory?.sellerPrice || 0,
+          currency: inventory?.currency || "USD",
+          imageUrls: (masterProduct?.imageUrls as string[] | null) || null,
+          totalRevenue: 0,
+          totalQuantity: 0,
+          orderCount: 0,
+          uniqueOrders: new Set<string>(),
+          salesData: [],
+        });
+      }
+
+      const product = productMap.get(invId)!;
+      product.totalRevenue += revenue;
+      product.totalQuantity += (item.quantity || 0);
+      product.uniqueOrders.add(item.order.id);
+
+      // Add to time-series data
+      const existingDataPoint = product.salesData.find(d => d.date === date);
+      if (existingDataPoint) {
+        existingDataPoint.revenue += revenue;
+        existingDataPoint.quantity += (item.quantity || 0);
+      } else {
+        product.salesData.push({
+          date,
+          revenue,
+          quantity: item.quantity || 0,
+        });
+      }
+    });
+
+    // Convert to array, calculate metrics, and sort
+    const topProducts = Array.from(productMap.values())
+      .map(product => {
+        // Sort sales data by date
+        product.salesData.sort((a, b) => a.date.localeCompare(b.date));
+
+        // Calculate additional metrics
+        const avgOrderValue = product.uniqueOrders.size > 0
+          ? product.totalRevenue / product.uniqueOrders.size
+          : 0;
+        const avgQuantityPerOrder = product.uniqueOrders.size > 0
+          ? product.totalQuantity / product.uniqueOrders.size
+          : 0;
+
+        return {
+          inventoryId: product.inventoryId,
+          productName: product.productName,
+          oemPartNumber: product.oemPartNumber,
+          manufacturer: product.manufacturer,
+          category: {
+            id: product.categoryId,
+            name: product.category,
+          },
+          currentPrice: product.currentPrice,
+          currency: product.currency,
+          imageUrls: product.imageUrls,
+          // Sales metrics
+          totalRevenue: product.totalRevenue,
+          totalQuantity: product.totalQuantity,
+          orderCount: product.uniqueOrders.size,
+          avgOrderValue,
+          avgQuantityPerOrder,
+          // Time-series data for graphing
+          salesTrend: product.salesData.map(d => ({
+            date: d.date,
+            revenue: d.revenue,
+            quantity: d.quantity,
+          })),
+          // Aggregated monthly data (for bar charts)
+          monthlyData: this.groupSalesByMonth(product.salesData),
+        };
+      })
+      .sort((a, b) => b.totalRevenue - a.totalRevenue) // Sort by revenue descending
+      .slice(0, limit);
+
+    // Summary statistics
+    const totalRevenue = topProducts.reduce((sum, p) => sum + p.totalRevenue, 0);
+    const totalQuantity = topProducts.reduce((sum, p) => sum + p.totalQuantity, 0);
+    const totalOrders = topProducts.reduce((sum, p) => sum + p.orderCount, 0);
+
+    // Category breakdown (for pie/bar charts)
+    const categoryMap = new Map<string, {
+      categoryName: string;
+      productCount: number;
+      totalRevenue: number;
+      totalQuantity: number;
+    }>();
+
+    topProducts.forEach(product => {
+      const catName = product.category.name;
+      if (!categoryMap.has(catName)) {
+        categoryMap.set(catName, {
+          categoryName: catName,
+          productCount: 0,
+          totalRevenue: 0,
+          totalQuantity: 0,
+        });
+      }
+      const cat = categoryMap.get(catName)!;
+      cat.productCount += 1;
+      cat.totalRevenue += product.totalRevenue;
+      cat.totalQuantity += product.totalQuantity;
+    });
+
+    const categoryBreakdown = Array.from(categoryMap.values())
+      .sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+    return {
+      summary: {
+        totalProducts: topProducts.length,
+        totalRevenue,
+        totalQuantity,
+        totalOrders,
+        avgRevenuePerProduct: topProducts.length > 0 ? totalRevenue / topProducts.length : 0,
+        period: {
+          startDate: startDate?.toISOString(),
+          endDate: endDate?.toISOString(),
+        },
+      },
+      products: topProducts,
+      categoryBreakdown, // For pie/bar charts
+      // Combined time-series for all top products (for comparison charts)
+      combinedTrend: this.getCombinedTrend(topProducts),
+    };
+  }
+
+  /**
+   * Helper: Group sales data by month
+   */
+  private groupSalesByMonth(salesData: Array<{ date: string; revenue: number; quantity: number }>): Array<{ month: string; revenue: number; quantity: number }> {
+    const monthlyMap = new Map<string, { revenue: number; quantity: number }>();
+
+    salesData.forEach(d => {
+      // Extract YYYY-MM from date
+      const month = d.date.substring(0, 7); // "2024-01-15" -> "2024-01"
+      if (!monthlyMap.has(month)) {
+        monthlyMap.set(month, { revenue: 0, quantity: 0 });
+      }
+      const monthData = monthlyMap.get(month)!;
+      monthData.revenue += d.revenue;
+      monthData.quantity += d.quantity;
+    });
+
+    return Array.from(monthlyMap.entries())
+      .map(([month, data]) => ({
+        month,
+        revenue: data.revenue,
+        quantity: data.quantity,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  /**
+   * Helper: Get combined trend for all products (aggregated daily)
+   */
+  private getCombinedTrend(products: Array<{ salesTrend: Array<{ date: string; revenue: number; quantity: number }> }>): Array<{ date: string; revenue: number; quantity: number; productCount: number }> {
+    const dateMap = new Map<string, { revenue: number; quantity: number; products: Set<string> }>();
+
+    products.forEach((product, index) => {
+      product.salesTrend.forEach(d => {
+        if (!dateMap.has(d.date)) {
+          dateMap.set(d.date, {
+            revenue: 0,
+            quantity: 0,
+            products: new Set(),
+          });
+        }
+        const dateData = dateMap.get(d.date)!;
+        dateData.revenue += d.revenue;
+        dateData.quantity += d.quantity;
+        dateData.products.add(product.inventoryId);
+      });
+    });
+
+    return Array.from(dateMap.entries())
+      .map(([date, data]) => ({
+        date,
+        revenue: data.revenue,
+        quantity: data.quantity,
+        productCount: data.products.size,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /**
    * Helper: Group sales dates for trend analysis
    */
   private groupSalesByDate(dates: string[]): Array<{ date: string; count: number }> {

@@ -237,4 +237,69 @@ export class ReportsController {
       res.status(500).json(response);
     }
   }
+
+  /**
+   * @swagger
+   * /api/seller/reports/top-products:
+   *   get:
+   *     summary: Get top selling products with comprehensive metrics and graphable data
+   *     tags: [Seller - Reports]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: startDate
+   *         schema:
+   *           type: string
+   *           format: date
+   *         description: Start date for filtering (ISO format)
+   *       - in: query
+   *         name: endDate
+   *         schema:
+   *           type: string
+   *           format: date
+   *         description: End date for filtering (ISO format)
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *         description: Maximum number of products to return
+   *     responses:
+   *       200:
+   *         description: Top selling products retrieved successfully
+   */
+  async getTopSellingProducts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { startDate, endDate, limit } = req.query;
+
+      const report = await reportsService.getTopSellingProducts(
+        sellerId,
+        startDate ? new Date(startDate as string) : undefined,
+        endDate ? new Date(endDate as string) : undefined,
+        limit ? parseInt(limit as string) : 20
+      );
+
+      const response: ApiResponse = {
+        success: true,
+        message: "Top selling products retrieved successfully",
+        data: report,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(200).json(response);
+    } catch (error: any) {
+      logger.error("Failed to get top selling products", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      const response: ApiResponse = {
+        success: false,
+        message: "Failed to get top selling products",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+      res.status(500).json(response);
+    }
+  }
 }

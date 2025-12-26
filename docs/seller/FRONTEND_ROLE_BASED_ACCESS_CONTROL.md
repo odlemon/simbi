@@ -365,3 +365,4 @@ When STOCK_MANAGER logs in, they receive:
 
 This guide ensures STOCK_MANAGER users have a focused, efficient interface for managing inventory without access to features outside their role.
 
+

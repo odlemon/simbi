@@ -22,5 +22,8 @@ router.get("/financial", (req, res) => controller.getFinancialReport(req, res));
 // Returns Report Tab
 router.get("/returns", (req, res) => controller.getReturnsReport(req, res));
 
+// Top Selling Products
+router.get("/top-products", (req, res) => controller.getTopSellingProducts(req, res));
+
 export default router;
 

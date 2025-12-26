@@ -20,7 +20,9 @@ interface CreateListingDTO {
 export class InventoryService {
 
   /**
-   * Browse master catalog products
+   * Browse master catalog products (paginated for performance)
+   * Default limit: 100 items (suitable for dropdowns)
+   * Use search parameter to find specific products
    */
   async browseMasterCatalog(
     search?: string,
@@ -28,9 +30,12 @@ export class InventoryService {
     make?: string,
     model?: string,
     page: number = 1,
-    limit: number = 20
+    limit: number = 100
   ) {
-    const skip = (page - 1) * limit;
+    // Validate pagination parameters
+    const validPage = Math.max(1, page);
+    const validLimit = Math.min(Math.max(1, limit), 1000); // Max 1000 items per page
+    const skip = (validPage - 1) * validLimit;
 
     const where: any = {
       isActive: true,
@@ -48,12 +53,13 @@ export class InventoryService {
       where.categoryId = categoryId;
     }
 
+    // Get total count for pagination metadata
     const total = await prisma.masterProduct.count({ where });
 
     const products = await prisma.masterProduct.findMany({
       where,
       skip,
-      take: limit,
+      take: validLimit,
       include: {
         category: {
           select: {
@@ -71,10 +77,11 @@ export class InventoryService {
     return {
       products,
       pagination: {
-        page,
-        limit,
+        page: validPage,
+        limit: validLimit,
         total,
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil(total / validLimit),
+        hasMore: validPage * validLimit < total,
       },
     };
   }

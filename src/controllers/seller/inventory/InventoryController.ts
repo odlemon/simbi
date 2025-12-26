@@ -11,7 +11,7 @@ export class InventoryController {
    * @swagger
    * /api/seller/inventory/catalog:
    *   get:
-   *     summary: Browse master product catalog
+   *     summary: Browse master product catalog (paginated, optimized for dropdowns)
    *     tags: [Seller - Inventory]
    *     security:
    *       - bearerAuth: []
@@ -20,7 +20,7 @@ export class InventoryController {
    *         name: search
    *         schema:
    *           type: string
-   *         description: Search by product name, OEM number, or manufacturer
+   *         description: Search by product name, OEM number, or manufacturer (recommended for finding specific products)
    *       - in: query
    *         name: categoryId
    *         schema:
@@ -41,14 +41,17 @@ export class InventoryController {
    *         schema:
    *           type: integer
    *           default: 1
+   *         description: Page number (default: 1)
    *       - in: query
    *         name: limit
    *         schema:
    *           type: integer
-   *           default: 20
+   *           default: 100
+   *           maximum: 1000
+   *         description: Items per page (default: 100, max: 1000). Use search for finding specific products.
    *     responses:
    *       200:
-   *         description: Catalog retrieved successfully
+   *         description: Catalog retrieved successfully (paginated results)
    */
   async browseCatalog(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -59,8 +62,8 @@ export class InventoryController {
         categoryId as string,
         make as string,
         model as string,
-        parseInt(page as string) || 1,
-        parseInt(limit as string) || 20
+        page ? parseInt(page as string) : 1,
+        limit ? parseInt(limit as string) : 100
       );
 
       const response: ApiResponse = {

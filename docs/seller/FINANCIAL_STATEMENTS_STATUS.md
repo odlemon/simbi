@@ -284,3 +284,4 @@ All accounting endpoints are under: `/api/seller/accounting/`
 **Authentication:** All endpoints require seller or staff authentication  
 **Staff Access:** Staff with `FINANCE_VIEW` or `FULL_ACCESS` roles can access read-only endpoints
 
+
