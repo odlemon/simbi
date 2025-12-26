@@ -180,7 +180,7 @@ export class AccountingService {
   }
 
   /**
-   * Get financial summary
+   * Get comprehensive income statement (P&L)
    */
   async getFinancialSummary(sellerId: string, startDate?: Date, endDate?: Date) {
     const where: any = {
@@ -193,7 +193,11 @@ export class AccountingService {
       if (endDate) where.transactionDate.lte = endDate;
     }
 
-    // Revenue (Sales)
+    // ============================================
+    // REVENUE SECTION
+    // ============================================
+    
+    // Gross Sales Revenue
     const revenueData = await prisma.sellerLedger.aggregate({
       where: {
         ...where,
@@ -204,29 +208,7 @@ export class AccountingService {
       },
     });
 
-    // Expenses
-    const expenseData = await prisma.sellerLedger.aggregate({
-      where: {
-        ...where,
-        type: TransactionType.EXPENSE,
-      },
-      _sum: {
-        amountUSD: true,
-      },
-    });
-
-    // Commission
-    const commissionData = await prisma.sellerLedger.aggregate({
-      where: {
-        ...where,
-        type: TransactionType.PLATFORM_FEE,
-      },
-      _sum: {
-        amountUSD: true,
-      },
-    });
-
-    // Refunds
+    // Refunds (Contra Revenue)
     const refundData = await prisma.sellerLedger.aggregate({
       where: {
         ...where,
@@ -237,23 +219,177 @@ export class AccountingService {
       },
     });
 
-    const totalRevenue = revenueData._sum.amountUSD || 0;
-    const totalExpenses = expenseData._sum.amountUSD || 0;
-    const totalCommission = commissionData._sum.amountUSD || 0;
+    const grossSales = revenueData._sum.amountUSD || 0;
     const totalRefunds = refundData._sum.amountUSD || 0;
+    const netSales = grossSales - totalRefunds;
 
-    const netProfit = totalRevenue - totalExpenses - totalCommission - totalRefunds;
+    // ============================================
+    // COST OF GOODS SOLD (COGS) SECTION
+    // ============================================
+    
+    // Get COGS from Chart of Accounts (accounts with type COGS)
+    const cogsAccounts = await prisma.chartOfAccount.findMany({
+      where: {
+        type: 'COGS',
+        isActive: true,
+      },
+      select: { id: true },
+    });
 
+    const cogsAccountIds = cogsAccounts.map(acc => acc.id);
+    
+    let totalCOGS = 0;
+    if (cogsAccountIds.length > 0) {
+      const cogsData = await prisma.sellerLedger.aggregate({
+        where: {
+          ...where,
+          accountId: { in: cogsAccountIds },
+        },
+        _sum: {
+          debit: true,
+        },
+      });
+      totalCOGS = cogsData._sum.debit || 0;
+    }
+
+    const grossProfit = netSales - totalCOGS;
+
+    // ============================================
+    // OPERATING EXPENSES SECTION
+    // ============================================
+    
+    // Get expenses by category from SellerExpense table
+    const expenseBreakdown = await prisma.sellerExpense.groupBy({
+      by: ['category'],
+      where: {
+        sellerId,
+        ...(startDate || endDate ? {
+          date: {
+            ...(startDate ? { gte: startDate } : {}),
+            ...(endDate ? { lte: endDate } : {}),
+          },
+        } : {}),
+      },
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        id: true,
+      },
+    });
+
+    // Map expense categories
+    const operatingExpenses: any = {
+      RENT: 0,
+      UTILITIES: 0,
+      WAGES: 0,
+      FUEL: 0,
+      MARKETING: 0,
+      EQUIPMENT: 0,
+      SUPPLIES: 0,
+      MAINTENANCE: 0,
+      INSURANCE: 0,
+      OTHER: 0,
+    };
+
+    expenseBreakdown.forEach((item) => {
+      if (item.category in operatingExpenses) {
+        operatingExpenses[item.category] = item._sum.amount || 0;
+      }
+    });
+
+    const totalOperatingExpenses = Object.values(operatingExpenses).reduce(
+      (sum, val) => sum + (val as number),
+      0
+    );
+
+    const operatingIncome = grossProfit - totalOperatingExpenses;
+
+    // ============================================
+    // OTHER INCOME/EXPENSES SECTION
+    // ============================================
+    
+    // Platform Fees/Commission
+    const commissionData = await prisma.sellerLedger.aggregate({
+      where: {
+        ...where,
+        type: TransactionType.PLATFORM_FEE,
+      },
+      _sum: {
+        amountUSD: true,
+      },
+    });
+
+    // Other income (from adjustments that are positive)
+    const otherIncomeData = await prisma.sellerLedger.aggregate({
+      where: {
+        ...where,
+        type: TransactionType.ADJUSTMENT,
+        amountUSD: { gt: 0 },
+      },
+      _sum: {
+        amountUSD: true,
+      },
+    });
+
+    // Other expenses (from adjustments that are negative)
+    const otherExpenseData = await prisma.sellerLedger.aggregate({
+      where: {
+        ...where,
+        type: TransactionType.ADJUSTMENT,
+        amountUSD: { lt: 0 },
+      },
+      _sum: {
+        amountUSD: true,
+      },
+    });
+
+    const platformFees = commissionData._sum.amountUSD || 0;
+    const otherIncome = otherIncomeData._sum.amountUSD || 0;
+    const otherExpenses = Math.abs(otherExpenseData._sum.amountUSD || 0);
+
+    // ============================================
+    // NET INCOME
+    // ============================================
+    
+    const netIncome = operatingIncome - platformFees - otherExpenses + otherIncome;
+
+    // ============================================
+    // RETURN COMPREHENSIVE INCOME STATEMENT
+    // ============================================
+    
     return {
-      totalRevenue,
-      totalExpenses,
-      totalCommission,
-      totalRefunds,
-      netProfit,
       period: {
         startDate: startDate?.toISOString(),
         endDate: endDate?.toISOString(),
       },
+      revenue: {
+        grossSales,
+        returnsAndRefunds: totalRefunds,
+        netSales,
+      },
+      costOfGoodsSold: {
+        totalCOGS,
+        grossProfit,
+      },
+      operatingExpenses: {
+        ...operatingExpenses,
+        total: totalOperatingExpenses,
+      },
+      operatingIncome,
+      otherIncomeExpenses: {
+        platformFees,
+        otherIncome,
+        otherExpenses,
+        total: platformFees + otherExpenses - otherIncome,
+      },
+      netIncome,
+      // Legacy fields for backward compatibility
+      totalRevenue: grossSales,
+      totalExpenses: totalOperatingExpenses,
+      totalCommission: platformFees,
+      totalRefunds,
+      netProfit: netIncome,
     };
   }
 
@@ -530,11 +666,20 @@ export class AccountingService {
       const salesAccountId = await accountMappingService.getAccountIdForTransaction(TransactionType.SALE);
       const commissionAccountId = await accountMappingService.getAccountIdForTransaction(TransactionType.PLATFORM_FEE);
 
-      // 1. Record the payment as SALE (Debit: Cash/Revenue)
+      // ============================================
+      // PROPER DOUBLE-ENTRY ACCOUNTING FOR SALES
+      // ============================================
+      // In double-entry accounting:
+      // - REVENUE accounts: Credits increase revenue, Debits decrease revenue
+      // - EXPENSE accounts: Debits increase expenses, Credits decrease expenses
+      // - ASSET accounts: Debits increase assets, Credits decrease assets
+      
+      // 1. Record the SALE (Credit Revenue Account)
+      // Revenue increases with credits, so we CREDIT the sales revenue account
       const saleEntry = await prisma.sellerLedger.create({
         data: {
           sellerId,
-          accountId: salesAccountId || null, // Link to Chart of Accounts
+          accountId: salesAccountId || null, // Link to Chart of Accounts (Revenue account)
           transactionDate,
           type: 'SALE',
           category: isPartial ? 'PARTIAL_PAYMENT' : 'CASH_PAYMENT',
@@ -544,9 +689,9 @@ export class AccountingService {
             ? `Partial cash payment received for order ${orderId} (${paymentAmount} of ${order?.totalAmount || 'unknown'})`
             : `Cash payment received for order ${orderId}`,
           referenceId: orderId,
-          debit: paymentAmount,
-          credit: 0,
-          balance: currentBalance + paymentAmount
+          debit: 0, // Revenue accounts are CREDITED (not debited)
+          credit: paymentAmount, // Credit increases revenue
+          balance: currentBalance + paymentAmount // Balance tracking for seller's cash position
         }
       });
       entries.push(saleEntry);
@@ -554,13 +699,14 @@ export class AccountingService {
       // Update balance for next entries
       const newBalance = currentBalance + paymentAmount;
 
-      // 2. Record commission deduction (Credit: Commission Expense)
+      // 2. Record commission/platform fee (Debit Expense Account)
+      // Expenses increase with debits, so we DEBIT the commission expense account
       const commissionEntry = await prisma.sellerLedger.create({
         data: {
           sellerId,
-          accountId: commissionAccountId || null, // Link to Chart of Accounts
+          accountId: commissionAccountId || null, // Link to Chart of Accounts (Expense account)
           transactionDate,
-          type: TransactionType.PLATFORM_FEE, // Use PLATFORM_FEE instead of COMMISSION
+          type: TransactionType.PLATFORM_FEE,
           category: 'PLATFORM_COMMISSION',
           amountUSD: commissionAmount,
           amountZWL: commissionAmount * 1,
@@ -568,37 +714,15 @@ export class AccountingService {
             ? `Platform commission for partial payment on order ${orderId}`
             : `Platform commission for order ${orderId}`,
           referenceId: orderId,
-          debit: 0,
-          credit: commissionAmount,
-          balance: newBalance - commissionAmount
+          debit: commissionAmount, // Expense accounts are DEBITED (not credited)
+          credit: 0, // Credit decreases expenses
+          balance: newBalance - commissionAmount // Balance tracking for seller's cash position
         }
       });
       entries.push(commissionEntry);
       
-      // Update balance for next entry
-      const balanceAfterCommission = newBalance - commissionAmount;
-
-      // 3. Record net amount to seller account (Credit: Seller Revenue)
-      // Net revenue goes to the same sales account
-      const netEntry = await prisma.sellerLedger.create({
-        data: {
-          sellerId,
-          accountId: salesAccountId || null, // Link to Chart of Accounts
-          transactionDate,
-          type: 'SALE',
-          category: 'NET_REVENUE',
-          amountUSD: netAmount,
-          amountZWL: netAmount * 1,
-          description: isPartial
-            ? `Net revenue after commission for partial payment on order ${orderId}`
-            : `Net revenue after commission for order ${orderId}`,
-          referenceId: orderId,
-          debit: 0,
-          credit: netAmount,
-          balance: balanceAfterCommission + netAmount
-        }
-      });
-      entries.push(netEntry);
+      // Final balance after commission
+      const finalBalance = newBalance - commissionAmount;
 
       logger.info('Payment accounting entries created successfully', {
         sellerId,
@@ -618,7 +742,7 @@ export class AccountingService {
             totalPayment: paymentAmount,
             commission: commissionAmount,
             netRevenue: netAmount,
-            newBalance: currentBalance + netAmount
+            newBalance: finalBalance
           }
         }
       };
@@ -677,16 +801,8 @@ export class AccountingService {
           _count: { id: true }
         }),
 
-        // Net revenue
-        prisma.sellerLedger.aggregate({
-          where: {
-            sellerId,
-            type: 'SALE',
-            category: 'NET_REVENUE',
-            transactionDate: { gte: dateFrom }
-          },
-          _sum: { amountUSD: true }
-        }),
+        // Net revenue (calculated as sales - commission, not from separate entry)
+        // Note: We removed the NET_REVENUE entry, so we calculate it from sales and commission
 
         // Recent payment entries
         prisma.sellerLedger.findMany({
@@ -708,15 +824,20 @@ export class AccountingService {
         })
       ]);
 
+      // Calculate net revenue as sales minus commission
+      const totalSalesAmount = totalSales._sum.amountUSD || 0;
+      const totalCommissionAmount = totalCommission._sum.amountUSD || 0;
+      const calculatedNetRevenue = totalSalesAmount - totalCommissionAmount;
+
       return {
         success: true,
         data: {
           period: `${days} days`,
-          totalSales: totalSales._sum.amountUSD || 0,
+          totalSales: totalSalesAmount,
           totalSalesCount: totalSales._count.id || 0,
-          totalCommission: totalCommission._sum.amountUSD || 0,
+          totalCommission: totalCommissionAmount,
           totalCommissionCount: totalCommission._count.id || 0,
-          netRevenue: netRevenue._sum.amountUSD || 0,
+          netRevenue: calculatedNetRevenue, // Calculated, not from separate ledger entry
           recentPayments
         }
       };

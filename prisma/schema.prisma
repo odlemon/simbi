@@ -152,6 +152,7 @@ model Seller {
   sriHistory                SRIHistory[]
   coupons                   Coupon[]
   reviewResponses           ReviewResponse[]
+  payrollRuns               PayrollRun[]
 
   @@index([email])
   @@index([status])
@@ -381,6 +382,7 @@ model SellerStaff {
   seller              Seller             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   activityLogs        StaffActivityLog[]
   timeLogs            StaffTimeLog[]
+  payslips            StaffPayslip[]
 
   @@index([sellerId])
   @@index([email])
@@ -428,6 +430,69 @@ model StaffActivityLog {
   @@index([sellerId, createdAt])
   @@index([entityType, entityId])
   @@map("staff_activity_logs")
+}
+
+model PayrollRun {
+  id              String         @id @default(uuid())
+  sellerId        String
+  period          String         // "weekly" or "monthly"
+  periodStart     DateTime
+  periodEnd       DateTime
+  month           Int?
+  year            Int?
+  weekStart       DateTime?
+  totalAmount     Float
+  staffCount      Int
+  payslipsCount   Int
+  status          PayrollStatus  @default(PENDING)
+  processedAt     DateTime?
+  processedBy     String?        // Seller ID who processed it
+  notes           String?         @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  seller          Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  payslips        StaffPayslip[]
+
+  @@index([sellerId])
+  @@index([periodStart, periodEnd])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payroll_runs")
+}
+
+model StaffPayslip {
+  id              String      @id @default(uuid())
+  staffId         String
+  sellerId        String
+  payrollRunId    String
+  periodStart     DateTime
+  periodEnd       DateTime
+  grossPay        Float
+  totalHours      Float?
+  hourlyPay       Float?
+  salaryForPeriod Float
+  netPay          Float       // Same as grossPay for now (no deductions)
+  emailSent       Boolean     @default(false)
+  emailSentAt     DateTime?
+  pdfUrl          String?
+  generatedAt     DateTime    @default(now())
+  paidAt          DateTime?
+  staff           SellerStaff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  payrollRun      PayrollRun  @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+  @@index([sellerId])
+  @@index([payrollRunId])
+  @@index([periodStart, periodEnd])
+  @@index([generatedAt])
+  @@map("staff_payslips")
+}
+
+enum PayrollStatus {
+  PENDING
+  PROCESSED
+  PAID
+  CANCELLED
 }
 
 model FinancialPartner {

@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import { StaffStatus, StaffDepartment, ActivityType } from "@prisma/client";
+import { StaffStatus, StaffDepartment, ActivityType, StaffRole } from "@prisma/client";
 import { logger } from "../../../utils/logger";
 import bcrypt from "bcryptjs";
 import { emailService } from "../../EmailService";
@@ -14,6 +14,7 @@ interface CreateStaffDTO {
   phone: string;
   department: StaffDepartment;
   position: string;
+  role: StaffRole;
   salary: number;
   hourlyRate?: number;
   startDate: Date;
@@ -61,6 +62,11 @@ export class StaffService {
     const tempPassword = this.generateSecurePassword();
     const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
+    // Validate role is valid enum value
+    if (!Object.values(StaffRole).includes(data.role)) {
+      throw new Error(`Invalid role. Must be one of: ${Object.values(StaffRole).join(", ")}`);
+    }
+
     const staff = await prisma.sellerStaff.create({
       data: {
         sellerId,
@@ -70,6 +76,7 @@ export class StaffService {
         phone: data.phone,
         department: data.department,
         position: data.position,
+        role: data.role,
         salary: data.salary,
         hourlyRate: data.hourlyRate,
         startDate: data.startDate,
@@ -85,7 +92,7 @@ export class StaffService {
         staffId: staff.id,
         sellerId,
         activityType: ActivityType.STAFF_CREATED,
-        description: `Staff member created: ${data.firstName} ${data.lastName}`,
+        description: `Staff member created: ${data.firstName} ${data.lastName} with role ${data.role}`,
       },
     });
 
@@ -172,6 +179,7 @@ export class StaffService {
         phone: true,
         department: true,
         position: true,
+        role: true,
         salary: true,
         hourlyRate: true,
         startDate: true,
@@ -210,6 +218,7 @@ export class StaffService {
         phone: true,
         department: true,
         position: true,
+        role: true,
         salary: true,
         hourlyRate: true,
         startDate: true,
@@ -245,6 +254,11 @@ export class StaffService {
       throw new Error("Staff member not found");
     }
 
+    // Validate role if provided
+    if (data.role && !Object.values(StaffRole).includes(data.role)) {
+      throw new Error(`Invalid role. Must be one of: ${Object.values(StaffRole).join(", ")}`);
+    }
+
     const updated = await prisma.sellerStaff.update({
       where: { id: staffId },
       data: {
@@ -254,6 +268,7 @@ export class StaffService {
         phone: data.phone,
         department: data.department,
         position: data.position,
+        role: data.role,
         salary: data.salary,
         hourlyRate: data.hourlyRate,
       },

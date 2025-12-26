@@ -28,7 +28,12 @@ export class SellerAuthController {
 
   /**
    * POST /api/seller/auth/login
-   * Login seller
+   * Login seller or staff
+   * 
+   * This endpoint supports both seller and staff authentication.
+   * The system automatically detects the user type based on email.
+   * - If email belongs to staff: returns staff token and userType: "staff"
+   * - If email belongs to seller: returns seller token and userType: "seller"
    */
   async login(req: Request, res: Response) {
     try {

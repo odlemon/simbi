@@ -221,5 +221,68 @@ export class DashboardController {
       });
     }
   };
+
+  // GET /api/admin/dashboard/analytics
+  getAnalytics = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const data = await this.dashboardService.getAnalyticsData();
+
+      res.status(200).json({
+        success: true,
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getAnalytics", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch analytics data",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // GET /api/admin/dashboard/activity
+  getActivity = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const data = await this.dashboardService.getActivityData();
+
+      res.status(200).json({
+        success: true,
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getActivity", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch activity data",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // GET /api/admin/dashboard/reports
+  getReports = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const data = await this.dashboardService.getReportsData();
+
+      res.status(200).json({
+        success: true,
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getReports", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch reports data",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
 }
 

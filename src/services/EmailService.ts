@@ -1,12 +1,6 @@
 // @ts-nocheck
-import { SendMailClient } from "zeptomail";
 import { logger } from "../utils/logger";
-
-// ZeptoMail Configuration (using same credentials as NVCCZ)
-const zeptoUrl = "api.zeptomail.com/";
-const zeptoToken = "Zoho-enczapikey wSsVR61/+xejCqZ6mzOpJuptkQxSVlmgER993FKmuHb7HKiT8MdvxELKDFWmTfJMFmZvRTRAorookUoIgGZa3dUszgsFASiF9mqRe1U4J3x17qnvhDzPX29dmxCAL4wPwQ1jmWVjFc8q+g==";
-
-const zeptoClient = new SendMailClient({ url: zeptoUrl, token: zeptoToken });
+import { emailTransport, getFromAddress } from "../config/emailConfig";
 
 interface EmailOptions {
   to: string;
@@ -14,41 +8,31 @@ interface EmailOptions {
   subject: string;
   htmlBody: string;
   textBody?: string;
+  module?: keyof typeof import("../config/emailConfig").emailConfig.fromNames | 'default';
 }
 
 export class EmailService {
-  private fromAddress = "noreply@lysp.io";
-  private fromName = "Simbi Market";
-
   /**
-   * Send email using ZeptoMail
+   * Send email using nodemailer
    */
   async sendEmail(options: EmailOptions): Promise<boolean> {
     try {
-      const emailPayload = {
-        from: {
-          address: this.fromAddress,
-          name: this.fromName,
-        },
-        to: [
-          {
-            email_address: {
-              address: options.to,
-              name: options.toName || options.to,
-            },
-          },
-        ],
+      const from = getFromAddress(options.module || 'default');
+
+      const mailOptions = {
+        from: `${from.name} <${from.address}>`,
+        to: options.toName ? `${options.toName} <${options.to}>` : options.to,
         subject: options.subject,
-        htmlbody: options.htmlBody,
-        textbody: options.textBody || this.stripHtml(options.htmlBody),
+        html: options.htmlBody,
+        text: options.textBody || this.stripHtml(options.htmlBody),
       };
 
-      const response = await zeptoClient.sendMail(emailPayload);
+      const info = await emailTransport.sendMail(mailOptions);
 
       logger.info("Email sent successfully", {
         to: options.to,
         subject: options.subject,
-        response,
+        messageId: info.messageId,
       });
 
       return true;
@@ -57,8 +41,22 @@ export class EmailService {
         to: options.to,
         subject: options.subject,
         error: error.message,
-        details: error.response?.data || error,
+        errorCode: error.code,
+        errorResponse: error.response,
+        errorCommand: error.command,
+        stack: error.stack,
+        details: error,
       });
+
+      // Log SMTP-specific errors
+      if (error.code) {
+        logger.error("SMTP error details", {
+          code: error.code,
+          command: error.command,
+          response: error.response,
+          responseCode: error.responseCode,
+        });
+      }
 
       return false;
     }
@@ -98,6 +96,7 @@ export class EmailService {
       subject,
       htmlBody,
       textBody,
+      module: 'staff',
     });
   }
 

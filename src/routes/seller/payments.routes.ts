@@ -1,13 +1,13 @@
 // @ts-nocheck
 import { Router } from "express";
 import { PaymentController } from "../../controllers/seller/payments/PaymentController";
-import { authenticateSeller } from "../../middleware/authenticateSeller";
+import { authenticateSellerOrStaff } from "../../middleware/authenticateSellerOrStaff";
 
 const router = Router();
 const controller = new PaymentController();
 
-// All routes require authentication
-router.use(authenticateSeller);
+// All routes require authentication (seller or staff)
+router.use(authenticateSellerOrStaff);
 
 /**
  * @swagger

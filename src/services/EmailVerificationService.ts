@@ -1,12 +1,6 @@
 // @ts-nocheck
-import { SendMailClient } from "zeptomail";
 import { logger } from "../utils/logger";
-
-// ZeptoMail configuration (hardcoded as requested)
-const zeptoUrl = "api.zeptomail.com/";
-const zeptoToken = "Zoho-enczapikey wSsVR61/+xejCqZ6mzOpJuptkQxSVlmgER993FKmuHb7HKiT8MdvxELKDFWmTfJMFmZvRTRAorookUoIgGZa3dUszgsFASiF9mqRe1U4J3x17qnvhDzPX29dmxCAL4wPwQ1jmWVjFc8q+g==";
-
-const zeptoClient = new SendMailClient({ url: zeptoUrl, token: zeptoToken });
+import { emailService } from "./EmailService";
 
 interface SendVerificationEmailData {
   email: string;
@@ -236,21 +230,12 @@ export class EmailVerificationService {
         data.userType || 'buyer'
       );
 
-      await zeptoClient.sendMail({
-        from: {
-          address: "noreply@lysp.io",
-          name: "Simbi Market"
-        },
-        to: [
-          {
-            email_address: {
-              address: data.email,
-              name: `${data.firstName} ${data.lastName}`
-            }
-          }
-        ],
+      await emailService.sendEmail({
+        to: data.email,
+        toName: `${data.firstName} ${data.lastName}`,
         subject: "Verify Your Email - Simbi Market",
-        htmlbody: htmlContent
+        htmlBody: htmlContent,
+        module: data.userType === 'seller' ? 'seller' : 'buyer',
       });
 
       logger.info("Verification email sent", {
@@ -282,21 +267,12 @@ export class EmailVerificationService {
         data.userType || 'buyer'
       );
 
-      await zeptoClient.sendMail({
-        from: {
-          address: "noreply@lysp.io",
-          name: "Simbi Market"
-        },
-        to: [
-          {
-            email_address: {
-              address: data.email,
-              name: `${data.firstName} ${data.lastName}`
-            }
-          }
-        ],
+      await emailService.sendEmail({
+        to: data.email,
+        toName: `${data.firstName} ${data.lastName}`,
         subject: "Welcome to Simbi Market!",
-        htmlbody: htmlContent
+        htmlBody: htmlContent,
+        module: data.userType === 'seller' ? 'seller' : 'buyer',
       });
 
       logger.info("Welcome email sent", {

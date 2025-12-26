@@ -1,13 +1,13 @@
 // @ts-nocheck
 import { Router } from "express";
 import { DashboardController } from "../../controllers/seller/dashboard/DashboardController";
-import { authenticateSeller } from "../../middleware/authenticateSeller";
+import { authenticateSellerOrStaff } from "../../middleware/authenticateSellerOrStaff";
 
 const router = Router();
 const controller = new DashboardController();
 
-// All routes require authentication
-router.use(authenticateSeller);
+// All routes require authentication (seller or staff)
+router.use(authenticateSellerOrStaff);
 
 router.get("/comprehensive", (req, res) => controller.getComprehensiveDashboard(req, res));
 router.get("/stats", (req, res) => controller.getStats(req, res));

@@ -29,13 +29,8 @@ export class PasswordResetService {
     resetToken: string,
     userType: 'buyer' | 'seller'
   ): Promise<boolean> {
-    // Hardcoded frontend URLs for buyer and seller
-    let baseUrl: string;
-    if (userType === 'seller') {
-      baseUrl = 'https://simbi-seller-kappa.vercel.app';
-    } else {
-      baseUrl = 'https://simbi-buyer.vercel.app';
-    }
+    // Production frontend URL
+    const baseUrl = 'http://31.220.82.129:3003';
     
     const resetUrl = `${baseUrl}/reset-password?token=${resetToken}&type=${userType}`;
     
@@ -123,24 +118,46 @@ The Simbi Market Team
       to: email,
       toName: `${firstName} ${lastName}`,
       userType,
-      resetUrl
+      resetUrl,
+      fromAddress: 'noreply@kyntaro.com',
+      fromName: 'Simbi Market'
     });
     
-    const result = await this.emailService.sendEmail({
-      to: email,
-      toName: `${firstName} ${lastName}`,
-      subject: 'Reset Your Password - Simbi Market',
-      htmlBody,
-      textBody
-    });
-    
-    logger.info('Email send result', {
-      success: result,
-      to: email,
-      userType
-    });
-    
-    return result;
+    try {
+      const result = await this.emailService.sendEmail({
+        to: email,
+        toName: `${firstName} ${lastName}`,
+        subject: 'Reset Your Password - Simbi Market',
+        htmlBody,
+        textBody,
+        module: userType === 'buyer' ? 'buyer' : 'seller' // Use updated email config
+      });
+      
+      if (result) {
+        logger.info('Password reset email sent successfully', {
+          to: email,
+          userType,
+          resetUrl
+        });
+      } else {
+        logger.error('Password reset email failed to send', {
+          to: email,
+          userType,
+          error: 'EmailService returned false'
+        });
+      }
+      
+      return result;
+    } catch (error: any) {
+      logger.error('Exception while sending password reset email', {
+        to: email,
+        userType,
+        error: error.message,
+        stack: error.stack,
+        details: error
+      });
+      return false;
+    }
   }
 
   /**

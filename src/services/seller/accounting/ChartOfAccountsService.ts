@@ -314,9 +314,10 @@ export class ChartOfAccountsService {
   /**
    * Get account balance
    */
-  async getAccountBalance(accountId: string, startDate?: Date, endDate?: Date) {
+  async getAccountBalance(accountId: string, sellerId: string, startDate?: Date, endDate?: Date) {
     const where: any = {
       accountId,
+      sellerId, // Filter by seller
     };
 
     if (startDate || endDate) {
@@ -346,11 +347,37 @@ export class ChartOfAccountsService {
   }
 
   /**
-   * Get trial balance (all accounts with balances)
+   * Get trial balance (all accounts with balances for a specific seller)
    */
-  async getTrialBalance(startDate?: Date, endDate?: Date) {
+  async getTrialBalance(sellerId: string, startDate?: Date, endDate?: Date) {
+    // First, get all accounts that have transactions for this seller
+    const accountsWithTransactions = await prisma.sellerLedger.findMany({
+      where: {
+        sellerId,
+        accountId: { not: null },
+        ...(startDate || endDate ? {
+          transactionDate: {
+            ...(startDate ? { gte: startDate } : {}),
+            ...(endDate ? { lte: endDate } : {}),
+          },
+        } : {}),
+      },
+      select: {
+        accountId: true,
+      },
+      distinct: ['accountId'],
+    });
+
+    const accountIds = accountsWithTransactions
+      .map(a => a.accountId)
+      .filter((id): id is string => id !== null);
+
+    // Get account details for accounts that have transactions
     const accounts = await prisma.chartOfAccount.findMany({
-      where: { isActive: true },
+      where: {
+        id: { in: accountIds },
+        isActive: true,
+      },
       orderBy: { code: "asc" },
     });
 
@@ -358,6 +385,7 @@ export class ChartOfAccountsService {
       accounts.map(async (account) => {
         const balance = await this.getAccountBalance(
           account.id,
+          sellerId,
           startDate,
           endDate
         );

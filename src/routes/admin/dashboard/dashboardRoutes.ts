@@ -24,5 +24,10 @@ router.get("/alerts", authenticateAdmin, requireAnyAdmin, controller.getAlerts);
 router.post("/alerts/:id/acknowledge", authenticateAdmin, requireAnyAdmin, controller.acknowledgeAlert);
 router.post("/alerts/:id/resolve", authenticateAdmin, requireAnyAdmin, controller.resolveAlert);
 
+// Dashboard Tabs
+router.get("/analytics", authenticateAdmin, requireAnyAdmin, controller.getAnalytics);
+router.get("/activity", authenticateAdmin, requireAnyAdmin, controller.getActivity);
+router.get("/reports", authenticateAdmin, requireAnyAdmin, controller.getReports);
+
 export default router;
 

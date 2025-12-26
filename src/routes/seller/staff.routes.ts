@@ -2,14 +2,15 @@
 import { Router } from "express";
 import { StaffController } from "../../controllers/seller/staff/StaffController";
 import { OrderProcessingController } from "../../controllers/seller/staff/OrderProcessingController";
-import { authenticateSeller } from "../../middleware/authenticateSeller";
+import { payrollProcessingController } from "../../controllers/seller/staff/PayrollProcessingController";
+import { authenticateSellerOrStaff } from "../../middleware/authenticateSellerOrStaff";
 
 const router = Router();
 const controller = new StaffController();
 const orderProcessingController = new OrderProcessingController();
 
-// All routes require authentication
-router.use(authenticateSeller);
+// All routes require authentication (seller or staff)
+router.use(authenticateSellerOrStaff);
 
 // Specific routes MUST come before parameterized routes (/:id)
 // Otherwise /payroll will match /:id with id="payroll"
@@ -21,8 +22,13 @@ router.get("/time-logs", (req, res) => controller.getTimeLogs(req, res));
 // Activity logs
 router.get("/activity-logs", (req, res) => controller.getActivityLogs(req, res));
 
-// Payroll
+// Payroll Summary (view only - no processing)
 router.get("/payroll", (req, res) => controller.getPayrollSummary(req, res));
+
+// Payroll Processing
+router.post("/payroll/process", (req, res) => payrollProcessingController.processPayroll(req, res));
+router.get("/payroll/runs", (req, res) => payrollProcessingController.getPayrollRuns(req, res));
+router.get("/payroll/runs/:id", (req, res) => payrollProcessingController.getPayrollRun(req, res));
 
 // Staff CRUD
 router.post("/", (req, res) => controller.createStaff(req, res));

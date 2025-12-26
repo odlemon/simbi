@@ -35,55 +35,61 @@ export class StaffController {
    *         application/json:
    *           schema:
    *             type: object
-   *             required:
-   *               - firstName
-   *               - lastName
-   *               - email
-   *               - phone
-   *               - department
-   *               - position
-   *               - salary
-   *               - startDate
-   *             properties:
-   *               firstName:
-   *                 type: string
-   *                 example: John
-   *                 description: Staff member's first name
-   *               lastName:
-   *                 type: string
-   *                 example: Doe
-   *                 description: Staff member's last name
-   *               email:
-   *                 type: string
-   *                 format: email
-   *                 example: john.doe@example.com
-   *                 description: Staff member's email (will receive credentials here)
-   *               phone:
-   *                 type: string
-   *                 example: +263771234567
-   *                 description: Contact phone number
-   *               department:
-   *                 type: string
-   *                 enum: [SALES, WAREHOUSE, DELIVERY, ADMIN, SUPPORT]
-   *                 example: SALES
-   *                 description: Department assignment
-   *               position:
-   *                 type: string
-   *                 example: Sales Representative
-   *                 description: Job title/position
-   *               salary:
-   *                 type: number
-   *                 example: 5000
-   *                 description: Monthly salary
-   *               hourlyRate:
-   *                 type: number
-   *                 example: 25
-   *                 description: Hourly rate (optional, for hourly workers)
-   *               startDate:
-   *                 type: string
-   *                 format: date
-   *                 example: 2025-10-20
-   *                 description: Employment start date (YYYY-MM-DD)
+             *             required:
+             *               - firstName
+             *               - lastName
+             *               - email
+             *               - phone
+             *               - department
+             *               - position
+             *               - role
+             *               - salary
+             *               - startDate
+             *             properties:
+             *               firstName:
+             *                 type: string
+             *                 example: John
+             *                 description: Staff member's first name
+             *               lastName:
+             *                 type: string
+             *                 example: Doe
+             *                 description: Staff member's last name
+             *               email:
+             *                 type: string
+             *                 format: email
+             *                 example: john.doe@example.com
+             *                 description: Staff member's email (will receive credentials here)
+             *               phone:
+             *                 type: string
+             *                 example: +263771234567
+             *                 description: Contact phone number
+             *               department:
+             *                 type: string
+             *                 enum: [SALES, WAREHOUSE, DELIVERY, ADMIN, SUPPORT]
+             *                 example: SALES
+             *                 description: Department assignment
+             *               position:
+             *                 type: string
+             *                 example: Sales Representative
+             *                 description: Job title/position
+             *               role:
+             *                 type: string
+             *                 enum: [STOCK_MANAGER, DISPATCHER, FINANCE_VIEW, FULL_ACCESS]
+             *                 example: STOCK_MANAGER
+             *                 description: Staff access role - STOCK_MANAGER (inventory access), DISPATCHER (order status updates), FINANCE_VIEW (read-only accounting), FULL_ACCESS (all permissions)
+             *               salary:
+             *                 type: number
+             *                 example: 5000
+             *                 description: Monthly salary
+             *               hourlyRate:
+             *                 type: number
+             *                 example: 25
+             *                 description: Hourly rate (optional, for hourly workers)
+             *               startDate:
+             *                 type: string
+             *                 format: date
+             *                 example: 2025-10-20
+             *                 description: Employment start date (YYYY-MM-DD)
    *     responses:
    *       201:
    *         description: Staff member created successfully. Password auto-generated and emailed.
@@ -277,24 +283,28 @@ export class StaffController {
    *         application/json:
    *           schema:
    *             type: object
-   *             properties:
-   *               firstName:
-   *                 type: string
-   *               lastName:
-   *                 type: string
-   *               email:
-   *                 type: string
-   *               phone:
-   *                 type: string
-   *               department:
-   *                 type: string
-   *                 enum: [SALES, WAREHOUSE, DELIVERY, ADMIN, SUPPORT]
-   *               position:
-   *                 type: string
-   *               salary:
-   *                 type: number
-   *               hourlyRate:
-   *                 type: number
+             *             properties:
+             *               firstName:
+             *                 type: string
+             *               lastName:
+             *                 type: string
+             *               email:
+             *                 type: string
+             *               phone:
+             *                 type: string
+             *               department:
+             *                 type: string
+             *                 enum: [SALES, WAREHOUSE, DELIVERY, ADMIN, SUPPORT]
+             *               position:
+             *                 type: string
+             *               role:
+             *                 type: string
+             *                 enum: [STOCK_MANAGER, DISPATCHER, FINANCE_VIEW, FULL_ACCESS]
+             *                 description: Staff access role
+             *               salary:
+             *                 type: number
+             *               hourlyRate:
+             *                 type: number
    *     responses:
    *       200:
    *         description: Staff member updated successfully

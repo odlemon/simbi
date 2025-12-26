@@ -12,6 +12,7 @@ import payoutsRoutes from "./payouts.routes";
 import couponRoutes from "./coupons";
 import reviewRoutes from "./reviews";
 import returnRoutes from "./returns";
+import reportsRoutes from "./reports.routes";
 
 const router = Router();
 
@@ -50,6 +51,9 @@ router.use("/reviews", reviewRoutes);
 
 // Return Management
 router.use("/returns", returnRoutes);
+
+// Reports & Analytics
+router.use("/reports", reportsRoutes);
 
 export default router;
 

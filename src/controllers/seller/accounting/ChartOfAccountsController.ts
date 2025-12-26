@@ -242,9 +242,11 @@ export class ChartOfAccountsController {
    */
   async getTrialBalance(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      const sellerId = req.seller!.id;
       const { startDate, endDate } = req.query;
 
       const trialBalance = await chartOfAccountsService.getTrialBalance(
+        sellerId,
         startDate ? new Date(startDate as string) : undefined,
         endDate ? new Date(endDate as string) : undefined
       );

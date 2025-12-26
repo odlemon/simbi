@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Router } from "express";
 import SellerCouponController from "../../controllers/seller/coupons/SellerCouponController";
-import { authenticateSeller } from "../../middleware/authenticateSeller";
+import { authenticateSellerOrStaff } from "../../middleware/authenticateSellerOrStaff";
 
 const router = Router();
 const couponController = new SellerCouponController();
@@ -11,49 +11,49 @@ const couponController = new SellerCouponController();
  * @desc Create a new coupon for seller's products
  * @access Private (Seller)
  */
-router.post("/", authenticateSeller, couponController.createCoupon.bind(couponController));
+router.post("/", authenticateSellerOrStaff, couponController.createCoupon.bind(couponController));
 
 /**
  * @route GET /api/seller/coupons
  * @desc Get all seller's coupons
- * @access Private (Seller)
+ * @access Private (Seller or Staff)
  */
-router.get("/", authenticateSeller, couponController.getCoupons.bind(couponController));
+router.get("/", authenticateSellerOrStaff, couponController.getCoupons.bind(couponController));
 
 /**
  * @route GET /api/seller/coupons/stats
  * @desc Get coupon usage statistics
- * @access Private (Seller)
+ * @access Private (Seller or Staff)
  */
-router.get("/stats", authenticateSeller, couponController.getCouponStats.bind(couponController));
+router.get("/stats", authenticateSellerOrStaff, couponController.getCouponStats.bind(couponController));
 
 /**
  * @route GET /api/seller/coupons/stats/:couponId
  * @desc Get statistics for a specific coupon
- * @access Private (Seller)
+ * @access Private (Seller or Staff)
  */
-router.get("/stats/:couponId", authenticateSeller, couponController.getCouponStats.bind(couponController));
+router.get("/stats/:couponId", authenticateSellerOrStaff, couponController.getCouponStats.bind(couponController));
 
 /**
  * @route GET /api/seller/coupons/:id
  * @desc Get coupon by ID
- * @access Private (Seller)
+ * @access Private (Seller or Staff)
  */
-router.get("/:id", authenticateSeller, couponController.getCouponById.bind(couponController));
+router.get("/:id", authenticateSellerOrStaff, couponController.getCouponById.bind(couponController));
 
 /**
  * @route PUT /api/seller/coupons/:id
  * @desc Update coupon
- * @access Private (Seller)
+ * @access Private (Seller or Staff)
  */
-router.put("/:id", authenticateSeller, couponController.updateCoupon.bind(couponController));
+router.put("/:id", authenticateSellerOrStaff, couponController.updateCoupon.bind(couponController));
 
 /**
  * @route DELETE /api/seller/coupons/:id
  * @desc Delete coupon
- * @access Private (Seller)
+ * @access Private (Seller or Staff)
  */
-router.delete("/:id", authenticateSeller, couponController.deleteCoupon.bind(couponController));
+router.delete("/:id", authenticateSellerOrStaff, couponController.deleteCoupon.bind(couponController));
 
 export default router;
 

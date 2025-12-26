@@ -1,13 +1,13 @@
 // @ts-nocheck
 import { Router } from "express";
 import { LoanController } from "../../controllers/seller/loans/LoanController";
-import { authenticateSeller } from "../../middleware/authenticateSeller";
+import { authenticateSellerOrStaff } from "../../middleware/authenticateSellerOrStaff";
 
 const router = Router();
 const controller = new LoanController();
 
-// All routes require authentication
-router.use(authenticateSeller);
+// All routes require authentication (seller or staff)
+router.use(authenticateSellerOrStaff);
 
 // Financial partners
 router.get("/partners", (req, res) => controller.getFinancialPartners(req, res));

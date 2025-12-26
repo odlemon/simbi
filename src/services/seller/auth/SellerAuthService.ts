@@ -142,6 +142,150 @@ export class SellerAuthService {
       );
     }
 
+    // ✅ Check if email belongs to staff first
+    const staff = await prisma.sellerStaff.findUnique({
+      where: { email },
+      include: {
+        seller: {
+          select: {
+            id: true,
+            businessName: true,
+            tradingName: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    // If staff member found, authenticate as staff
+    if (staff) {
+      // Check if staff is active
+      if (!staff.isActive) {
+        throw new Error("Your account has been deactivated. Please contact your manager.");
+      }
+
+      // Check if seller account is active
+      if (staff.seller.status !== "ACTIVE") {
+        throw new Error("Your seller account is not active. Please contact support.");
+      }
+
+      // Check account lockout
+      if (staff.accountLockedUntil) {
+        const isLocked = AccountLockoutService.isAccountLocked(staff.accountLockedUntil);
+        
+        if (isLocked) {
+          await AccountLockoutService.recordFailedAttempt(
+            email,
+            clientIp,
+            "staff",
+            true
+          );
+
+          const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(
+            staff.accountLockedUntil
+          );
+          throw new Error(
+            `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`
+          );
+        } else {
+          // Lockout expired, reset
+          await prisma.sellerStaff.update({
+            where: { id: staff.id },
+            data: {
+              failedLoginAttempts: 0,
+              accountLockedUntil: null,
+            },
+          });
+          staff.failedLoginAttempts = 0;
+          staff.accountLockedUntil = null;
+        }
+      }
+
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, staff.passwordHash);
+      if (!isValidPassword) {
+        await AccountLockoutService.recordFailedAttempt(
+          email,
+          clientIp,
+          "staff",
+          true
+        );
+
+        const lockoutResult = AccountLockoutService.handleFailedLogin(
+          staff.failedLoginAttempts || 0,
+          staff.accountLockedUntil
+        );
+
+        await prisma.sellerStaff.update({
+          where: { id: staff.id },
+          data: {
+            failedLoginAttempts: lockoutResult.failedAttempts,
+            accountLockedUntil: lockoutResult.lockedUntil,
+          },
+        });
+
+        throw new Error(lockoutResult.message);
+      }
+
+      // Reset failed attempts on successful login
+      const resetResult = AccountLockoutService.resetFailedAttempts();
+      await prisma.sellerStaff.update({
+        where: { id: staff.id },
+        data: {
+          lastLogin: new Date(),
+          failedLoginAttempts: resetResult.failedAttempts,
+          accountLockedUntil: resetResult.lockedUntil,
+        },
+      });
+
+      // Generate staff JWT token
+      const jwtSecret = envConfig.get("JWT_SECRET") as string;
+      const jwtExpiresIn = envConfig.get("JWT_EXPIRES_IN");
+
+      const staffPayload = {
+        staffId: staff.id,
+        sellerId: staff.sellerId,
+        email: staff.email,
+        role: staff.role,
+        department: staff.department,
+        type: "staff",
+      };
+
+      const accessToken = jwt.sign(
+        staffPayload,
+        jwtSecret,
+        {
+          expiresIn: (typeof jwtExpiresIn === "string" ? jwtExpiresIn : "7d") as any,
+          issuer: "simbi-market",
+          audience: "simbi-staff",
+        }
+      );
+
+      logger.info("Staff logged in via seller endpoint", {
+        staffId: staff.id,
+        sellerId: staff.sellerId,
+        email: staff.email,
+      });
+
+      return {
+        user: {
+          id: staff.id,
+          sellerId: staff.sellerId,
+          email: staff.email,
+          firstName: staff.firstName,
+          lastName: staff.lastName,
+          department: staff.department,
+          position: staff.position,
+          role: staff.role,
+          status: staff.status,
+          businessName: staff.seller.tradingName || staff.seller.businessName,
+          userType: "staff",
+        },
+        accessToken,
+      };
+    }
+
+    // ✅ If not staff, proceed with seller authentication
     // Find seller
     const seller = await prisma.seller.findUnique({
       where: { email },
@@ -333,6 +477,7 @@ export class SellerAuthService {
     return {
       seller: sellerWithoutPassword,
       accessToken,
+      userType: "seller",
     };
   }
 
