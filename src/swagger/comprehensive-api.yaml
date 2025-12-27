@@ -668,14 +668,24 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, firstName, lastName, phone]
+              required: [buyerType, email, password, firstName, lastName, phoneNumber]
               properties:
+                buyerType: { type: string, enum: [INDIVIDUAL, COMMERCIAL] }
                 email: { type: string, format: email }
-                password: { type: string, format: password }
+                password: { type: string, format: password, minLength: 8 }
                 firstName: { type: string }
                 lastName: { type: string }
-                phone: { type: string }
+                phoneNumber: { type: string, minLength: 6 }
+                addressLine1: { type: string }
+                city: { type: string }
+                province: { type: string }
+                postalCode: { type: string }
+                country: { type: string }
                 companyName: { type: string }
+                registrationNumber: { type: string }
+                taxId: { type: string }
+                contactEmail: { type: string, format: email }
+                contactPhone: { type: string }
       responses:
         '201': { description: Buyer registered successfully }
         '400': { description: Invalid request data }
