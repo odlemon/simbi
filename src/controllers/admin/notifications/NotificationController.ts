@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthenticatedRequest } from '../../../middleware/authenticate';
+import { AuthenticatedRequest } from '../../../types';
 import { NotificationService } from '../../../services/admin/notifications/NotificationService';
 import { logger } from '../../../utils/logger';
 
