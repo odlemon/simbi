@@ -931,6 +931,7 @@ model Order {
   guestOrder            GuestOrder?
   threeWayMatch         ThreeWayMatch?
   taxInvoice            TaxInvoice?
+  notifications         AdminNotification[]
 
   @@index([buyerId])
   @@index([sellerId])
@@ -1382,6 +1383,23 @@ model AdminAlert {
   @@index([createdAt])
   @@index([assignedAdminId], map: "admin_alerts_assignedAdminId_fkey")
   @@map("admin_alerts")
+}
+
+model AdminNotification {
+  id        String   @id @default(uuid())
+  type      String   // ORDER_ACCEPTED, ORDER_REJECTED, etc.
+  title     String
+  message   String   @db.Text
+  orderId   String?  // Reference to order if notification is order-related
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  order     Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([orderId])
+  @@map("admin_notifications")
 }
 
 model CustomProductRequest {

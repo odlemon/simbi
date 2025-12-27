@@ -355,7 +355,7 @@ This is an automated message. Please do not reply to this email.
     buyerName: string,
     orderNumber: string,
     orderId: string,
-    sellerBusinessName: string,
+    orderItems: Array<{ productName: string; quantity: number }>,
     orderTotal: number,
     currency: string = 'USD'
   ): Promise<boolean> {
@@ -364,7 +364,7 @@ This is an automated message. Please do not reply to this email.
     const htmlBody = this.getOrderAcceptanceHtmlTemplate(
       buyerName,
       orderNumber,
-      sellerBusinessName,
+      orderItems,
       orderTotal,
       currency
     );
@@ -372,7 +372,7 @@ This is an automated message. Please do not reply to this email.
     const textBody = this.getOrderAcceptanceTextTemplate(
       buyerName,
       orderNumber,
-      sellerBusinessName,
+      orderItems,
       orderTotal,
       currency
     );
@@ -392,7 +392,7 @@ This is an automated message. Please do not reply to this email.
   private getOrderAcceptanceHtmlTemplate(
     buyerName: string,
     orderNumber: string,
-    sellerBusinessName: string,
+    orderItems: Array<{ productName: string; quantity: number }>,
     orderTotal: number,
     currency: string
   ): string {
@@ -400,6 +400,13 @@ This is an automated message. Please do not reply to this email.
       style: 'currency',
       currency: currency,
     }).format(orderTotal);
+
+    const itemsHtml = orderItems.map(item => `
+      <div class="info-row">
+        <span class="info-label">${item.productName}</span>
+        <span class="info-value">Qty: ${item.quantity}</span>
+      </div>
+    `).join('');
 
     return `
 <!DOCTYPE html>
@@ -480,23 +487,6 @@ This is an automated message. Please do not reply to this email.
       font-weight: bold;
       color: #0066cc;
     }
-    .next-steps {
-      background-color: #e7f3ff;
-      border-left: 4px solid #0066cc;
-      padding: 15px;
-      margin: 20px 0;
-    }
-    .button {
-      display: inline-block;
-      padding: 12px 30px;
-      background-color: #0066cc;
-      color: #ffffff;
-      text-decoration: none;
-      border-radius: 5px;
-      font-weight: bold;
-      margin: 20px 0;
-      text-align: center;
-    }
     .footer {
       text-align: center;
       margin-top: 30px;
@@ -504,12 +494,6 @@ This is an automated message. Please do not reply to this email.
       border-top: 1px solid #ddd;
       color: #666;
       font-size: 14px;
-    }
-    ul {
-      padding-left: 20px;
-    }
-    li {
-      margin: 8px 0;
     }
   </style>
 </head>
@@ -526,7 +510,7 @@ This is an automated message. Please do not reply to this email.
       ✅ Your Order Has Been Accepted
     </div>
     
-    <p>We're excited to let you know that <strong>${sellerBusinessName}</strong> has accepted your order and is preparing it for shipment.</p>
+    <p>Your order has been accepted and is being prepared for shipment.</p>
     
     <div class="order-info">
       <h3 style="margin-top: 0; color: #0066cc;">Order Details</h3>
@@ -536,36 +520,21 @@ This is an automated message. Please do not reply to this email.
         <span class="info-value"><strong>${orderNumber}</strong></span>
       </div>
       
-      <div class="info-row">
-        <span class="info-label">Seller:</span>
-        <span class="info-value">${sellerBusinessName}</span>
-      </div>
+      ${itemsHtml}
       
-      <div class="info-row">
+      <div class="info-row" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #ddd;">
         <span class="info-label">Order Total:</span>
         <span class="info-value total-amount">${formattedTotal}</span>
       </div>
     </div>
 
-    <div class="next-steps">
-      <strong>📦 What Happens Next?</strong>
-      <ul style="margin: 10px 0;">
-        <li>The seller is now preparing your order for shipment</li>
-        <li>You'll receive another email when your order is shipped</li>
-        <li>You can track your order status in your account dashboard</li>
-        <li>If you have any questions, please contact the seller directly</li>
-      </ul>
-    </div>
-
-    <div style="text-align: center;">
-      <a href="https://simbi-market.vercel.app/buyer/orders" class="button">View Your Orders</a>
-    </div>
+    <p>You'll receive another email when your order is shipped.</p>
 
     <div style="margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">
       <strong>📱 Need Help?</strong>
       <p style="margin: 10px 0 0 0;">
-        If you have any questions about your order, please contact the seller or 
-        reach out to support at <a href="mailto:support@simbimarket.com">support@simbimarket.com</a>
+        If you have any questions about your order, please contact support at 
+        <a href="mailto:support@simbimarket.com">support@simbimarket.com</a>
       </p>
     </div>
 
@@ -588,7 +557,7 @@ This is an automated message. Please do not reply to this email.
   private getOrderAcceptanceTextTemplate(
     buyerName: string,
     orderNumber: string,
-    sellerBusinessName: string,
+    orderItems: Array<{ productName: string; quantity: number }>,
     orderTotal: number,
     currency: string
   ): string {
@@ -597,6 +566,8 @@ This is an automated message. Please do not reply to this email.
       currency: currency,
     }).format(orderTotal);
 
+    const itemsText = orderItems.map(item => `  - ${item.productName} (Qty: ${item.quantity})`).join('\n');
+
     return `
 SIMBI MARKET - ORDER ACCEPTED
 
@@ -604,26 +575,21 @@ Great News, ${buyerName}!
 
 ✅ YOUR ORDER HAS BEEN ACCEPTED
 
-We're excited to let you know that ${sellerBusinessName} has accepted your order and is preparing it for shipment.
+Your order has been accepted and is being prepared for shipment.
 
 ORDER DETAILS:
 ==============
 Order Number: ${orderNumber}
-Seller: ${sellerBusinessName}
+
+Products:
+${itemsText}
+
 Order Total: ${formattedTotal}
 
-WHAT HAPPENS NEXT?
-==================
-- The seller is now preparing your order for shipment
-- You'll receive another email when your order is shipped
-- You can track your order status in your account dashboard
-- If you have any questions, please contact the seller directly
-
-VIEW YOUR ORDERS: https://simbi-market.vercel.app/buyer/orders
+You'll receive another email when your order is shipped.
 
 NEED HELP?
-If you have any questions about your order, please contact the seller or 
-reach out to support at support@simbimarket.com
+If you have any questions about your order, please contact support at support@simbimarket.com
 
 ---
 Simbi Market
@@ -640,10 +606,8 @@ This is an automated message. Please do not reply to this email.
     sellerName: string,
     orderNumber: string,
     orderId: string,
-    buyerName: string,
-    buyerCompany: string | null,
+    orderItems: Array<{ productName: string; quantity: number }>,
     orderTotal: number,
-    itemCount: number,
     currency: string = 'USD'
   ): Promise<boolean> {
     const subject = `New Order Received - ${orderNumber}`;
@@ -651,20 +615,16 @@ This is an automated message. Please do not reply to this email.
     const htmlBody = this.getNewOrderHtmlTemplate(
       sellerName,
       orderNumber,
-      buyerName,
-      buyerCompany,
+      orderItems,
       orderTotal,
-      itemCount,
       currency
     );
 
     const textBody = this.getNewOrderTextTemplate(
       sellerName,
       orderNumber,
-      buyerName,
-      buyerCompany,
+      orderItems,
       orderTotal,
-      itemCount,
       currency
     );
 
@@ -1413,16 +1373,21 @@ This is an automated message. Please do not reply to this email.
   private getNewOrderHtmlTemplate(
     sellerName: string,
     orderNumber: string,
-    buyerName: string,
-    buyerCompany: string | null,
+    orderItems: Array<{ productName: string; quantity: number }>,
     orderTotal: number,
-    itemCount: number,
     currency: string
   ): string {
     const formattedTotal = new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currency,
     }).format(orderTotal);
+
+    const itemsHtml = orderItems.map(item => `
+      <div class="info-row">
+        <span class="info-label">${item.productName}</span>
+        <span class="info-value">Qty: ${item.quantity}</span>
+      </div>
+    `).join('');
 
     return `
 <!DOCTYPE html>
@@ -1503,23 +1468,6 @@ This is an automated message. Please do not reply to this email.
       font-weight: bold;
       color: #0066cc;
     }
-    .action-box {
-      background-color: #e7f3ff;
-      border-left: 4px solid #0066cc;
-      padding: 15px;
-      margin: 20px 0;
-    }
-    .button {
-      display: inline-block;
-      padding: 12px 30px;
-      background-color: #0066cc;
-      color: #ffffff;
-      text-decoration: none;
-      border-radius: 5px;
-      font-weight: bold;
-      margin: 20px 0;
-      text-align: center;
-    }
     .footer {
       text-align: center;
       margin-top: 30px;
@@ -1543,8 +1491,6 @@ This is an automated message. Please do not reply to this email.
       📦 New Order: ${orderNumber}
     </div>
     
-    <p>You have received a new order from <strong>${buyerName}${buyerCompany ? ` (${buyerCompany})` : ''}</strong>.</p>
-    
     <div class="order-info">
       <h3 style="margin-top: 0; color: #0066cc;">Order Details</h3>
       
@@ -1553,34 +1499,12 @@ This is an automated message. Please do not reply to this email.
         <span class="info-value"><strong>${orderNumber}</strong></span>
       </div>
       
-      <div class="info-row">
-        <span class="info-label">Buyer:</span>
-        <span class="info-value">${buyerName}${buyerCompany ? ` (${buyerCompany})` : ''}</span>
-      </div>
+      ${itemsHtml}
       
-      <div class="info-row">
-        <span class="info-label">Items:</span>
-        <span class="info-value">${itemCount} item${itemCount > 1 ? 's' : ''}</span>
-      </div>
-      
-      <div class="info-row">
+      <div class="info-row" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #ddd;">
         <span class="info-label">Order Total:</span>
         <span class="info-value total-amount">${formattedTotal}</span>
       </div>
-    </div>
-
-    <div class="action-box">
-      <strong>📋 Next Steps:</strong>
-      <ul style="margin: 10px 0; padding-left: 20px;">
-        <li>Review the order details in your seller dashboard</li>
-        <li>Accept or reject the order</li>
-        <li>Prepare items for shipment once order is accepted</li>
-        <li>Record payment when received</li>
-      </ul>
-    </div>
-
-    <div style="text-align: center;">
-      <a href="https://simbi-market.vercel.app/seller/orders" class="button">View Order in Dashboard</a>
     </div>
 
     <div style="margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">
@@ -1610,16 +1534,16 @@ This is an automated message. Please do not reply to this email.
   private getNewOrderTextTemplate(
     sellerName: string,
     orderNumber: string,
-    buyerName: string,
-    buyerCompany: string | null,
+    orderItems: Array<{ productName: string; quantity: number }>,
     orderTotal: number,
-    itemCount: number,
     currency: string
   ): string {
     const formattedTotal = new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currency,
     }).format(orderTotal);
+
+    const itemsText = orderItems.map(item => `  - ${item.productName} (Qty: ${item.quantity})`).join('\n');
 
     return `
 SIMBI MARKET - NEW ORDER RECEIVED
@@ -1628,23 +1552,14 @@ New Order Received, ${sellerName}!
 
 📦 NEW ORDER: ${orderNumber}
 
-You have received a new order from ${buyerName}${buyerCompany ? ` (${buyerCompany})` : ''}.
-
 ORDER DETAILS:
 ==============
 Order Number: ${orderNumber}
-Buyer: ${buyerName}${buyerCompany ? ` (${buyerCompany})` : ''}
-Items: ${itemCount} item${itemCount > 1 ? 's' : ''}
+
+Products:
+${itemsText}
+
 Order Total: ${formattedTotal}
-
-NEXT STEPS:
-===========
-1. Review the order details in your seller dashboard
-2. Accept or reject the order
-3. Prepare items for shipment once order is accepted
-4. Record payment when received
-
-VIEW ORDER: https://simbi-market.vercel.app/seller/orders
 
 NEED HELP?
 If you have any questions about this order, please contact support at support@simbimarket.com

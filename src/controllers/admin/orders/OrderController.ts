@@ -426,6 +426,25 @@ export class OrderController {
               phoneNumber: true,
             }
           },
+          seller: {
+            select: {
+              id: true,
+              email: true,
+              businessName: true,
+              tradingName: true,
+              businessAddress: true,
+              contactNumber: true,
+              tin: true,
+              registrationNumber: true,
+              bankAccountName: true,
+              bankAccountNumber: true,
+              bankName: true,
+              status: true,
+              sriScore: true,
+              createdAt: true,
+              updatedAt: true,
+            }
+          },
           shippingAddress: {
             select: {
               id: true,
@@ -454,6 +473,12 @@ export class OrderController {
                       id: true,
                       businessName: true,
                       email: true,
+                      tradingName: true,
+                      contactNumber: true,
+                      businessAddress: true,
+                      tin: true,
+                      registrationNumber: true,
+                      status: true,
                     }
                   }
                 }
@@ -763,6 +788,64 @@ export class OrderController {
           error: 'DRIVER_UNAVAILABLE'
         });
         return;
+      }
+
+      // Reduce inventory quantities BEFORE updating order status to SHIPPED
+      // Get order items to reduce inventory
+      const orderItems = await prisma.orderItem.findMany({
+        where: { orderId: id },
+        include: {
+          inventory: {
+            select: {
+              id: true,
+              sellerId: true,
+              quantity: true
+            }
+          }
+        }
+      });
+
+      // Reduce inventory for each item
+      for (const item of orderItems) {
+        const newQuantity = item.inventory.quantity - item.quantity;
+        const oldQuantity = item.inventory.quantity;
+        
+        if (newQuantity < 0) {
+          // This shouldn't happen if we validated stock on order creation, but handle gracefully
+          logger.warn(`Insufficient inventory for item ${item.inventoryId}. Current: ${item.inventory.quantity}, Requested: ${item.quantity}`, {
+            orderId: id,
+            inventoryId: item.inventoryId,
+            currentQuantity: item.inventory.quantity,
+            requestedQuantity: item.quantity
+          });
+          // Set to 0 instead of negative
+          await prisma.sellerInventory.update({
+            where: { id: item.inventoryId },
+            data: { quantity: 0 }
+          });
+        } else {
+          await prisma.sellerInventory.update({
+            where: { id: item.inventoryId },
+            data: { 
+              quantity: newQuantity
+            }
+          });
+        }
+
+        // Create inventory adjustment log
+        await prisma.inventoryAdjustmentLog.create({
+          data: {
+            inventoryId: item.inventoryId,
+            sellerId: item.inventory.sellerId,
+            adjustmentType: 'STOCK_DECREASE',
+            oldQuantity: oldQuantity,
+            newQuantity: newQuantity >= 0 ? newQuantity : 0,
+            quantityChange: -item.quantity, // Negative for reduction
+            reason: `Order ${order.orderNumber} (${id}) shipped/dispatched`,
+            adjustedBy: adminId,
+            adjustedByType: 'ADMIN'
+          }
+        });
       }
 
       // Update order: assign driver, set status to SHIPPED, add dispatch info

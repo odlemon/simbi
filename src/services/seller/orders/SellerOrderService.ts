@@ -275,16 +275,37 @@ export class SellerOrderService {
       // Send email notification to buyer when order is accepted
       if (status === 'ACCEPTED' && updatedOrder.buyer) {
         try {
+          // Get order items with product names
+          const orderItems = await prisma.orderItem.findMany({
+            where: { orderId: orderId },
+            include: {
+              inventory: {
+                include: {
+                  masterProduct: {
+                    select: {
+                      name: true
+                    }
+                  }
+                }
+              }
+            }
+          });
+
+          // Format order items for email
+          const emailOrderItems = orderItems.map(item => ({
+            productName: item.inventory.masterProduct.name,
+            quantity: item.quantity
+          }));
+
           const { emailService } = await import('../../EmailService');
           const buyerName = `${updatedOrder.buyer.firstName} ${updatedOrder.buyer.lastName}`.trim() || updatedOrder.buyer.email;
-          const sellerBusinessName = updatedOrder.seller?.businessName || 'Seller';
           
           await emailService.sendOrderAcceptanceEmail(
             updatedOrder.buyer.email,
             buyerName,
             updatedOrder.orderNumber,
             updatedOrder.id,
-            sellerBusinessName,
+            emailOrderItems,
             updatedOrder.totalAmount,
             updatedOrder.currency || 'USD'
           );
@@ -292,9 +313,28 @@ export class SellerOrderService {
           logger.info('Order acceptance email sent to buyer', {
             orderId: updatedOrder.id,
             orderNumber: updatedOrder.orderNumber,
-            buyerEmail: updatedOrder.buyer.email,
-            sellerBusinessName
+            buyerEmail: updatedOrder.buyer.email
           });
+
+          // Create notification for admin - order accepted, needs driver dispatch
+          try {
+            const { NotificationService } = await import('../../admin/notifications/NotificationService');
+            const notificationService = new NotificationService();
+            const sellerName = updatedOrder.seller?.businessName || 'Seller';
+            
+            await notificationService.createNotification(
+              'ORDER_ACCEPTED',
+              `Order ${updatedOrder.orderNumber} Accepted by Seller`,
+              `Order ${updatedOrder.orderNumber} has been accepted by ${sellerName}. Ready for driver dispatch.`,
+              updatedOrder.id
+            );
+          } catch (notificationError: any) {
+            // Log error but don't fail the order update
+            logger.error('Failed to create admin notification', {
+              orderId: updatedOrder.id,
+              error: notificationError.message
+            });
+          }
         } catch (emailError: any) {
           // Log error but don't fail the order update
           logger.error('Failed to send order acceptance email', {

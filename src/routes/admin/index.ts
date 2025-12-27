@@ -19,6 +19,7 @@ import analyticsRoutes from "./analytics/analyticsRoutes";
 import userRoutes from "./users/userRoutes";
 import payoutRoutes from "./payouts/payoutRoutes";
 import reviewRoutes from "./reviews";
+import notificationRoutes from "./notifications/notificationRoutes";
 
 const router = Router();
 
@@ -72,6 +73,9 @@ router.use("/analytics", analyticsRoutes);
 
 // User routes (sellers and buyers)
 router.use("/users", userRoutes);
+
+// Notification routes
+router.use("/notifications", notificationRoutes);
 
 // Payout routes
 router.use("/payouts", payoutRoutes);

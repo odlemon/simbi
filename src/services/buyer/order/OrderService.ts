@@ -433,31 +433,39 @@ export class OrderService {
             }
           });
 
-          // Get buyer information
-          const buyer = await prisma.buyer.findUnique({
-            where: { id: order.buyerId },
-            select: {
-              firstName: true,
-              lastName: true,
-              companyName: true
-            }
-          });
+          if (seller) {
+            // Get order items with product names
+            const orderItems = await prisma.orderItem.findMany({
+              where: { orderId: order.id },
+              include: {
+                inventory: {
+                  include: {
+                    masterProduct: {
+                      select: {
+                        name: true
+                      }
+                    }
+                  }
+                }
+              }
+            });
 
-          if (seller && buyer) {
+            // Format order items for email
+            const emailOrderItems = orderItems.map(item => ({
+              productName: item.inventory.masterProduct.name,
+              quantity: item.quantity
+            }));
+
             // Send new order email to seller
             const { emailService } = await import('../../EmailService');
-            const buyerName = `${buyer.firstName} ${buyer.lastName}`.trim();
-            const itemCount = (order as any).items?.length || 0;
             
             await emailService.sendNewOrderEmail(
               seller.email,
               seller.businessName,
               order.orderNumber,
               order.id,
-              buyerName,
-              buyer.companyName || null,
+              emailOrderItems,
               order.totalAmount,
-              itemCount,
               order.currency || 'USD'
             );
 

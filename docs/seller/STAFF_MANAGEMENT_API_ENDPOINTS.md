@@ -616,3 +616,4 @@ All endpoints may return these error responses:
 7. **Payroll**: Supports both weekly and monthly periods. Weekly requires `weekStart`, monthly requires `month` and `year`.
 
 
+

@@ -541,3 +541,4 @@ After login, staff can access features based on their role:
 This guide covers all post-login features for staff members, with primary focus on time tracking (clock in/out) functionality.
 
 
+

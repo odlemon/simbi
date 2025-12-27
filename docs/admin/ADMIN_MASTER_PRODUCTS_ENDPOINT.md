@@ -347,3 +347,4 @@ router.use("/catalog", catalogRoutes);
 So the full path is: `/api/admin/catalog/products`
 
 
+
