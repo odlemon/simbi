@@ -8,18 +8,56 @@ import { CouponService } from "../../CouponService";
 
 
 // Validation schemas
+const shippingAddressSchema = z.object({
+  fullName: z.string().optional(), // Optional - will use buyer's firstName + lastName if not provided
+  phoneNumber: z.string().optional(), // Optional - will use buyer's phoneNumber if not provided
+  addressLine1: z.string().min(1),
+  addressLine2: z.string().optional(),
+  city: z.string().min(1),
+  province: z.string().min(1),
+  postalCode: z.string().optional(),
+  country: z.string().optional(), // Optional country field
+  isDefault: z.boolean().optional().default(false)
+});
+
 const createOrderSchema = z.object({
   items: z.array(z.object({
     productId: z.string(), // Can be either seller inventory ID or master product ID
     quantity: z.number().min(1)
     // sellerId and unitPrice will be determined from the product lookup
   })).min(1),
-  shippingAddressId: z.string(),
+  shippingAddressId: z.string().optional(), // Optional if shippingAddress is provided
+  shippingAddress: shippingAddressSchema.optional(), // Optional if shippingAddressId is provided
   poNumber: z.string().optional(),
   costCenter: z.string().optional(),
   notes: z.string().optional(),
   couponCode: z.string().optional() // Optional coupon code
-});
+}).refine(
+  (data) => {
+    // If shippingAddress is provided (even as empty object), it takes precedence
+    if (data.shippingAddress && Object.keys(data.shippingAddress).length > 0) {
+      return true;
+    }
+    // Otherwise, shippingAddressId must be provided
+    return !!data.shippingAddressId;
+  },
+  {
+    message: "Either shippingAddressId or shippingAddress must be provided",
+    path: ["shippingAddressId"]
+  }
+).refine(
+  (data) => {
+    // If shippingAddress is provided, ensure it has required fields
+    if (data.shippingAddress && Object.keys(data.shippingAddress).length > 0) {
+      return !!(data.shippingAddress.addressLine1 && data.shippingAddress.city && data.shippingAddress.province);
+    }
+    return true;
+  },
+  {
+    message: "shippingAddress must include addressLine1, city, and province",
+    path: ["shippingAddress"]
+  }
+);
 
 const createOrderFromCartSchema = z.object({
   shippingAddressId: z.string().optional(), // Optional - will use default address if not provided
@@ -42,10 +80,22 @@ const updateOrderStatusSchema = z.object({
   notes: z.string().optional()
 });
 
+export interface ShippingAddressData {
+  fullName: string;
+  phoneNumber: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  province: string;
+  postalCode?: string;
+  isDefault?: boolean;
+}
+
 export interface OrderData {
   buyerId: string;
   items: OrderItemData[];
-  shippingAddressId: string;
+  shippingAddressId?: string; // Optional if shippingAddress is provided
+  shippingAddress?: ShippingAddressData; // Optional if shippingAddressId is provided
   poNumber?: string;
   costCenter?: string;
   notes?: string;
@@ -162,6 +212,7 @@ export class OrderService {
       const validatedData = createOrderSchema.parse({
         items: orderData.items,
         shippingAddressId: orderData.shippingAddressId,
+        shippingAddress: orderData.shippingAddress,
         poNumber: orderData.poNumber,
         costCenter: orderData.costCenter,
         notes: orderData.notes,
@@ -228,28 +279,116 @@ export class OrderService {
         })
       );
 
-      // Verify buyer exists
+      // Verify buyer exists and get profile data for defaults
       const buyer = await prisma.buyer.findUnique({
         where: { id: orderData.buyerId },
-        select: { id: true, email: true, status: true }
+        select: { 
+          id: true, 
+          email: true, 
+          status: true,
+          firstName: true,
+          lastName: true,
+          phoneNumber: true
+        }
       });
       
       if (!buyer) {
         throw new Error(`Buyer ${orderData.buyerId} not found`);
       }
       
-      // Verify address exists and belongs to buyer
-      const address = await prisma.buyerAddress.findUnique({
-        where: { id: validatedData.shippingAddressId },
-        select: { id: true, buyerId: true, fullName: true }
-      });
+      // Handle shipping address - either use existing or create new one
+      // IMPORTANT: shippingAddress takes precedence over shippingAddressId if both are provided
+      let shippingAddressId: string;
       
-      if (!address) {
-        throw new Error(`Address ${validatedData.shippingAddressId} not found`);
+      // Warn if both are provided (shippingAddress will be used)
+      if (validatedData.shippingAddress && validatedData.shippingAddressId) {
+        logger.warn('Both shippingAddress and shippingAddressId provided. Using shippingAddress (new address will be created)', {
+          buyerId: orderData.buyerId,
+          providedAddressId: validatedData.shippingAddressId
+        });
       }
       
-      if (address.buyerId !== orderData.buyerId) {
-        throw new Error(`Address ${validatedData.shippingAddressId} does not belong to buyer ${orderData.buyerId}`);
+      // Check if shippingAddress is provided (takes precedence)
+      if (validatedData.shippingAddress && Object.keys(validatedData.shippingAddress).length > 0) {
+        // If this is set as default, unset other default addresses first
+        if (validatedData.shippingAddress.isDefault) {
+          await prisma.buyerAddress.updateMany({
+            where: { buyerId: orderData.buyerId },
+            data: { isDefault: false }
+          });
+        }
+        
+        // Use buyer's profile data as defaults if not provided
+        const fullName = validatedData.shippingAddress.fullName || 
+          `${buyer.firstName || ''} ${buyer.lastName || ''}`.trim() || 
+          'Recipient';
+        const phoneNumber = validatedData.shippingAddress.phoneNumber || 
+          buyer.phoneNumber || 
+          '';
+        
+        // Validate that we have required fields
+        if (!fullName || fullName === 'Recipient') {
+          throw new Error('Full name is required. Please provide fullName in shippingAddress or ensure buyer profile has firstName and lastName.');
+        }
+        if (!phoneNumber) {
+          throw new Error('Phone number is required. Please provide phoneNumber in shippingAddress or ensure buyer profile has phoneNumber.');
+        }
+        
+        logger.info('Creating new shipping address for order', {
+          buyerId: orderData.buyerId,
+          providedFullName: validatedData.shippingAddress.fullName,
+          providedPhoneNumber: validatedData.shippingAddress.phoneNumber,
+          resolvedFullName: fullName,
+          resolvedPhoneNumber: phoneNumber,
+          addressLine1: validatedData.shippingAddress.addressLine1,
+          city: validatedData.shippingAddress.city,
+          province: validatedData.shippingAddress.province
+        });
+        
+        // Create new address if provided
+        const newAddress = await prisma.buyerAddress.create({
+          data: {
+            buyerId: orderData.buyerId,
+            fullName: fullName,
+            phoneNumber: phoneNumber,
+            addressLine1: validatedData.shippingAddress.addressLine1,
+            addressLine2: validatedData.shippingAddress.addressLine2,
+            city: validatedData.shippingAddress.city,
+            province: validatedData.shippingAddress.province,
+            postalCode: validatedData.shippingAddress.postalCode,
+            isDefault: validatedData.shippingAddress.isDefault || false
+          }
+        });
+        shippingAddressId = newAddress.id;
+        
+        logger.info('New shipping address created for order', {
+          buyerId: orderData.buyerId,
+          addressId: newAddress.id,
+          fullName: newAddress.fullName,
+          phoneNumber: newAddress.phoneNumber,
+          addressLine1: newAddress.addressLine1,
+          city: newAddress.city,
+          province: newAddress.province,
+          isDefault: newAddress.isDefault
+        });
+      } else if (validatedData.shippingAddressId) {
+        // Verify existing address exists and belongs to buyer
+        const address = await prisma.buyerAddress.findUnique({
+          where: { id: validatedData.shippingAddressId },
+          select: { id: true, buyerId: true, fullName: true }
+        });
+        
+        if (!address) {
+          throw new Error(`Address ${validatedData.shippingAddressId} not found`);
+        }
+        
+        if (address.buyerId !== orderData.buyerId) {
+          throw new Error(`Address ${validatedData.shippingAddressId} does not belong to buyer ${orderData.buyerId}`);
+        }
+        
+        shippingAddressId = validatedData.shippingAddressId;
+      } else {
+        throw new Error('Either shippingAddressId or shippingAddress must be provided');
       }
 
       // Group items by seller - IMPORTANT: Split orders by supplier
@@ -372,7 +511,7 @@ export class OrderService {
               orderNumber: sellerOrderNumber,
               buyerId: orderData.buyerId,
               sellerId: sellerId,
-              addressId: validatedData.shippingAddressId,
+              addressId: shippingAddressId,
               poNumber: validatedData.poNumber,
               costCenter: validatedData.costCenter,
               subtotal: sellerSubtotal,
@@ -476,6 +615,25 @@ export class OrderService {
               sellerId: seller.id
             });
 
+            // Create notification for seller
+            try {
+              const { SellerNotificationService } = await import('../../seller/notifications/SellerNotificationService');
+              const sellerNotificationService = new SellerNotificationService();
+              await sellerNotificationService.createNotification(
+                seller.id,
+                'NEW_ORDER',
+                'New Order Received',
+                `You have received a new order #${order.orderNumber} for ${order.totalAmount} ${order.currency || 'USD'}`,
+                order.id
+              );
+            } catch (notifError: any) {
+              logger.error('Failed to create seller notification for new order', {
+                orderId: order.id,
+                sellerId: seller.id,
+                error: notifError.message
+              });
+            }
+
             // Check for low stock items and send alert if needed
             // Get order items from database to check current stock levels
             const orderItemsFromDb = await prisma.orderItem.findMany({
@@ -567,6 +725,78 @@ export class OrderService {
             }
           }
         }
+      }
+
+      // Send order confirmation email to buyer
+      try {
+        const buyerInfo = await prisma.buyer.findUnique({
+          where: { id: orderData.buyerId },
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true
+          }
+        });
+
+        if (buyerInfo) {
+          // Collect all order items from all orders
+          const allOrderItems: Array<{ productName: string; quantity: number; sellerName?: string }> = [];
+          
+          for (const order of orders) {
+            const orderItems = await prisma.orderItem.findMany({
+              where: { orderId: order.id },
+              include: {
+                inventory: {
+                  include: {
+                    masterProduct: {
+                      select: {
+                        name: true
+                      }
+                    }
+                  }
+                }
+              }
+            });
+
+            for (const item of orderItems) {
+              allOrderItems.push({
+                productName: item.inventory.masterProduct.name,
+                quantity: item.quantity,
+                sellerName: order.seller.businessName
+              });
+            }
+          }
+
+          const buyerName = `${buyerInfo.firstName || ''} ${buyerInfo.lastName || ''}`.trim() || buyerInfo.email;
+          const totalAmount = orders.reduce((sum, order) => sum + order.totalAmount, 0);
+          const primaryOrderNumber = orders[0]?.orderNumber || 'N/A';
+          const currency = orders[0]?.currency || 'USD';
+
+          const { emailService } = await import('../../EmailService');
+          
+          await emailService.sendOrderConfirmationEmail(
+            buyerInfo.email,
+            buyerName,
+            primaryOrderNumber,
+            allOrderItems,
+            totalAmount,
+            currency,
+            orders.length
+          );
+
+          logger.info('Order confirmation email sent to buyer', {
+            buyerId: orderData.buyerId,
+            buyerEmail: buyerInfo.email,
+            orderCount: orders.length,
+            totalAmount: totalAmount
+          });
+        }
+      } catch (emailError: any) {
+        // Log error but don't fail the order creation
+        logger.error('Failed to send order confirmation email to buyer', {
+          buyerId: orderData.buyerId,
+          error: emailError.message
+        });
       }
 
       return {
@@ -757,6 +987,7 @@ export class OrderService {
       }
 
       // Create new order using existing createOrder method
+      // This will automatically send NEW_ORDER notifications to sellers
       const orderData: OrderData = {
         buyerId,
         items: orderItems,
@@ -767,6 +998,7 @@ export class OrderService {
         couponCode: validatedData.couponCode || undefined
       };
 
+      // createOrder will handle seller notifications (NEW_ORDER) automatically
       const orderResult = await this.createOrder(orderData);
 
       if (orderResult.success) {

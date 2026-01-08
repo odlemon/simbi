@@ -11,6 +11,12 @@ router.get("/", authenticateSellerOrStaff, sellerReturnController.getSellerRetur
 // POST /api/seller/orders/:orderId/pre-shipment-evidence - Upload ECC baseline
 router.post("/orders/:orderId/pre-shipment-evidence", authenticateSellerOrStaff, sellerReturnController.uploadPreShipmentEvidence.bind(sellerReturnController));
 
+// POST /api/seller/returns/:id/respond - Seller responds to return request (adds comment)
+router.post("/:id/respond", authenticateSellerOrStaff, sellerReturnController.respondToReturn.bind(sellerReturnController));
+
+// POST /api/seller/returns/:id/upload-evidence - Seller uploads evidence to dispute return
+router.post("/:id/upload-evidence", authenticateSellerOrStaff, sellerReturnController.uploadEvidence.bind(sellerReturnController));
+
 // POST /api/seller/returns/:id/confirm-receipt - Confirm receipt of returned item
 router.post("/:id/confirm-receipt", authenticateSellerOrStaff, sellerReturnController.confirmReceipt.bind(sellerReturnController));
 

@@ -523,3 +523,5 @@ const updateProfile = async (updates) => {
 - `PATCH /api/buyer/addresses/:id` - Update address
 - `DELETE /api/buyer/addresses/:id` - Delete address
 
+
+

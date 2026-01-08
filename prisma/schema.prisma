@@ -153,6 +153,7 @@ model Seller {
   coupons                   Coupon[]
   reviewResponses           ReviewResponse[]
   payrollRuns               PayrollRun[]
+  notifications             SellerNotification[]
 
   @@index([email])
   @@index([status])
@@ -616,6 +617,7 @@ model Buyer {
   quoteRequests             QuoteRequest[]
   savedSearches             SavedSearch[]
   reviews                   Review[]
+  notifications              BuyerNotification[]
 
   @@index([email])
   @@index([buyerType])
@@ -925,13 +927,15 @@ model Order {
   gatewayTransactions   PaymentGatewayTransaction[]
   payment               Payment?
   payout                Payout?
+  adminNotifications    AdminNotification[]          @relation("AdminNotificationOrder")
+  buyerNotifications    BuyerNotification[]          @relation("BuyerNotificationOrder")
+  sellerNotifications   SellerNotification[]          @relation("SellerNotificationOrder")
   shipment              Shipment?
   couponUsage           CouponUsage?
   reviews               Review[]
   guestOrder            GuestOrder?
   threeWayMatch         ThreeWayMatch?
   taxInvoice            TaxInvoice?
-  notifications         AdminNotification[]
 
   @@index([buyerId])
   @@index([sellerId])
@@ -1215,6 +1219,8 @@ model Dispute {
   buyer                   Buyer                   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   order                   Order                   @relation(fields: [orderId], references: [id])
   seller                  Seller                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  buyerNotifications      BuyerNotification[]      @relation
+  sellerNotifications     SellerNotification[]     @relation("SellerNotificationDispute")
 
   @@index([orderId])
   @@index([buyerId])
@@ -1394,12 +1400,58 @@ model AdminNotification {
   isRead    Boolean  @default(false)
   readAt    DateTime?
   createdAt DateTime @default(now())
-  order     Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order     Order?   @relation("AdminNotificationOrder", fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([isRead])
   @@index([createdAt])
   @@index([orderId])
   @@map("admin_notifications")
+}
+
+model BuyerNotification {
+  id        String   @id @default(uuid())
+  buyerId   String
+  type      String   // ORDER_ACCEPTED, ORDER_REJECTED, ORDER_SHIPPED, ORDER_DELIVERED, etc.
+  title     String
+  message   String   @db.Text
+  orderId   String?  // Reference to order if notification is order-related
+  returnId  String?  // Reference to return/dispute if notification is return-related
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  buyer     Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  order     Order?   @relation("BuyerNotificationOrder", fields: [orderId], references: [id], onDelete: Cascade)
+  dispute   Dispute? @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([buyerId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([orderId])
+  @@index([returnId])
+  @@map("buyer_notifications")
+}
+
+model SellerNotification {
+  id        String   @id @default(uuid())
+  sellerId  String
+  type      String   // NEW_ORDER, ORDER_SHIPPED, ORDER_DELIVERED, RETURN_REQUESTED, etc.
+  title     String
+  message   String   @db.Text
+  orderId   String?  // Reference to order if notification is order-related
+  returnId  String?  // Reference to return/dispute if notification is return-related
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  order     Order?   @relation("SellerNotificationOrder", fields: [orderId], references: [id], onDelete: Cascade)
+  dispute   Dispute? @relation("SellerNotificationDispute", fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([orderId])
+  @@index([returnId])
+  @@map("seller_notifications")
 }
 
 model CustomProductRequest {

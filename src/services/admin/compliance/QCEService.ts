@@ -635,6 +635,7 @@ export class QCEService {
           skip,
           take: limit,
           orderBy: { createdAt: "asc" }, // Oldest first (SLO priority)
+          // Note: All Dispute fields are included by default (sellerResponse, sellerEvidenceUrls, buyerDescription, buyerEvidenceUrls, etc.)
           include: {
             order: {
               include: {
@@ -924,6 +925,7 @@ export class QCEService {
           skip,
           take: limit,
           orderBy: { createdAt: "desc" },
+          // Note: All Dispute fields are included by default (sellerResponse, sellerEvidenceUrls, buyerDescription, buyerEvidenceUrls, etc.)
           include: {
             order: {
               include: {

@@ -313,7 +313,7 @@ export class AccountingService {
     const commissionData = await prisma.sellerLedger.aggregate({
       where: {
         ...where,
-        type: TransactionType.PLATFORM_FEE,
+        type: TransactionType.COMMISSION,
       },
       _sum: {
         amountUSD: true,
@@ -573,7 +573,7 @@ export class AccountingService {
           debit = entry.amountUSD.toString();
           account = "6000"; // Expense account
           break;
-        case TransactionType.PLATFORM_FEE:
+        case TransactionType.COMMISSION:
           debit = entry.amountUSD.toString();
           account = "6100"; // Commission expense
           break;
@@ -664,7 +664,7 @@ export class AccountingService {
 
       // Get account IDs from Chart of Accounts
       const salesAccountId = await accountMappingService.getAccountIdForTransaction(TransactionType.SALE);
-      const commissionAccountId = await accountMappingService.getAccountIdForTransaction(TransactionType.PLATFORM_FEE);
+      const commissionAccountId = await accountMappingService.getAccountIdForTransaction(TransactionType.COMMISSION);
 
       // ============================================
       // PROPER DOUBLE-ENTRY ACCOUNTING FOR SALES
@@ -706,7 +706,7 @@ export class AccountingService {
           sellerId,
           accountId: commissionAccountId || null, // Link to Chart of Accounts (Expense account)
           transactionDate,
-          type: TransactionType.PLATFORM_FEE,
+          type: TransactionType.COMMISSION,
           category: 'PLATFORM_COMMISSION',
           amountUSD: commissionAmount,
           amountZWL: commissionAmount * 1,

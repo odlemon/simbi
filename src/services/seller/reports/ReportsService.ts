@@ -470,7 +470,7 @@ export class ReportsService {
         .filter(e => e.type === TransactionType.EXPENSE)
         .reduce((sum, e) => sum + (e.debit || 0), 0),
       commission: ledgerEntries
-        .filter(e => e.type === TransactionType.PLATFORM_FEE)
+        .filter(e => e.type === TransactionType.COMMISSION)
         .reduce((sum, e) => sum + (e.debit || 0), 0),
       refunds: ledgerEntries
         .filter(e => e.type === TransactionType.REFUND)
@@ -516,7 +516,7 @@ export class ReportsService {
 
       // Expense trends (daily) - includes all expenses, commissions, refunds
       if (entry.type === TransactionType.EXPENSE || 
-          entry.type === TransactionType.PLATFORM_FEE || 
+          entry.type === TransactionType.COMMISSION || 
           entry.type === TransactionType.REFUND) {
         const current = expenseTrends.get(dateKey) || 0;
         expenseTrends.set(dateKey, current + (entry.debit || 0));
@@ -535,7 +535,7 @@ export class ReportsService {
       if (entry.type === TransactionType.SALE) {
         profit.revenue += entry.credit || 0;
       } else if (entry.type === TransactionType.EXPENSE || 
-                 entry.type === TransactionType.PLATFORM_FEE || 
+                 entry.type === TransactionType.COMMISSION || 
                  entry.type === TransactionType.REFUND) {
         profit.expenses += entry.debit || 0;
       }
@@ -557,7 +557,7 @@ export class ReportsService {
         monthly.revenue += entry.credit || 0;
       } else if (entry.type === TransactionType.EXPENSE) {
         monthly.expenses += entry.debit || 0;
-      } else if (entry.type === TransactionType.PLATFORM_FEE) {
+      } else if (entry.type === TransactionType.COMMISSION) {
         monthly.commission += entry.debit || 0;
       } else if (entry.type === TransactionType.REFUND) {
         monthly.refunds += entry.debit || 0;

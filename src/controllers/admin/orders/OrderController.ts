@@ -877,6 +877,12 @@ export class OrderController {
               lastName: true,
               email: true
             }
+          },
+          seller: {
+            select: {
+              id: true,
+              businessName: true
+            }
           }
         }
       });
@@ -887,47 +893,109 @@ export class OrderController {
         data: { status: 'UNAVAILABLE' }
       });
 
-      // Send order shipped email to buyer
-      try {
-        if (updatedOrder.buyer) {
-          const { emailService } = await import('../../EmailService');
-          const buyerName = `${updatedOrder.buyer.firstName} ${updatedOrder.buyer.lastName}`.trim() || updatedOrder.buyer.email;
-          
-          // Get tracking number from shipment if exists
-          const shipment = await prisma.shipment.findUnique({
-            where: { orderId: id },
-            select: { trackingNumber: true },
-          });
-
-          await emailService.sendOrderShippedEmail(
-            updatedOrder.buyer.email,
-            buyerName,
-            updatedOrder.orderNumber,
-            shipment?.trackingNumber || null,
-            updatedOrder.estimatedDeliveryDate ? new Date(updatedOrder.estimatedDeliveryDate).toLocaleDateString() : null
-          );
-
-          logger.info('Order shipped email sent to buyer', {
-            orderId: id,
-            orderNumber: updatedOrder.orderNumber,
-            buyerEmail: updatedOrder.buyer.email,
-          });
-        }
-      } catch (emailError: any) {
-        // Log error but don't fail the dispatch
-        logger.error('Failed to send order shipped email', {
-          orderId: id,
-          buyerEmail: updatedOrder.buyer?.email,
-          error: emailError.message,
-        });
-      }
-
+      // Send response immediately - don't wait for notifications/emails
       res.status(200).json({
         success: true,
         message: 'Order dispatched successfully',
         data: updatedOrder,
         timestamp: new Date().toISOString()
       });
+
+      // Send notifications and emails in background (fire and forget)
+      // This ensures the response is sent quickly while notifications still get sent
+      (async () => {
+        try {
+          // Get tracking number from shipment if exists
+          const shipment = await prisma.shipment.findUnique({
+            where: { orderId: id },
+            select: { trackingNumber: true },
+          });
+
+          // Send order shipped email to buyer
+          if (updatedOrder.buyer) {
+            try {
+              const { emailService } = await import('../../../services/EmailService');
+              const buyerName = `${updatedOrder.buyer.firstName} ${updatedOrder.buyer.lastName}`.trim() || updatedOrder.buyer.email;
+              
+              await emailService.sendOrderShippedEmail(
+                updatedOrder.buyer.email,
+                buyerName,
+                updatedOrder.orderNumber,
+                shipment?.trackingNumber || null,
+                updatedOrder.estimatedDeliveryDate ? new Date(updatedOrder.estimatedDeliveryDate).toLocaleDateString() : null
+              );
+
+              logger.info('Order shipped email sent to buyer', {
+                orderId: id,
+                orderNumber: updatedOrder.orderNumber,
+                buyerEmail: updatedOrder.buyer.email,
+              });
+            } catch (emailError: any) {
+              logger.error('Failed to send order shipped email to buyer', {
+                orderId: id,
+                buyerEmail: updatedOrder.buyer?.email,
+                error: emailError.message,
+              });
+            }
+          }
+
+          // Create notification for buyer
+          if (updatedOrder.buyer) {
+            try {
+              const { BuyerNotificationService } = await import('../../../services/buyer/notifications/BuyerNotificationService');
+              const buyerNotificationService = new BuyerNotificationService();
+              const trackingInfo = shipment?.trackingNumber ? ` Tracking: ${shipment.trackingNumber}` : '';
+              await buyerNotificationService.createNotification(
+                updatedOrder.buyer.id,
+                'ORDER_SHIPPED',
+                'Order Shipped',
+                `Your order #${updatedOrder.orderNumber} has been shipped.${trackingInfo}`,
+                updatedOrder.id
+              );
+              logger.info('Buyer notification created for order shipped', {
+                orderId: id,
+                buyerId: updatedOrder.buyer.id,
+              });
+            } catch (notifError: any) {
+              logger.error('Failed to create buyer notification for order shipped', {
+                orderId: id,
+                buyerId: updatedOrder.buyer.id,
+                error: notifError.message
+              });
+            }
+          }
+
+          // Create notification for seller
+          if (updatedOrder.sellerId) {
+            try {
+              const { SellerNotificationService } = await import('../../../services/seller/notifications/SellerNotificationService');
+              const sellerNotificationService = new SellerNotificationService();
+              await sellerNotificationService.createNotification(
+                updatedOrder.sellerId,
+                'ORDER_SHIPPED',
+                'Order Shipped',
+                `Order #${updatedOrder.orderNumber} has been shipped to the buyer.`,
+                updatedOrder.id
+              );
+              logger.info('Seller notification created for order shipped', {
+                orderId: id,
+                sellerId: updatedOrder.sellerId,
+              });
+            } catch (notifError: any) {
+              logger.error('Failed to create seller notification for order shipped', {
+                orderId: id,
+                sellerId: updatedOrder.sellerId,
+                error: notifError.message
+              });
+            }
+          }
+        } catch (error: any) {
+          logger.error('Error in background notification sending for order dispatch', {
+            orderId: id,
+            error: error.message
+          });
+        }
+      })();
     } catch (error: any) {
       console.error('Dispatch order error:', error);
       res.status(500).json({
@@ -1010,6 +1078,12 @@ export class OrderController {
               lastName: true,
             },
           },
+          seller: {
+            select: {
+              id: true,
+              businessName: true
+            }
+          },
           driver: {
             select: {
               id: true,
@@ -1018,54 +1092,188 @@ export class OrderController {
               phoneNumber: true
             }
           },
-          buyer: {
+          items: {
+            include: {
+              inventory: {
+                include: {
+                  masterProduct: {
+                    select: {
+                      id: true,
+                      name: true,
+                      partNumber: true,
+                    }
+                  }
+                }
+              }
+            }
+          },
+          payment: {
             select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true
+              paymentMethod: true,
+              status: true,
+            }
+          },
+          shippingAddress: {
+            select: {
+              fullName: true,
+              addressLine1: true,
+              addressLine2: true,
+              city: true,
+              province: true,
+              postalCode: true,
             }
           }
         }
       });
 
-      // Send order delivered email to buyer
-      try {
-        if (updatedOrderWithDetails?.buyer) {
-          const { emailService } = await import('../../EmailService');
-          const buyerName = `${updatedOrderWithDetails.buyer.firstName} ${updatedOrderWithDetails.buyer.lastName}`.trim() || updatedOrderWithDetails.buyer.email;
-          const deliveryDate = updatedOrderWithDetails.actualDeliveryDate 
-            ? new Date(updatedOrderWithDetails.actualDeliveryDate).toLocaleDateString()
-            : new Date().toLocaleDateString();
-          
-          await emailService.sendOrderDeliveredEmail(
-            updatedOrderWithDetails.buyer.email,
-            buyerName,
-            updatedOrderWithDetails.orderNumber,
-            deliveryDate
-          );
-
-          logger.info('Order delivered email sent to buyer', {
-            orderId: id,
-            orderNumber: updatedOrderWithDetails.orderNumber,
-            buyerEmail: updatedOrderWithDetails.buyer.email,
-          });
-        }
-      } catch (emailError: any) {
-        // Log error but don't fail the delivery marking
-        logger.error('Failed to send order delivered email', {
-          orderId: id,
-          buyerEmail: updatedOrderWithDetails?.buyer?.email,
-          error: emailError.message,
-        });
-      }
-
+      // Send response immediately - don't wait for notifications/emails
       res.status(200).json({
         success: true,
         message: 'Order marked as delivered successfully',
         data: updatedOrderWithDetails,
         timestamp: new Date().toISOString()
       });
+
+      // Send notifications and emails in background (fire and forget)
+      // This ensures the response is sent quickly while notifications still get sent
+      (async () => {
+        try {
+          // Send order delivered email to buyer with receipt
+          if (updatedOrderWithDetails?.buyer) {
+            try {
+              const { emailService } = await import('../../../services/EmailService');
+              const { receiptService } = await import('../../../services/receipt/ReceiptService');
+              
+              const buyerName = `${updatedOrderWithDetails.buyer.firstName} ${updatedOrderWithDetails.buyer.lastName}`.trim() || updatedOrderWithDetails.buyer.email;
+              const deliveryDate = updatedOrderWithDetails.actualDeliveryDate 
+                ? new Date(updatedOrderWithDetails.actualDeliveryDate).toLocaleDateString()
+                : new Date().toLocaleDateString();
+              
+              // Generate receipt
+              let receiptHtml: string | undefined;
+              try {
+                if (updatedOrderWithDetails.items && updatedOrderWithDetails.items.length > 0) {
+                  const receiptData = {
+                    orderNumber: updatedOrderWithDetails.orderNumber,
+                    orderDate: updatedOrderWithDetails.createdAt,
+                    buyerName: buyerName,
+                    buyerEmail: updatedOrderWithDetails.buyer.email,
+                    sellerName: updatedOrderWithDetails.seller?.businessName || 'Unknown Seller',
+                    items: updatedOrderWithDetails.items.map(item => ({
+                      productName: item.inventory?.masterProduct?.name || 'Unknown Product',
+                      partNumber: item.inventory?.masterProduct?.partNumber,
+                      quantity: item.quantity,
+                      unitPrice: item.unitPrice,
+                      lineTotal: item.lineTotalUsd || (item.unitPrice * item.quantity),
+                    })),
+                    subtotal: updatedOrderWithDetails.subtotal,
+                    shippingCost: updatedOrderWithDetails.shippingCost,
+                    platformCommission: updatedOrderWithDetails.platformCommission,
+                    discountAmount: updatedOrderWithDetails.discountAmount || undefined,
+                    totalAmount: updatedOrderWithDetails.totalAmount,
+                    currency: updatedOrderWithDetails.currency || 'USD',
+                    paymentMethod: updatedOrderWithDetails.payment?.paymentMethod,
+                    paymentStatus: updatedOrderWithDetails.payment?.status,
+                    deliveryDate: updatedOrderWithDetails.actualDeliveryDate || undefined,
+                    shippingAddress: updatedOrderWithDetails.shippingAddress ? {
+                      fullName: updatedOrderWithDetails.shippingAddress.fullName,
+                      addressLine1: updatedOrderWithDetails.shippingAddress.addressLine1,
+                      addressLine2: updatedOrderWithDetails.shippingAddress.addressLine2 || undefined,
+                      city: updatedOrderWithDetails.shippingAddress.city,
+                      province: updatedOrderWithDetails.shippingAddress.province,
+                      postalCode: updatedOrderWithDetails.shippingAddress.postalCode,
+                    } : undefined,
+                  };
+                  
+                  receiptHtml = receiptService.generateReceiptHTML(receiptData);
+                }
+              } catch (receiptError: any) {
+                logger.error('Failed to generate receipt for order delivered email', {
+                  orderId: id,
+                  error: receiptError.message,
+                });
+                // Continue without receipt if generation fails
+              }
+              
+              await emailService.sendOrderDeliveredEmail(
+                updatedOrderWithDetails.buyer.email,
+                buyerName,
+                updatedOrderWithDetails.orderNumber,
+                deliveryDate,
+                receiptHtml
+              );
+
+              logger.info('Order delivered email sent to buyer', {
+                orderId: id,
+                orderNumber: updatedOrderWithDetails.orderNumber,
+                buyerEmail: updatedOrderWithDetails.buyer.email,
+                receiptAttached: !!receiptHtml,
+              });
+            } catch (emailError: any) {
+              logger.error('Failed to send order delivered email to buyer', {
+                orderId: id,
+                buyerEmail: updatedOrderWithDetails.buyer?.email,
+                error: emailError.message,
+              });
+            }
+          }
+
+          // Create notification for buyer
+          if (updatedOrderWithDetails?.buyer) {
+            try {
+              const { BuyerNotificationService } = await import('../../../services/buyer/notifications/BuyerNotificationService');
+              const buyerNotificationService = new BuyerNotificationService();
+              await buyerNotificationService.createNotification(
+                updatedOrderWithDetails.buyer.id,
+                'ORDER_DELIVERED',
+                'Order Delivered',
+                `Your order #${updatedOrderWithDetails.orderNumber} has been delivered successfully.`,
+                updatedOrderWithDetails.id
+              );
+              logger.info('Buyer notification created for order delivered', {
+                orderId: id,
+                buyerId: updatedOrderWithDetails.buyer.id,
+              });
+            } catch (notifError: any) {
+              logger.error('Failed to create buyer notification for order delivered', {
+                orderId: id,
+                buyerId: updatedOrderWithDetails.buyer.id,
+                error: notifError.message
+              });
+            }
+          }
+
+          // Create notification for seller
+          if (updatedOrderWithDetails?.seller?.id) {
+            try {
+              const { SellerNotificationService } = await import('../../../services/seller/notifications/SellerNotificationService');
+              const sellerNotificationService = new SellerNotificationService();
+              await sellerNotificationService.createNotification(
+                updatedOrderWithDetails.seller.id,
+                'ORDER_DELIVERED',
+                'Order Delivered',
+                `Order #${updatedOrderWithDetails.orderNumber} has been delivered to the buyer.`,
+                updatedOrderWithDetails.id
+              );
+              logger.info('Seller notification created for order delivered', {
+                orderId: id,
+                sellerId: updatedOrderWithDetails.seller.id,
+              });
+            } catch (notifError: any) {
+              logger.error('Failed to create seller notification for order delivered', {
+                orderId: id,
+                sellerId: updatedOrderWithDetails.seller.id,
+                error: notifError.message
+              });
+            }
+          }
+        } catch (error: any) {
+          logger.error('Error in background notification sending for order delivered', {
+            orderId: id,
+            error: error.message
+          });
+        }
+      })();
     } catch (error: any) {
       console.error('Mark order delivered error:', error);
       res.status(500).json({

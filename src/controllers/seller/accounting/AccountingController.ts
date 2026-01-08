@@ -20,7 +20,7 @@ export class AccountingController {
    *         name: transactionType
    *         schema:
    *           type: string
-   *           enum: [SALE, EXPENSE, PLATFORM_FEE, REFUND, PAYOUT, ADJUSTMENT]
+   *           enum: [SALE, EXPENSE, COMMISSION, REFUND, PAYOUT, ADJUSTMENT]
    *       - in: query
    *         name: startDate
    *         schema:

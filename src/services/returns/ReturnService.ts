@@ -127,6 +127,47 @@ export class ReturnService {
 
       logger.info(`Return request initiated: ${dispute.id} for order ${validatedData.orderId}`);
 
+      // Create notification for seller
+      try {
+        const { SellerNotificationService } = await import('../seller/notifications/SellerNotificationService');
+        const sellerNotificationService = new SellerNotificationService();
+        const returnType = validatedData.requestType === 'RETURN' ? 'return' : validatedData.requestType === 'EXCHANGE' ? 'exchange' : 'dispute';
+        await sellerNotificationService.createNotification(
+          order.sellerId,
+          'RETURN_REQUESTED',
+          'Return Request Received',
+          `A ${returnType} request has been initiated for order #${dispute.order.orderNumber}. Please review and respond.`,
+          validatedData.orderId,
+          dispute.id
+        );
+      } catch (notifError: any) {
+        logger.error('Failed to create seller notification for return request', {
+          disputeId: dispute.id,
+          sellerId: order.sellerId,
+          error: notifError.message
+        });
+      }
+
+      // Create notification for admin
+      try {
+        const { NotificationService } = await import('../admin/notifications/NotificationService');
+        const notificationService = new NotificationService();
+        const returnType = validatedData.requestType === 'RETURN' ? 'return' : validatedData.requestType === 'EXCHANGE' ? 'exchange' : 'dispute';
+        const buyerName = `${dispute.buyer.firstName} ${dispute.buyer.lastName}`.trim() || dispute.buyer.email;
+        await notificationService.createNotification(
+          'RETURN_REQUESTED',
+          `New ${returnType.charAt(0).toUpperCase() + returnType.slice(1)} Request`,
+          `Buyer ${buyerName} has initiated a ${returnType} request for order #${dispute.order.orderNumber}. Review required.`,
+          validatedData.orderId
+        );
+      } catch (notifError: any) {
+        logger.error('Failed to create admin notification for return request', {
+          disputeId: dispute.id,
+          orderId: validatedData.orderId,
+          error: notifError.message
+        });
+      }
+
       return {
         success: true,
         message: "Return request created successfully. Payout has been frozen pending review.",
@@ -313,6 +354,206 @@ export class ReturnService {
     } catch (error: any) {
       logger.error("Error calculating logistics cost:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Seller responds to return request (adds comment/response)
+   */
+  async sellerRespondToReturn(
+    sellerId: string,
+    disputeId: string,
+    response: string
+  ): Promise<ReturnRequestResult> {
+    try {
+      if (!response || response.trim().length < 10) {
+        return {
+          success: false,
+          error: "Response must be at least 10 characters",
+        };
+      }
+
+      if (response.length > 2000) {
+        return {
+          success: false,
+          error: "Response must be less than 2000 characters",
+        };
+      }
+
+      const dispute = await prisma.dispute.findFirst({
+        where: {
+          id: disputeId,
+          sellerId: sellerId,
+        },
+        include: {
+          order: {
+            select: {
+              orderNumber: true,
+            },
+          },
+          buyer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      if (!dispute) {
+        return {
+          success: false,
+          error: "Return request not found or does not belong to you",
+        };
+      }
+
+      // Update dispute with seller response
+      await prisma.dispute.update({
+        where: { id: disputeId },
+        data: {
+          sellerResponse: response.trim(),
+          updatedAt: new Date(),
+        },
+      });
+
+      logger.info(`Seller ${sellerId} responded to return request ${disputeId}`);
+
+      // Create notification for buyer
+      try {
+        const { BuyerNotificationService } = await import('../buyer/notifications/BuyerNotificationService');
+        const buyerNotificationService = new BuyerNotificationService();
+        await buyerNotificationService.createNotification(
+          dispute.buyerId,
+          'SELLER_RESPONDED_TO_RETURN',
+          'Seller Responded to Return Request',
+          `The seller has responded to your return request for order #${dispute.order.orderNumber}. Please review their response.`,
+          dispute.orderId,
+          disputeId
+        );
+      } catch (notifError: any) {
+        logger.error('Failed to create buyer notification for seller response', {
+          disputeId,
+          buyerId: dispute.buyerId,
+          error: notifError.message
+        });
+      }
+
+      // Create notification for admin
+      try {
+        const { NotificationService } = await import('../admin/notifications/NotificationService');
+        const notificationService = new NotificationService();
+        await notificationService.createNotification(
+          'SELLER_RESPONDED_TO_RETURN',
+          'Seller Responded to Return Request',
+          `Seller has responded to return request for order #${dispute.order.orderNumber}. Review seller's response.`,
+          dispute.orderId
+        );
+      } catch (notifError: any) {
+        logger.error('Failed to create admin notification for seller response', {
+          disputeId,
+          orderId: dispute.orderId,
+          error: notifError.message
+        });
+      }
+
+      return {
+        success: true,
+        message: "Response submitted successfully",
+        data: {
+          disputeId,
+          sellerResponse: response.trim(),
+          respondedAt: new Date(),
+        },
+      };
+    } catch (error: any) {
+      logger.error("Error submitting seller response:", error);
+      return {
+        success: false,
+        error: error.message || "Failed to submit response",
+      };
+    }
+  }
+
+  /**
+   * Seller uploads evidence to dispute return request
+   */
+  async sellerUploadEvidence(
+    sellerId: string,
+    disputeId: string,
+    evidenceUrls: string[]
+  ): Promise<ReturnRequestResult> {
+    try {
+      if (!evidenceUrls || evidenceUrls.length === 0) {
+        return {
+          success: false,
+          error: "At least one evidence URL is required",
+        };
+      }
+
+      const dispute = await prisma.dispute.findFirst({
+        where: {
+          id: disputeId,
+          sellerId: sellerId,
+        },
+      });
+
+      if (!dispute) {
+        return {
+          success: false,
+          error: "Return request not found or does not belong to you",
+        };
+      }
+
+      // Get existing seller evidence or create new array
+      const existingEvidence = (dispute.sellerEvidenceUrls as string[]) || [];
+      const updatedEvidence = [...existingEvidence, ...evidenceUrls];
+
+      // Update dispute with seller evidence
+      await prisma.dispute.update({
+        where: { id: disputeId },
+        data: {
+          sellerEvidenceUrls: updatedEvidence,
+          updatedAt: new Date(),
+        },
+      });
+
+      logger.info(`Seller ${sellerId} uploaded evidence for return request ${disputeId}`);
+
+      // Create notification for admin
+      try {
+        const { NotificationService } = await import('../admin/notifications/NotificationService');
+        const notificationService = new NotificationService();
+        await notificationService.createNotification(
+          'SELLER_UPLOADED_EVIDENCE',
+          'Seller Uploaded Evidence',
+          `Seller has uploaded evidence for return request. Review the evidence.`,
+          dispute.orderId
+        );
+      } catch (notifError: any) {
+        logger.error('Failed to create admin notification for seller evidence', {
+          disputeId,
+          orderId: dispute.orderId,
+          error: notifError.message
+        });
+      }
+
+      return {
+        success: true,
+        message: "Evidence uploaded successfully",
+        data: {
+          disputeId,
+          evidenceUrls: updatedEvidence,
+          uploadedAt: new Date(),
+        },
+      };
+    } catch (error: any) {
+      logger.error("Error uploading seller evidence:", error);
+      return {
+        success: false,
+        error: error.message || "Failed to upload evidence",
+      };
     }
   }
 

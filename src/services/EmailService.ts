@@ -2,12 +2,19 @@
 import { logger } from "../utils/logger";
 import { emailTransport, getFromAddress } from "../config/emailConfig";
 
+interface EmailAttachment {
+  filename: string;
+  content: string | Buffer;
+  contentType?: string;
+}
+
 interface EmailOptions {
   to: string;
   toName?: string;
   subject: string;
   htmlBody: string;
   textBody?: string;
+  attachments?: EmailAttachment[];
   module?: keyof typeof import("../config/emailConfig").emailConfig.fromNames | 'default';
 }
 
@@ -19,13 +26,22 @@ export class EmailService {
     try {
       const from = getFromAddress(options.module || 'default');
 
-      const mailOptions = {
+      const mailOptions: any = {
         from: `${from.name} <${from.address}>`,
         to: options.toName ? `${options.toName} <${options.to}>` : options.to,
         subject: options.subject,
         html: options.htmlBody,
         text: options.textBody || this.stripHtml(options.htmlBody),
       };
+
+      // Add attachments if provided
+      if (options.attachments && options.attachments.length > 0) {
+        mailOptions.attachments = options.attachments.map(att => ({
+          filename: att.filename,
+          content: att.content,
+          contentType: att.contentType || 'application/octet-stream',
+        }));
+      }
 
       const info = await emailTransport.sendMail(mailOptions);
 
@@ -339,6 +355,273 @@ LOGIN URL: https://simbi-market.vercel.app/staff/login
 NEED HELP?
 If you have any questions or need assistance, please contact your manager or 
 reach out to support at support@simbimarket.com
+
+---
+Simbi Market
+Zimbabwe AutoParts Marketplace
+This is an automated message. Please do not reply to this email.
+    `;
+  }
+
+  /**
+   * Send order confirmation email to buyer (when order is placed)
+   */
+  async sendOrderConfirmationEmail(
+    buyerEmail: string,
+    buyerName: string,
+    orderNumber: string,
+    orderItems: Array<{ productName: string; quantity: number; sellerName?: string }>,
+    orderTotal: number,
+    currency: string = 'USD',
+    orderCount: number = 1
+  ): Promise<boolean> {
+    const subject = `Order Confirmation - ${orderNumber}`;
+
+    const htmlBody = this.getOrderConfirmationHtmlTemplate(
+      buyerName,
+      orderNumber,
+      orderItems,
+      orderTotal,
+      currency,
+      orderCount
+    );
+
+    const textBody = this.getOrderConfirmationTextTemplate(
+      buyerName,
+      orderNumber,
+      orderItems,
+      orderTotal,
+      currency,
+      orderCount
+    );
+
+    return await this.sendEmail({
+      to: buyerEmail,
+      toName: buyerName,
+      subject,
+      htmlBody,
+      textBody,
+    });
+  }
+
+  /**
+   * HTML template for order confirmation email
+   */
+  private getOrderConfirmationHtmlTemplate(
+    buyerName: string,
+    orderNumber: string,
+    orderItems: Array<{ productName: string; quantity: number; sellerName?: string }>,
+    orderTotal: number,
+    currency: string,
+    orderCount: number
+  ): string {
+    const formattedTotal = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+    }).format(orderTotal);
+
+    const itemsHtml = orderItems.map(item => `
+      <div class="info-row">
+        <span class="info-label">${item.productName}${item.sellerName ? ` (${item.sellerName})` : ''}</span>
+        <span class="info-value">Qty: ${item.quantity}</span>
+      </div>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Confirmation</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+    .container {
+      background-color: #ffffff;
+      border-radius: 8px;
+      padding: 40px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #0066cc;
+      margin-bottom: 30px;
+    }
+    .logo {
+      font-size: 32px;
+      font-weight: bold;
+      color: #0066cc;
+      margin-bottom: 10px;
+    }
+    h1 {
+      color: #0066cc;
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .success-badge {
+      background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+      color: white;
+      padding: 15px 25px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      margin: 25px 0;
+    }
+    .order-info {
+      background-color: #f8f9fa;
+      border-left: 4px solid #0066cc;
+      padding: 20px;
+      margin: 25px 0;
+      border-radius: 4px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .info-row:last-child {
+      border-bottom: none;
+    }
+    .info-label {
+      font-weight: bold;
+      color: #666;
+    }
+    .info-value {
+      color: #000;
+      text-align: right;
+    }
+    .total-amount {
+      font-size: 24px;
+      font-weight: bold;
+      color: #0066cc;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+      color: #666;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🚗 Simbi Market</div>
+      <p style="margin: 0; color: #666;">Zimbabwe AutoParts Marketplace</p>
+    </div>
+
+    <h1>Thank You for Your Order, ${buyerName}!</h1>
+    
+    <div class="success-badge">
+      ✅ Your Order Has Been Received
+    </div>
+    
+    <p>We've received your order and it's being processed. You'll receive another email once the seller accepts your order.</p>
+    
+    <div class="order-info">
+      <h3 style="margin-top: 0; color: #0066cc;">Order Details</h3>
+      
+      <div class="info-row">
+        <span class="info-label">Order Number:</span>
+        <span class="info-value"><strong>${orderNumber}</strong></span>
+      </div>
+      
+      ${orderCount > 1 ? `<div class="info-row"><span class="info-label">Number of Orders:</span><span class="info-value">${orderCount}</span></div>` : ''}
+      
+      ${itemsHtml}
+      
+      <div class="info-row" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #ddd;">
+        <span class="info-label">Order Total:</span>
+        <span class="info-value total-amount">${formattedTotal}</span>
+      </div>
+    </div>
+
+    <p><strong>What's Next?</strong></p>
+    <ul>
+      <li>The seller will review your order and accept or reject it</li>
+      <li>You'll receive an email notification once the seller responds</li>
+      <li>If accepted, your order will be prepared for shipment</li>
+    </ul>
+
+    <div style="margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">
+      <strong>📱 Need Help?</strong>
+      <p style="margin: 10px 0 0 0;">
+        If you have any questions about your order, please contact support at 
+        <a href="mailto:support@simbimarket.com">support@simbimarket.com</a>
+      </p>
+    </div>
+
+    <div class="footer">
+      <p><strong>Simbi Market</strong></p>
+      <p style="font-size: 12px; color: #999;">
+        Zimbabwe AutoParts Marketplace<br>
+        This is an automated message. Please do not reply to this email.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  /**
+   * Plain text template for order confirmation email
+   */
+  private getOrderConfirmationTextTemplate(
+    buyerName: string,
+    orderNumber: string,
+    orderItems: Array<{ productName: string; quantity: number; sellerName?: string }>,
+    orderTotal: number,
+    currency: string,
+    orderCount: number
+  ): string {
+    const formattedTotal = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+    }).format(orderTotal);
+
+    const itemsText = orderItems.map(item => 
+      `  - ${item.productName}${item.sellerName ? ` (${item.sellerName})` : ''} (Qty: ${item.quantity})`
+    ).join('\n');
+
+    return `
+SIMBI MARKET - ORDER CONFIRMATION
+
+Thank You for Your Order, ${buyerName}!
+
+✅ YOUR ORDER HAS BEEN RECEIVED
+
+We've received your order and it's being processed. You'll receive another email once the seller accepts your order.
+
+ORDER DETAILS:
+==============
+Order Number: ${orderNumber}
+${orderCount > 1 ? `Number of Orders: ${orderCount}\n` : ''}
+Products:
+${itemsText}
+
+Order Total: ${formattedTotal}
+
+WHAT'S NEXT?
+- The seller will review your order and accept or reject it
+- You'll receive an email notification once the seller responds
+- If accepted, your order will be prepared for shipment
+
+NEED HELP?
+If you have any questions about your order, please contact support at support@simbimarket.com
 
 ---
 Simbi Market
@@ -1030,7 +1313,8 @@ This is an automated message. Please do not reply to this email.
     buyerEmail: string,
     buyerName: string,
     orderNumber: string,
-    deliveryDate: string
+    deliveryDate: string,
+    receiptHtml?: string
   ): Promise<boolean> {
     const subject = `Order Delivered - ${orderNumber}`;
 
@@ -1085,6 +1369,13 @@ This is an automated message. Please do not reply to this email.
       margin: 25px 0;
       border-radius: 4px;
     }
+    .receipt-notice {
+      background-color: #e7f3ff;
+      border-left: 4px solid #0066cc;
+      padding: 15px;
+      margin: 25px 0;
+      border-radius: 4px;
+    }
     .footer {
       margin-top: 30px;
       padding-top: 20px;
@@ -1112,6 +1403,13 @@ This is an automated message. Please do not reply to this email.
       <p><strong>Delivery Date:</strong> ${deliveryDate}</p>
     </div>
 
+    ${receiptHtml ? `
+    <div class="receipt-notice">
+      <p><strong>📄 Receipt Attached</strong></p>
+      <p>Your order receipt has been attached to this email. Please keep it for your records.</p>
+    </div>
+    ` : ''}
+
     <p>We hope you're satisfied with your purchase! If you have any questions or concerns, please don't hesitate to contact us.</p>
     <p>You can now leave a review for the products you received.</p>
 
@@ -1123,11 +1421,18 @@ This is an automated message. Please do not reply to this email.
 </html>
     `;
 
+    const attachments = receiptHtml ? [{
+      filename: `receipt-${orderNumber}.html`,
+      content: receiptHtml,
+      contentType: 'text/html',
+    }] : undefined;
+
     return await this.sendEmail({
       to: buyerEmail,
       toName: buyerName,
       subject,
       htmlBody,
+      attachments,
     });
   }
 

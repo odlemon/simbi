@@ -13,6 +13,7 @@ import couponRoutes from "./coupons";
 import reviewRoutes from "./reviews";
 import returnRoutes from "./returns";
 import reportsRoutes from "./reports.routes";
+import notificationRoutes from "./notifications";
 
 const router = Router();
 
@@ -54,6 +55,9 @@ router.use("/returns", returnRoutes);
 
 // Reports & Analytics
 router.use("/reports", reportsRoutes);
+
+// Notifications
+router.use("/notifications", notificationRoutes);
 
 export default router;
 

@@ -43,6 +43,7 @@ export class SellerReturnController {
           orderBy: {
             createdAt: "desc",
           },
+          // Note: All Dispute fields are included by default (sellerResponse, sellerEvidenceUrls, buyerDescription, buyerEvidenceUrls, etc.)
           include: {
             order: {
               include: {
@@ -243,6 +244,149 @@ export class SellerReturnController {
         error: error.message,
       });
     }
+  }
+
+  /**
+   * POST /api/seller/returns/:id/respond
+   * Seller responds to return request (adds comment/response)
+   */
+  async respondToReturn(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller?.id;
+      const returnId = req.params.id;
+      const { response } = req.body;
+
+      if (!sellerId) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      if (!response || typeof response !== 'string') {
+        res.status(400).json({
+          success: false,
+          message: "Response text is required",
+        });
+        return;
+      }
+
+      const result = await returnService.sellerRespondToReturn(sellerId, returnId, response);
+
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: result.message,
+          data: result.data,
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: result.error,
+        });
+      }
+    } catch (error: any) {
+      logger.error("Error in seller respond to return:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * POST /api/seller/returns/:id/upload-evidence
+   * Seller uploads evidence to dispute return request
+   * Supports both file uploads and URL-based evidence
+   */
+  async uploadEvidence(req: AuthenticatedRequest, res: Response): Promise<void> {
+    // Handle file uploads if present
+    uploadMultipleImages(req, res, async (err: any) => {
+      if (err) {
+        logger.error("Image upload error in seller evidence:", err);
+        res.status(400).json({
+          success: false,
+          message: err.message || "Failed to upload images",
+        });
+        return;
+      }
+
+      try {
+        const sellerId = req.seller?.id;
+        const returnId = req.params.id;
+
+        if (!sellerId) {
+          res.status(401).json({
+            success: false,
+            message: "Unauthorized",
+          });
+          return;
+        }
+
+        // Step 1: Upload images FIRST if provided
+        let evidenceUrls: string[] = [];
+        const hasFiles = req.files && Array.isArray(req.files) && req.files.length > 0;
+        const hasBodyUrls = req.body.evidenceUrls && Array.isArray(req.body.evidenceUrls) && req.body.evidenceUrls.length > 0;
+
+        // If files are provided, upload them first
+        if (hasFiles) {
+          const { remoteUploadService } = await import("../../services/media/RemoteUploadService");
+          const uploadResult = await remoteUploadService.uploadFiles(req.files, "seller-evidence");
+          
+          if (!uploadResult.success || !uploadResult.files || uploadResult.files.length === 0) {
+            res.status(400).json({
+              success: false,
+              message: "Failed to upload evidence images",
+              error: uploadResult.error || "Image upload failed. Please try again.",
+            });
+            return;
+          }
+
+          evidenceUrls = uploadResult.files.map((f) => f.url);
+          logger.info(`Successfully uploaded ${evidenceUrls.length} seller evidence image(s)`);
+        }
+
+        // Merge with any URLs provided in body
+        if (hasBodyUrls) {
+          evidenceUrls = [...evidenceUrls, ...req.body.evidenceUrls];
+        }
+
+        // Step 2: Validate that we have at least one evidence URL
+        if (evidenceUrls.length === 0) {
+          res.status(400).json({
+            success: false,
+            message: "Evidence required",
+            error: "At least one image or evidence URL is required.",
+          });
+          return;
+        }
+
+        // Step 3: Save evidence only after images are uploaded
+        const result = await returnService.sellerUploadEvidence(sellerId, returnId, evidenceUrls);
+
+        if (result.success) {
+          res.status(200).json({
+            success: true,
+            message: result.message,
+            data: result.data,
+          });
+        } else {
+          res.status(400).json({
+            success: false,
+            message: result.error,
+          });
+        }
+      } catch (error: any) {
+        logger.error("Error uploading seller evidence:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+          error: error.message,
+        });
+      }
+    });
   }
 
   /**

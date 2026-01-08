@@ -23,17 +23,35 @@ export class DriverController {
       }
 
       // Check if phone number already exists
-      const existingDriver = await prisma.driver.findUnique({
+      const existingDriverByPhone = await prisma.driver.findUnique({
         where: { phoneNumber }
       });
 
-      if (existingDriver) {
+      if (existingDriverByPhone) {
         res.status(400).json({
           success: false,
           message: 'Driver with this phone number already exists',
-          error: 'DUPLICATE_PHONE'
+          error: 'DUPLICATE_PHONE',
+          timestamp: new Date().toISOString()
         });
         return;
+      }
+
+      // Check if license number already exists (if provided)
+      if (licenseNumber) {
+        const existingDriverByLicense = await prisma.driver.findUnique({
+          where: { licenseNumber }
+        });
+
+        if (existingDriverByLicense) {
+          res.status(400).json({
+            success: false,
+            message: 'Driver with this license number already exists',
+            error: 'DUPLICATE_LICENSE',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
       }
 
       // Create driver
@@ -59,6 +77,39 @@ export class DriverController {
       });
     } catch (error: any) {
       console.error('Create driver error:', error);
+      
+      // Handle unique constraint violations with better error messages
+      if (error.code === 'P2002') {
+        const target = error.meta?.target;
+        if (Array.isArray(target)) {
+          if (target.includes('licenseNumber')) {
+            res.status(400).json({
+              success: false,
+              message: 'Driver with this license number already exists',
+              error: 'DUPLICATE_LICENSE',
+              timestamp: new Date().toISOString()
+            });
+            return;
+          }
+          if (target.includes('phoneNumber')) {
+            res.status(400).json({
+              success: false,
+              message: 'Driver with this phone number already exists',
+              error: 'DUPLICATE_PHONE',
+              timestamp: new Date().toISOString()
+            });
+            return;
+          }
+        }
+        res.status(400).json({
+          success: false,
+          message: 'A driver with this information already exists',
+          error: 'DUPLICATE_ENTRY',
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+
       res.status(500).json({
         success: false,
         message: 'Failed to create driver',

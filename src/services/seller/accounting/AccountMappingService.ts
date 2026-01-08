@@ -39,7 +39,7 @@ export class AccountMappingService {
     const mapping: Record<TransactionType, string> = {
       SALE: "4110", // Product Sales - New Parts
       EXPENSE: "6000", // Expenses (will be refined by category)
-      PLATFORM_FEE: "6110", // Platform Commission
+      COMMISSION: "6110", // Platform Commission
       REFUND: "4950", // Sales Returns & Refunds
       PAYOUT: "1120", // Bank Account - Main
       ADJUSTMENT: "6920", // Miscellaneous

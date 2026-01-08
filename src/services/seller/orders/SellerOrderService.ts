@@ -316,6 +316,25 @@ export class SellerOrderService {
             buyerEmail: updatedOrder.buyer.email
           });
 
+          // Create notification for buyer
+          try {
+            const { BuyerNotificationService } = await import('../../buyer/notifications/BuyerNotificationService');
+            const buyerNotificationService = new BuyerNotificationService();
+            await buyerNotificationService.createNotification(
+              updatedOrder.buyer.id,
+              'ORDER_ACCEPTED',
+              'Order Accepted',
+              `Your order #${updatedOrder.orderNumber} has been accepted by the seller and is being processed.`,
+              updatedOrder.id
+            );
+          } catch (notifError: any) {
+            logger.error('Failed to create buyer notification for order acceptance', {
+              orderId: updatedOrder.id,
+              buyerId: updatedOrder.buyer.id,
+              error: notifError.message
+            });
+          }
+
           // Create notification for admin - order accepted, needs driver dispatch
           try {
             const { NotificationService } = await import('../../admin/notifications/NotificationService');
@@ -368,6 +387,25 @@ export class SellerOrderService {
             buyerEmail: updatedOrder.buyer.email,
             sellerBusinessName
           });
+
+          // Create notification for buyer
+          try {
+            const { BuyerNotificationService } = await import('../../buyer/notifications/BuyerNotificationService');
+            const buyerNotificationService = new BuyerNotificationService();
+            await buyerNotificationService.createNotification(
+              updatedOrder.buyer.id,
+              'ORDER_REJECTED',
+              'Order Rejected',
+              `Your order #${updatedOrder.orderNumber} has been rejected by the seller. Reason: ${rejectionReason || 'No reason provided'}`,
+              updatedOrder.id
+            );
+          } catch (notifError: any) {
+            logger.error('Failed to create buyer notification for order rejection', {
+              orderId: updatedOrder.id,
+              buyerId: updatedOrder.buyer.id,
+              error: notifError.message
+            });
+          }
         } catch (emailError: any) {
           // Log error but don't fail the order update
           logger.error('Failed to send order rejection email', {

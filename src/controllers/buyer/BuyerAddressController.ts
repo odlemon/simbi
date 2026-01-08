@@ -16,7 +16,7 @@ export class BuyerAddressController {
    */
   async createAddress(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -58,7 +58,7 @@ export class BuyerAddressController {
    */
   async getAddresses(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({
@@ -99,7 +99,7 @@ export class BuyerAddressController {
    */
   async getAddressById(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const addressId = req.params.id;
       
       if (!buyerId) {
@@ -141,7 +141,7 @@ export class BuyerAddressController {
    */
   async updateAddress(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const addressId = req.params.id;
       
       if (!buyerId) {
@@ -184,7 +184,7 @@ export class BuyerAddressController {
    */
   async deleteAddress(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const addressId = req.params.id;
       
       if (!buyerId) {
@@ -226,7 +226,7 @@ export class BuyerAddressController {
    */
   async setDefaultAddress(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       const addressId = req.params.id;
       
       if (!buyerId) {
@@ -269,7 +269,7 @@ export class BuyerAddressController {
    */
   async getDefaultAddress(req: BuyerAuthRequest, res: Response): Promise<void> {
     try {
-      const buyerId = req.user?.buyerId;
+      const buyerId = req.buyer?.id;
       
       if (!buyerId) {
         res.status(401).json({

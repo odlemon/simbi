@@ -12,6 +12,7 @@ import advancedAnalyticsRoutes from './advanced-analytics';
 import cartRoutes from './cart.routes';
 import reviewRoutes from './reviews';
 import returnRoutes from './returns';
+import notificationRoutes from './notifications';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use('/quotes', quoteRoutes);
 router.use('/analytics', advancedAnalyticsRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/returns', returnRoutes);
+router.use('/notifications', notificationRoutes);
 
 export default router;

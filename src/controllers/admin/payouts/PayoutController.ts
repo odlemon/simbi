@@ -8,8 +8,8 @@ import { PayoutStatus } from "@prisma/client";
 export class PayoutController {
   /**
    * GET /api/admin/payouts/pending
-   * Get all pending payouts to sellers
-   * Shows: platform fee, seller net amount, total being held
+   * Get all pending payouts grouped by orders (for order selection)
+   * Returns individual orders so admin can select which orders to payout
    */
   async getPendingPayouts(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -43,103 +43,134 @@ export class PayoutController {
               email: true
             }
           },
-          payout: true
+          payout: true,
+          items: {
+            include: {
+              inventory: {
+                include: {
+                  masterProduct: {
+                    select: {
+                      name: true,
+                      oemPartNumber: true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          payment: {
+            paidAt: 'asc' // Oldest first
+          }
         }
       });
 
-      // Group by seller and calculate pending amounts
-      const sellerPayouts = new Map<string, {
-        seller: any;
-        orders: any[];
-        totalPaid: number;
-        totalPlatformFee: number;
-        totalSellerAmount: number;
-        totalPaidOut: number;
+      // Process each order individually
+      const pendingOrders: Array<{
+        orderId: string;
+        orderNumber: string;
+        seller: {
+          id: string;
+          businessName: string;
+          email: string;
+        };
+        paidAmount: number;
+        platformCommission: number;
+        sellerNetAmount: number;
+        paidOutAmount: number;
         pendingAmount: number;
         currency: string;
+        paymentDate: Date | null;
+        deliveryDate: Date | null;
+        items: Array<{
+          productName: string;
+          partNumber: string | null;
+          quantity: number;
+        }>;
+      }> = [];
+
+      // Also calculate summary by seller for reference
+      const sellerSummary = new Map<string, {
+        seller: any;
+        ordersCount: number;
+        totalPending: number;
       }>();
 
       for (const order of orders) {
         if (!order.payment) continue;
 
-        const sellerId = order.sellerId;
-        const paidAmount = order.payment.amount; // Amount actually paid by buyer
+        const paidAmount = order.payment.amount;
         const platformCommission = order.platformCommission;
-        const sellerNetAmount = paidAmount - platformCommission; // What seller should get
+        const sellerNetAmount = paidAmount - platformCommission;
 
         // Calculate how much has been paid out already
         let paidOutAmount = 0;
         if (order.payout) {
-          // Use netAmount which represents what was actually paid out
-          // For COMPLETED: netAmount = full seller amount
-          // For PROCESSING: netAmount = partial amount paid so far
           paidOutAmount = order.payout.netAmount;
         }
 
         const pendingForThisOrder = sellerNetAmount - paidOutAmount;
 
         if (pendingForThisOrder > 0) {
-          if (!sellerPayouts.has(sellerId)) {
-            sellerPayouts.set(sellerId, {
-              seller: order.seller,
-              orders: [],
-              totalPaid: 0,
-              totalPlatformFee: 0,
-              totalSellerAmount: 0,
-              totalPaidOut: 0,
-              pendingAmount: 0,
-              currency: order.currency
-            });
-          }
-
-          const sellerData = sellerPayouts.get(sellerId)!;
-          sellerData.orders.push({
+          // Add to individual orders list
+          pendingOrders.push({
             orderId: order.id,
             orderNumber: order.orderNumber,
+            seller: order.seller,
             paidAmount: paidAmount,
             platformCommission: platformCommission,
             sellerNetAmount: sellerNetAmount,
             paidOutAmount: paidOutAmount,
             pendingAmount: pendingForThisOrder,
-            paymentDate: order.payment.paidAt
+            currency: order.currency,
+            paymentDate: order.payment.paidAt,
+            deliveryDate: order.actualDeliveryDate,
+            items: order.items.map(item => ({
+              productName: item.inventory?.masterProduct?.name || 'Unknown Product',
+              partNumber: item.inventory?.masterProduct?.oemPartNumber || null,
+              quantity: item.quantity
+            }))
           });
-          sellerData.totalPaid += paidAmount;
-          sellerData.totalPlatformFee += platformCommission;
-          sellerData.totalSellerAmount += sellerNetAmount;
-          sellerData.totalPaidOut += paidOutAmount;
-          sellerData.pendingAmount += pendingForThisOrder;
+
+          // Update seller summary
+          if (!sellerSummary.has(order.sellerId)) {
+            sellerSummary.set(order.sellerId, {
+              seller: order.seller,
+              ordersCount: 0,
+              totalPending: 0
+            });
+          }
+          const sellerData = sellerSummary.get(order.sellerId)!;
+          sellerData.ordersCount++;
+          sellerData.totalPending += pendingForThisOrder;
         }
       }
 
-      // Convert to array and calculate totals
-      const payoutList = Array.from(sellerPayouts.values());
-      
-      // Calculate platform totals
-      const platformTotal = payoutList.reduce((sum, p) => sum + p.totalPlatformFee, 0);
-      const totalHeld = payoutList.reduce((sum, p) => sum + p.totalPaid, 0);
-      const totalPendingPayouts = payoutList.reduce((sum, p) => sum + p.pendingAmount, 0);
+      // Calculate totals
+      const totalOrders = pendingOrders.length;
+      const totalPaid = pendingOrders.reduce((sum, o) => sum + o.paidAmount, 0);
+      const totalPlatformFee = pendingOrders.reduce((sum, o) => sum + o.platformCommission, 0);
+      const totalSellerAmount = pendingOrders.reduce((sum, o) => sum + o.sellerNetAmount, 0);
+      const totalPaidOut = pendingOrders.reduce((sum, o) => sum + o.paidOutAmount, 0);
+      const totalPendingPayouts = pendingOrders.reduce((sum, o) => sum + o.pendingAmount, 0);
 
       res.status(200).json({
         success: true,
         data: {
-          sellers: payoutList.map(p => ({
-            seller: p.seller,
-            ordersCount: p.orders.length,
-            totalPaid: p.totalPaid,
-            platformFee: p.totalPlatformFee,
-            sellerNetAmount: p.totalSellerAmount,
-            paidOut: p.totalPaidOut,
-            pendingAmount: p.pendingAmount,
-            currency: p.currency,
-            orders: p.orders
+          orders: pendingOrders, // Individual orders for selection
+          sellers: Array.from(sellerSummary.values()).map(s => ({
+            seller: s.seller,
+            ordersCount: s.ordersCount,
+            totalPending: s.totalPending
           })),
           summary: {
-            totalSellers: payoutList.length,
-            totalOrders: payoutList.reduce((sum, p) => sum + p.orders.length, 0),
-            totalPaid: totalHeld,
-            totalPlatformFee: platformTotal,
-            totalSellerAmount: payoutList.reduce((sum, p) => sum + p.totalSellerAmount, 0),
-            totalPaidOut: payoutList.reduce((sum, p) => sum + p.totalPaidOut, 0),
+            totalSellers: sellerSummary.size,
+            totalOrders: totalOrders,
+            totalPaid: totalPaid,
+            totalPlatformFee: totalPlatformFee,
+            totalSellerAmount: totalSellerAmount,
+            totalPaidOut: totalPaidOut,
             totalPendingPayouts: totalPendingPayouts
           }
         },
@@ -159,13 +190,17 @@ export class PayoutController {
 
   /**
    * POST /api/admin/payouts/pay
-   * Pay a seller (supports partial payments)
-   * Body: { sellerId, amount, notes?, bankReference? }
+   * Pay selected orders (supports partial payments)
+   * Body: { orderIds: string[], amount?, notes?, bankReference? }
+   * OR (backward compatible): { sellerId, amount, notes?, bankReference? }
+   * 
+   * If orderIds provided: Process only those specific orders
+   * If sellerId provided: Process all pending orders for that seller (old behavior)
    */
   async paySeller(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const adminId = req.admin?.id;
-      const { sellerId, amount, notes, bankReference } = req.body;
+      const { orderIds, sellerId, amount, notes, bankReference } = req.body;
 
       if (!adminId) {
         res.status(401).json({
@@ -176,47 +211,127 @@ export class PayoutController {
         return;
       }
 
-      if (!sellerId || !amount || amount <= 0) {
+      // Validate input - either orderIds or sellerId must be provided
+      if (!orderIds && !sellerId) {
         res.status(400).json({
           success: false,
-          message: 'sellerId and amount (greater than 0) are required',
+          message: 'Either orderIds array or sellerId is required',
           error: 'INVALID_REQUEST'
         });
         return;
       }
 
-      // Get seller
-      const seller = await prisma.seller.findUnique({
-        where: { id: sellerId }
-      });
-
-      if (!seller) {
-        res.status(404).json({
+      // If orderIds provided, validate it's an array
+      if (orderIds && (!Array.isArray(orderIds) || orderIds.length === 0)) {
+        res.status(400).json({
           success: false,
-          message: 'Seller not found',
-          error: 'SELLER_NOT_FOUND'
+          message: 'orderIds must be a non-empty array',
+          error: 'INVALID_REQUEST'
         });
         return;
       }
 
-      // Get all pending orders for this seller
-      const orders = await prisma.order.findMany({
-        where: {
-          sellerId: sellerId,
-          status: 'DELIVERED',
-          payment: {
-            status: {
-              in: ['COMPLETED', 'PARTIAL']
+      let orders;
+      let seller;
+
+      if (orderIds) {
+        // New behavior: Get specific orders
+        orders = await prisma.order.findMany({
+          where: {
+            id: {
+              in: orderIds
+            },
+            status: 'DELIVERED',
+            payment: {
+              status: {
+                in: ['COMPLETED', 'PARTIAL']
+              }
+            }
+          },
+          include: {
+            payment: true,
+            payout: true,
+            seller: {
+              select: {
+                id: true,
+                businessName: true,
+                email: true
+              }
+            }
+          },
+          orderBy: {
+            payment: {
+              paidAt: 'asc' // Oldest first
             }
           }
-        },
-        include: {
-          payment: true,
-          payout: true
-        }
-      });
+        });
 
-      // Calculate total pending amount
+        if (orders.length === 0) {
+          res.status(404).json({
+            success: false,
+            message: 'No valid orders found for the provided orderIds',
+            error: 'ORDERS_NOT_FOUND'
+          });
+          return;
+        }
+
+        // Get seller from first order (all orders should be from same seller for payout)
+        seller = orders[0].seller;
+        const sellerIds = new Set(orders.map(o => o.sellerId));
+        
+        if (sellerIds.size > 1) {
+          res.status(400).json({
+            success: false,
+            message: 'All selected orders must be from the same seller',
+            error: 'MULTIPLE_SELLERS'
+          });
+          return;
+        }
+      } else {
+        // Old behavior: Get all pending orders for seller
+        seller = await prisma.seller.findUnique({
+          where: { id: sellerId }
+        });
+
+        if (!seller) {
+          res.status(404).json({
+            success: false,
+            message: 'Seller not found',
+            error: 'SELLER_NOT_FOUND'
+          });
+          return;
+        }
+
+        orders = await prisma.order.findMany({
+          where: {
+            sellerId: sellerId,
+            status: 'DELIVERED',
+            payment: {
+              status: {
+                in: ['COMPLETED', 'PARTIAL']
+              }
+            }
+          },
+          include: {
+            payment: true,
+            payout: true,
+            seller: {
+              select: {
+                id: true,
+                businessName: true,
+                email: true
+              }
+            }
+          },
+          orderBy: {
+            payment: {
+              paidAt: 'asc' // Oldest first
+            }
+          }
+        });
+      }
+
+      // Calculate total pending amount for selected orders
       let totalPending = 0;
       const orderPayouts: Array<{
         orderId: string;
@@ -238,7 +353,6 @@ export class PayoutController {
 
         let paidOutAmount = 0;
         if (order.payout) {
-          // Use netAmount which represents what was actually paid out
           paidOutAmount = order.payout.netAmount;
         }
 
@@ -258,23 +372,44 @@ export class PayoutController {
         }
       }
 
-      // Validate amount doesn't exceed pending
-      if (amount > totalPending) {
+      if (orderPayouts.length === 0) {
         res.status(400).json({
           success: false,
-          message: `Payment amount (${amount}) exceeds pending amount (${totalPending})`,
+          message: 'No pending amounts found for the selected orders',
+          error: 'NO_PENDING_AMOUNT'
+        });
+        return;
+      }
+
+      // If amount is provided, validate it doesn't exceed pending
+      // If amount is not provided, use total pending (full payout)
+      const payoutAmount = amount || totalPending;
+      
+      if (payoutAmount <= 0) {
+        res.status(400).json({
+          success: false,
+          message: 'Payout amount must be greater than 0',
+          error: 'INVALID_AMOUNT'
+        });
+        return;
+      }
+
+      if (payoutAmount > totalPending) {
+        res.status(400).json({
+          success: false,
+          message: `Payment amount (${payoutAmount}) exceeds pending amount (${totalPending})`,
           error: 'AMOUNT_EXCEEDS_PENDING',
           data: {
             pendingAmount: totalPending,
-            requestedAmount: amount,
-            remainingAfterPayment: totalPending - amount
+            requestedAmount: payoutAmount,
+            remainingAfterPayment: totalPending - payoutAmount
           }
         });
         return;
       }
 
       // Distribute payment across orders (FIFO - first order first)
-      let remainingPayment = amount;
+      let remainingPayment = payoutAmount;
       const payoutRecords: any[] = [];
 
       for (const orderPayout of orderPayouts) {
@@ -315,7 +450,7 @@ export class PayoutController {
           // Create new payout
           const payout = await prisma.payout.create({
             data: {
-              sellerId: sellerId,
+              sellerId: seller.id,
               orderId: order.id,
               grossAmount: orderPayout.paidAmount,
               platformCommission: orderPayout.platformCommission,
@@ -341,19 +476,21 @@ export class PayoutController {
         remainingPayment -= amountForThisOrder;
       }
 
-      const remainingPending = totalPending - amount;
+      const remainingPending = totalPending - payoutAmount;
 
       // Log payout activity
-      logger.info('Seller payout processed', {
+      logger.info('Order payout processed', {
         adminId,
-        sellerId,
-        amount,
+        sellerId: seller.id,
+        orderIds: orderIds || 'all',
+        amount: payoutAmount,
         totalPending,
         remainingPending,
         ordersPaid: payoutRecords.length,
         bankReference
       });
 
+      // Send response immediately - don't wait for notifications/emails
       res.status(200).json({
         success: true,
         message: remainingPending > 0 
@@ -366,7 +503,7 @@ export class PayoutController {
             email: seller.email
           },
           payout: {
-            amount: amount,
+            amount: payoutAmount,
             totalPending: totalPending,
             remainingPending: remainingPending,
             isFullyPaid: remainingPending === 0,
@@ -374,10 +511,89 @@ export class PayoutController {
             notes: notes || null,
             processedAt: new Date()
           },
-          orders: payoutRecords
+          orders: payoutRecords,
+          selectedOrderIds: orderIds || null
         },
         timestamp: new Date().toISOString()
       });
+
+      // Send notifications and emails in background (fire and forget)
+      (async () => {
+        try {
+          const currency = orders[0]?.currency || 'USD';
+          const formattedAmount = new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currency,
+          }).format(payoutAmount);
+
+          // Create in-app notification for seller
+          try {
+            const { SellerNotificationService } = await import('../../../services/seller/notifications/SellerNotificationService');
+            const sellerNotificationService = new SellerNotificationService();
+            
+            const orderNumbers = payoutRecords.map(r => r.orderNumber).join(', ');
+            const notificationMessage = remainingPending > 0
+              ? `Payout of ${formattedAmount} processed for ${payoutRecords.length} order(s): ${orderNumbers}. Remaining pending: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(remainingPending)}`
+              : `Payout of ${formattedAmount} processed successfully for ${payoutRecords.length} order(s): ${orderNumbers}`;
+
+            await sellerNotificationService.createNotification(
+              seller.id,
+              'PAYOUT_PROCESSED',
+              'Payout Processed',
+              notificationMessage
+            );
+
+            logger.info('Seller payout notification created', {
+              sellerId: seller.id,
+              payoutAmount: payoutAmount,
+              ordersCount: payoutRecords.length,
+            });
+          } catch (notifError: any) {
+            logger.error('Failed to create seller notification for payout', {
+              sellerId: seller.id,
+              error: notifError.message,
+            });
+          }
+
+          // Send email notification to seller
+          try {
+            const { emailService } = await import('../../../services/EmailService');
+            const sellerName = seller.businessName || seller.email;
+            
+            // Get the first payout ID for email (or generate a reference)
+            const firstPayoutId = payoutRecords.length > 0 
+              ? payoutRecords[0].orderId 
+              : `payout-${Date.now()}`;
+
+            await emailService.sendPayoutProcessedEmail(
+              seller.email,
+              sellerName,
+              payoutAmount,
+              currency,
+              firstPayoutId,
+              payoutRecords.length
+            );
+
+            logger.info('Payout notification email sent to seller', {
+              sellerId: seller.id,
+              sellerEmail: seller.email,
+              payoutAmount: payoutAmount,
+              ordersCount: payoutRecords.length,
+            });
+          } catch (emailError: any) {
+            logger.error('Failed to send payout notification email to seller', {
+              sellerId: seller.id,
+              sellerEmail: seller.email,
+              error: emailError.message,
+            });
+          }
+        } catch (error: any) {
+          logger.error('Error in background notification sending for payout', {
+            sellerId: seller.id,
+            error: error.message
+          });
+        }
+      })();
 
     } catch (error: any) {
       logger.error("Error processing seller payout", { error: error.message });
