@@ -17,6 +17,7 @@ export class SellerNotificationController {
   async getNotifications(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const sellerId = req.seller?.id;
+      const staffId = req.staff?.id; // Get staff ID if it's a staff member
       
       if (!sellerId) {
         res.status(401).json({
@@ -31,7 +32,8 @@ export class SellerNotificationController {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 50;
 
-      const result = await this.notificationService.getNotifications(sellerId, page, limit);
+      // Pass staffId if it's a staff member - this will filter to show only their notifications
+      const result = await this.notificationService.getNotifications(sellerId, page, limit, staffId);
 
       res.status(200).json({
         success: true,
@@ -56,6 +58,7 @@ export class SellerNotificationController {
   async getUnreadCount(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const sellerId = req.seller?.id;
+      const staffId = req.staff?.id; // Get staff ID if it's a staff member
       
       if (!sellerId) {
         res.status(401).json({
@@ -67,7 +70,8 @@ export class SellerNotificationController {
         return;
       }
 
-      const count = await this.notificationService.getUnreadCount(sellerId);
+      // Pass staffId if it's a staff member
+      const count = await this.notificationService.getUnreadCount(sellerId, staffId);
 
       res.status(200).json({
         success: true,
@@ -94,6 +98,7 @@ export class SellerNotificationController {
   async markAsRead(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const sellerId = req.seller?.id;
+      const staffId = req.staff?.id; // Get staff ID if it's a staff member
       
       if (!sellerId) {
         res.status(401).json({
@@ -107,7 +112,8 @@ export class SellerNotificationController {
 
       const { id } = req.params;
 
-      await this.notificationService.markAsRead(sellerId, id);
+      // Pass staffId if it's a staff member
+      await this.notificationService.markAsRead(sellerId, id, staffId);
 
       res.status(200).json({
         success: true,
@@ -135,6 +141,7 @@ export class SellerNotificationController {
   async markAllAsRead(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const sellerId = req.seller?.id;
+      const staffId = req.staff?.id; // Get staff ID if it's a staff member
       
       if (!sellerId) {
         res.status(401).json({
@@ -146,7 +153,8 @@ export class SellerNotificationController {
         return;
       }
 
-      await this.notificationService.markAllAsRead(sellerId);
+      // Pass staffId if it's a staff member
+      await this.notificationService.markAllAsRead(sellerId, staffId);
 
       res.status(200).json({
         success: true,
@@ -171,6 +179,7 @@ export class SellerNotificationController {
   async deleteNotification(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const sellerId = req.seller?.id;
+      const staffId = req.staff?.id; // Get staff ID if it's a staff member
       
       if (!sellerId) {
         res.status(401).json({
@@ -184,7 +193,8 @@ export class SellerNotificationController {
 
       const { id } = req.params;
 
-      await this.notificationService.deleteNotification(sellerId, id);
+      // Pass staffId if it's a staff member
+      await this.notificationService.deleteNotification(sellerId, id, staffId);
 
       res.status(200).json({
         success: true,
@@ -212,6 +222,7 @@ export class SellerNotificationController {
   async deleteAllNotifications(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const sellerId = req.seller?.id;
+      const staffId = req.staff?.id; // Get staff ID if it's a staff member
       
       if (!sellerId) {
         res.status(401).json({
@@ -223,7 +234,8 @@ export class SellerNotificationController {
         return;
       }
 
-      const deletedCount = await this.notificationService.deleteAllNotifications(sellerId);
+      // Pass staffId if it's a staff member
+      const deletedCount = await this.notificationService.deleteAllNotifications(sellerId, staffId);
 
       res.status(200).json({
         success: true,

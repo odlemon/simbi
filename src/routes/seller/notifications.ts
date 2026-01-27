@@ -1,52 +1,52 @@
 // @ts-nocheck
 import { Router } from 'express';
 import { SellerNotificationController } from '../../controllers/seller/notifications/SellerNotificationController';
-import { authenticateSeller } from '../../middleware/authenticateSeller';
+import { authenticateSellerOrStaff } from '../../middleware/authenticateSellerOrStaff';
 
 const router = Router();
 const notificationController = new SellerNotificationController();
 
 /**
  * @route GET /api/seller/notifications
- * @desc Get all notifications for the authenticated seller
- * @access Private
+ * @desc Get all notifications for the authenticated seller or staff member
+ * @access Private (Seller or Staff)
  */
-router.get('/', authenticateSeller, notificationController.getNotifications.bind(notificationController));
+router.get('/', authenticateSellerOrStaff, notificationController.getNotifications.bind(notificationController));
 
 /**
  * @route GET /api/seller/notifications/unread-count
  * @desc Get unread notification count
- * @access Private
+ * @access Private (Seller or Staff)
  */
-router.get('/unread-count', authenticateSeller, notificationController.getUnreadCount.bind(notificationController));
+router.get('/unread-count', authenticateSellerOrStaff, notificationController.getUnreadCount.bind(notificationController));
 
 /**
  * @route PATCH /api/seller/notifications/:id/read
  * @desc Mark notification as read
- * @access Private
+ * @access Private (Seller or Staff)
  */
-router.patch('/:id/read', authenticateSeller, notificationController.markAsRead.bind(notificationController));
+router.patch('/:id/read', authenticateSellerOrStaff, notificationController.markAsRead.bind(notificationController));
 
 /**
  * @route PATCH /api/seller/notifications/read-all
  * @desc Mark all notifications as read
- * @access Private
+ * @access Private (Seller or Staff)
  */
-router.patch('/read-all', authenticateSeller, notificationController.markAllAsRead.bind(notificationController));
+router.patch('/read-all', authenticateSellerOrStaff, notificationController.markAllAsRead.bind(notificationController));
 
 /**
  * @route DELETE /api/seller/notifications/:id
  * @desc Delete a specific notification
- * @access Private
+ * @access Private (Seller or Staff)
  */
-router.delete('/:id', authenticateSeller, notificationController.deleteNotification.bind(notificationController));
+router.delete('/:id', authenticateSellerOrStaff, notificationController.deleteNotification.bind(notificationController));
 
 /**
  * @route DELETE /api/seller/notifications/all
  * @desc Delete all notifications
- * @access Private
+ * @access Private (Seller or Staff)
  */
-router.delete('/all', authenticateSeller, notificationController.deleteAllNotifications.bind(notificationController));
+router.delete('/all', authenticateSellerOrStaff, notificationController.deleteAllNotifications.bind(notificationController));
 
 export default router;
 

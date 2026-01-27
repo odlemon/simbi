@@ -1,12 +1,28 @@
 // @ts-nocheck
 import { Router } from 'express';
 import { PasswordResetController } from '../../controllers/auth/PasswordResetController';
+import { unifiedAuthController } from '../../controllers/auth/UnifiedAuthController';
+import { unifiedRegistrationController } from '../../controllers/auth/UnifiedRegistrationController';
 import { emailService } from '../../services/EmailService';
 import { verifyEmailConnection } from '../../config/emailConfig';
 import { logger } from '../../utils/logger';
 
 const router = Router();
 const controller = new PasswordResetController();
+
+/**
+ * @route POST /api/auth/register
+ * @desc Unified registration endpoint for buyers and sellers
+ * @access Public
+ */
+router.post('/register', unifiedRegistrationController.register.bind(unifiedRegistrationController));
+
+/**
+ * @route POST /api/auth/login
+ * @desc Unified login endpoint for all user types (admin, seller, buyer, staff)
+ * @access Public
+ */
+router.post('/login', unifiedAuthController.login.bind(unifiedAuthController));
 
 /**
  * @route POST /api/auth/forgot-password

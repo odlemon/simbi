@@ -121,7 +121,11 @@ export class AuthController {
       res.status(200).json({
         success: true,
         message: "Login successful",
-        data: result,
+        data: {
+          ...result,
+          userType: "admin", // Include userType in response
+          user: result.admin, // Add user alias for consistency
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {

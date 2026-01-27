@@ -12,7 +12,7 @@ export class PasswordResetController {
   /**
    * Forgot Password
    * POST /api/auth/forgot-password
-   * Works for both buyers and sellers
+   * Works for buyers, sellers, and staff
    */
   async forgotPassword(req: Request, res: Response): Promise<void> {
     try {
@@ -29,10 +29,10 @@ export class PasswordResetController {
       }
 
       // Validate userType if provided
-      if (userType && !['buyer', 'seller'].includes(userType)) {
+      if (userType && !['buyer', 'seller', 'staff'].includes(userType)) {
         res.status(400).json({
           success: false,
-          message: 'userType must be either "buyer" or "seller"',
+          message: 'userType must be either "buyer", "seller", or "staff"',
           error: 'INVALID_USER_TYPE',
           timestamp: new Date().toISOString()
         });
@@ -73,7 +73,7 @@ export class PasswordResetController {
   /**
    * Reset Password
    * POST /api/auth/reset-password
-   * Works for both buyers and sellers
+   * Works for buyers, sellers, and staff
    */
   async resetPassword(req: Request, res: Response): Promise<void> {
     try {
@@ -90,10 +90,10 @@ export class PasswordResetController {
       }
 
       // Validate userType if provided
-      if (userType && !['buyer', 'seller'].includes(userType)) {
+      if (userType && !['buyer', 'seller', 'staff'].includes(userType)) {
         res.status(400).json({
           success: false,
-          message: 'userType must be either "buyer" or "seller"',
+          message: 'userType must be either "buyer", "seller", or "staff"',
           error: 'INVALID_USER_TYPE',
           timestamp: new Date().toISOString()
         });

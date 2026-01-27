@@ -38,7 +38,7 @@ export const imageUpload = multer({
 export const uploadSingleImage = imageUpload.single("image");
 
 // Multiple images upload middleware
-export const uploadMultipleImages = imageUpload.array("images", 10);
+export const uploadMultipleImages = imageUpload.array("files", 10);
 
 // Fields upload middleware (for multiple named fields)
 export const uploadImageFields = imageUpload.fields([

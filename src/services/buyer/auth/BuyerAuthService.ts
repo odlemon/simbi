@@ -463,6 +463,8 @@ export class BuyerAuthService {
         message: 'Login successful',
         data: {
           buyer: buyerResponse,
+          user: buyerResponse, // Add user alias for consistency
+          userType: "buyer", // Include userType in response
           accessToken,
           refreshToken
         }

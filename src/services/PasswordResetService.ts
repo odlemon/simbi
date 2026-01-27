@@ -27,10 +27,10 @@ export class PasswordResetService {
     firstName: string,
     lastName: string,
     resetToken: string,
-    userType: 'buyer' | 'seller'
+    userType: 'buyer' | 'seller' | 'staff'
   ): Promise<boolean> {
-    // Production frontend URL
-    const baseUrl = 'http://31.220.82.129:3003';
+    // Frontend URL for reset links
+    const baseUrl = 'http://localhost:3000';
     
     const resetUrl = `${baseUrl}/reset-password?token=${resetToken}&type=${userType}`;
     
@@ -50,7 +50,7 @@ export class PasswordResetService {
         <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
           <p style="font-size: 16px;">Hello ${firstName} ${lastName},</p>
           
-          <p style="font-size: 16px;">We received a request to reset your password for your Simbi Market ${userType === 'buyer' ? 'buyer' : 'seller'} account.</p>
+          <p style="font-size: 16px;">We received a request to reset your password for your Simbi Market ${userType === 'buyer' ? 'buyer' : userType === 'seller' ? 'seller' : 'staff'} account.</p>
           
           <p style="font-size: 16px;">Click the button below to reset your password:</p>
           
@@ -101,7 +101,7 @@ Password Reset Request - Simbi Market
 
 Hello ${firstName} ${lastName},
 
-We received a request to reset your password for your Simbi Market ${userType === 'buyer' ? 'buyer' : 'seller'} account.
+We received a request to reset your password for your Simbi Market ${userType === 'buyer' ? 'buyer' : userType === 'seller' ? 'seller' : 'staff'} account.
 
 Click the link below to reset your password:
 ${resetUrl}
@@ -130,7 +130,7 @@ The Simbi Market Team
         subject: 'Reset Your Password - Simbi Market',
         htmlBody,
         textBody,
-        module: userType === 'buyer' ? 'buyer' : 'seller' // Use updated email config
+        module: userType === 'buyer' ? 'buyer' : userType === 'seller' ? 'seller' : 'seller' // Staff uses seller email config
       });
       
       if (result) {
@@ -162,9 +162,9 @@ The Simbi Market Team
 
   /**
    * Request password reset (forgot password)
-   * Works for both buyers and sellers
+   * Works for buyers, sellers, and staff
    */
-  async requestPasswordReset(email: string, userType?: 'buyer' | 'seller'): Promise<{ success: boolean; message: string; error?: string }> {
+  async requestPasswordReset(email: string, userType?: 'buyer' | 'seller' | 'staff'): Promise<{ success: boolean; message: string; error?: string }> {
     try {
       if (!email) {
         return {
@@ -180,6 +180,7 @@ The Simbi Market Team
 
       let buyer = null;
       let seller = null;
+      let staff = null;
 
       // If userType is specified, only search that specific table
       // Match login behavior exactly - use email as-is (no transformations)
@@ -217,8 +218,20 @@ The Simbi Market Team
             error: 'USER_NOT_FOUND'
           };
         }
+      } else if (userType === 'staff') {
+        staff = await prisma.sellerStaff.findUnique({
+          where: { email: email }
+        });
+        
+        if (!staff) {
+          return {
+            success: false,
+            message: 'Staff member with this email not found',
+            error: 'USER_NOT_FOUND'
+          };
+        }
       } else {
-        // If userType not specified, try both (for backwards compatibility)
+        // If userType not specified, try buyer, seller, then staff (for backwards compatibility)
         // Use exact same query as login - no transformations
         buyer = await prisma.buyer.findUnique({
           where: { email: email }
@@ -230,8 +243,14 @@ The Simbi Market Team
           });
         }
 
-        // If neither found
         if (!buyer && !seller) {
+          staff = await prisma.sellerStaff.findUnique({
+            where: { email: email }
+          });
+        }
+
+        // If none found
+        if (!buyer && !seller && !staff) {
           // For security, don't reveal if email exists or not
           // Still send success response to prevent email enumeration
           logger.warn('Password reset requested for non-existent email', { email });
@@ -313,6 +332,30 @@ The Simbi Market Team
         } else {
           logger.info('Password reset email sent to seller', { email, sellerId: seller.id });
         }
+      } else if (staff) {
+        await prisma.sellerStaff.update({
+          where: { id: staff.id },
+          data: {
+            passwordResetToken: resetToken,
+            passwordResetExpires: resetExpires
+          }
+        });
+
+        // Send reset email for staff
+        const emailSent = await this.sendPasswordResetEmail(
+          staff.email,
+          staff.firstName,
+          staff.lastName,
+          resetToken,
+          'staff'
+        );
+
+        if (!emailSent) {
+          logger.error('Failed to send password reset email to staff', { email, staffId: staff.id });
+          // Still return success for security (don't reveal email failure)
+        } else {
+          logger.info('Password reset email sent to staff', { email, staffId: staff.id });
+        }
       }
 
       // Always return success (security best practice - don't reveal if email exists)
@@ -324,8 +367,25 @@ The Simbi Market Team
     } catch (error: any) {
       logger.error('Password reset request error', {
         email,
-        error: error.message
+        userType,
+        error: error.message,
+        stack: error.stack,
+        code: error.code
       });
+      
+      // Check if it's a Prisma schema error (fields don't exist)
+      if (error.code === 'P2009' || error.message?.includes('Unknown field') || error.message?.includes('passwordResetToken')) {
+        logger.error('Database schema error - password reset fields may not exist. Run migration: npx prisma migrate dev', {
+          email,
+          userType
+        });
+        return {
+          success: false,
+          message: 'Password reset fields not found in database. Please run database migration.',
+          error: 'SCHEMA_ERROR'
+        };
+      }
+      
       return {
         success: false,
         message: 'Failed to process password reset request',
@@ -336,12 +396,12 @@ The Simbi Market Team
 
   /**
    * Reset password using token
-   * Works for both buyers and sellers
+   * Works for buyers, sellers, and staff
    */
   async resetPassword(
     token: string,
     newPassword: string,
-    userType?: 'buyer' | 'seller'
+    userType?: 'buyer' | 'seller' | 'staff'
   ): Promise<{ success: boolean; message: string; error?: string }> {
     try {
       if (!token || !newPassword) {
@@ -366,6 +426,7 @@ The Simbi Market Team
 
       let buyer = null;
       let seller = null;
+      let staff = null;
 
       // If userType is specified, only search that specific table
       if (userType === 'buyer') {
@@ -402,8 +463,25 @@ The Simbi Market Team
             error: 'INVALID_TOKEN'
           };
         }
+      } else if (userType === 'staff') {
+        staff = await prisma.sellerStaff.findFirst({
+          where: {
+            passwordResetToken: token,
+            passwordResetExpires: {
+              gt: new Date() // Token must not be expired
+            }
+          }
+        });
+        
+        if (!staff) {
+          return {
+            success: false,
+            message: 'Invalid or expired reset token for staff',
+            error: 'INVALID_TOKEN'
+          };
+        }
       } else {
-        // If userType not specified, try both (for backwards compatibility)
+        // If userType not specified, try buyer, seller, then staff (for backwards compatibility)
         buyer = await prisma.buyer.findFirst({
           where: {
             passwordResetToken: token,
@@ -424,8 +502,19 @@ The Simbi Market Team
           });
         }
 
-        // If token not found or expired
         if (!buyer && !seller) {
+          staff = await prisma.sellerStaff.findFirst({
+            where: {
+              passwordResetToken: token,
+              passwordResetExpires: {
+                gt: new Date() // Token must not be expired
+              }
+            }
+          });
+        }
+
+        // If token not found or expired
+        if (!buyer && !seller && !staff) {
           return {
             success: false,
             message: 'Invalid or expired reset token',
@@ -457,6 +546,17 @@ The Simbi Market Team
         });
 
         logger.info('Password reset successfully for seller', { sellerId: seller.id });
+      } else if (staff) {
+        await prisma.sellerStaff.update({
+          where: { id: staff.id },
+          data: {
+            passwordHash: hashedPassword,
+            passwordResetToken: null,
+            passwordResetExpires: null
+          }
+        });
+
+        logger.info('Password reset successfully for staff', { staffId: staff.id });
       }
 
       return {

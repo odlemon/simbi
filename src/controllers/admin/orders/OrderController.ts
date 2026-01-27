@@ -1100,7 +1100,7 @@ export class OrderController {
                     select: {
                       id: true,
                       name: true,
-                      partNumber: true,
+                      oemPartNumber: true,
                     }
                   }
                 }
@@ -1161,7 +1161,7 @@ export class OrderController {
                     sellerName: updatedOrderWithDetails.seller?.businessName || 'Unknown Seller',
                     items: updatedOrderWithDetails.items.map(item => ({
                       productName: item.inventory?.masterProduct?.name || 'Unknown Product',
-                      partNumber: item.inventory?.masterProduct?.partNumber,
+                      partNumber: item.inventory?.masterProduct?.oemPartNumber,
                       quantity: item.quantity,
                       unitPrice: item.unitPrice,
                       lineTotal: item.lineTotalUsd || (item.unitPrice * item.quantity),

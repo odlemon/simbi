@@ -46,12 +46,13 @@ export class SellerNotificationService {
   }
 
   /**
-   * Get all notifications for a seller (unread first)
+   * Get all notifications for a seller or staff member (unread first)
    */
   async getNotifications(
     sellerId: string,
     page: number = 1,
-    limit: number = 50
+    limit: number = 50,
+    staffId?: string
   ): Promise<{
     notifications: Array<{
       id: string;
@@ -78,19 +79,32 @@ export class SellerNotificationService {
     try {
       const skip = (page - 1) * limit;
 
+      // Build where clause
+      // If staffId provided: only get notifications for that specific staff member
+      // If staffId NOT provided (seller account owner): get ALL notifications for the seller account
+      const whereClause: any = {
+        sellerId,
+      };
+      
+      if (staffId) {
+        // Staff member: only their notifications
+        whereClause.staffId = staffId;
+      }
+      // If staffId is NOT provided, don't filter by staffId - seller sees all notifications
+
       // Get unread count
       const unreadCount = await prisma.sellerNotification.count({
-        where: { sellerId, isRead: false },
+        where: { ...whereClause, isRead: false },
       });
 
       // Get total count
       const total = await prisma.sellerNotification.count({
-        where: { sellerId },
+        where: whereClause,
       });
 
       // Get notifications (unread first, then by date)
       const notifications = await prisma.sellerNotification.findMany({
-        where: { sellerId },
+        where: whereClause,
         skip,
         take: limit,
         orderBy: [
@@ -146,18 +160,27 @@ export class SellerNotificationService {
   /**
    * Mark notification as read
    */
-  async markAsRead(sellerId: string, notificationId: string): Promise<void> {
+  async markAsRead(sellerId: string, notificationId: string, staffId?: string): Promise<void> {
     try {
-      // Verify notification belongs to seller
+      // Build where clause
+      const whereClause: any = {
+        id: notificationId,
+        sellerId,
+      };
+      
+      if (staffId) {
+        // Staff member: only their notifications
+        whereClause.staffId = staffId;
+      }
+      // If staffId is NOT provided, don't filter by staffId - seller sees all notifications
+
+      // Verify notification belongs to seller/staff
       const notification = await prisma.sellerNotification.findFirst({
-        where: {
-          id: notificationId,
-          sellerId,
-        },
+        where: whereClause,
       });
 
       if (!notification) {
-        throw new Error('Notification not found or does not belong to seller');
+        throw new Error('Notification not found or does not belong to you');
       }
 
       await prisma.sellerNotification.update({
@@ -185,10 +208,22 @@ export class SellerNotificationService {
   /**
    * Mark all notifications as read
    */
-  async markAllAsRead(sellerId: string): Promise<void> {
+  async markAllAsRead(sellerId: string, staffId?: string): Promise<void> {
     try {
+      // Build where clause
+      const whereClause: any = {
+        sellerId,
+        isRead: false,
+      };
+      
+      if (staffId) {
+        // Staff member: only their notifications
+        whereClause.staffId = staffId;
+      }
+      // If staffId is NOT provided, don't filter by staffId - seller sees all notifications
+
       await prisma.sellerNotification.updateMany({
-        where: { sellerId, isRead: false },
+        where: whereClause,
         data: {
           isRead: true,
           readAt: new Date(),
@@ -210,10 +245,22 @@ export class SellerNotificationService {
   /**
    * Get unread count
    */
-  async getUnreadCount(sellerId: string): Promise<number> {
+  async getUnreadCount(sellerId: string, staffId?: string): Promise<number> {
     try {
+      // Build where clause
+      const whereClause: any = {
+        sellerId,
+        isRead: false,
+      };
+      
+      if (staffId) {
+        // Staff member: only their notifications
+        whereClause.staffId = staffId;
+      }
+      // If staffId is NOT provided, don't filter by staffId - seller sees all notifications
+
       return await prisma.sellerNotification.count({
-        where: { sellerId, isRead: false },
+        where: whereClause,
       });
     } catch (error: any) {
       logger.error('Error getting seller unread count', {
@@ -227,18 +274,27 @@ export class SellerNotificationService {
   /**
    * Delete a specific notification
    */
-  async deleteNotification(sellerId: string, notificationId: string): Promise<void> {
+  async deleteNotification(sellerId: string, notificationId: string, staffId?: string): Promise<void> {
     try {
-      // Verify notification belongs to seller
+      // Build where clause
+      const whereClause: any = {
+        id: notificationId,
+        sellerId,
+      };
+      
+      if (staffId) {
+        // Staff member: only their notifications
+        whereClause.staffId = staffId;
+      }
+      // If staffId is NOT provided, don't filter by staffId - seller sees all notifications
+
+      // Verify notification belongs to seller/staff
       const notification = await prisma.sellerNotification.findFirst({
-        where: {
-          id: notificationId,
-          sellerId,
-        },
+        where: whereClause,
       });
 
       if (!notification) {
-        throw new Error('Notification not found or does not belong to seller');
+        throw new Error('Notification not found or does not belong to you');
       }
 
       await prisma.sellerNotification.delete({
@@ -266,10 +322,21 @@ export class SellerNotificationService {
   /**
    * Delete all notifications
    */
-  async deleteAllNotifications(sellerId: string): Promise<number> {
+  async deleteAllNotifications(sellerId: string, staffId?: string): Promise<number> {
     try {
+      // Build where clause
+      const whereClause: any = {
+        sellerId,
+      };
+      
+      if (staffId) {
+        // Staff member: only their notifications
+        whereClause.staffId = staffId;
+      }
+      // If staffId is NOT provided, don't filter by staffId - seller sees all notifications
+
       const result = await prisma.sellerNotification.deleteMany({
-        where: { sellerId },
+        where: whereClause,
       });
 
       logger.info('All seller notifications deleted', {

@@ -380,10 +380,13 @@ model SellerStaff {
   salary              Float
   startDate           DateTime
   status              StaffStatus        @default(ACTIVE)
+  passwordResetToken  String?
+  passwordResetExpires DateTime?
   seller              Seller             @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   activityLogs        StaffActivityLog[]
   timeLogs            StaffTimeLog[]
   payslips            StaffPayslip[]
+  notifications       SellerNotification[]
 
   @@index([sellerId])
   @@index([email])
@@ -1432,21 +1435,24 @@ model BuyerNotification {
 }
 
 model SellerNotification {
-  id        String   @id @default(uuid())
+  id        String      @id @default(uuid())
   sellerId  String
-  type      String   // NEW_ORDER, ORDER_SHIPPED, ORDER_DELIVERED, RETURN_REQUESTED, etc.
+  staffId   String?     // Optional: If set, notification is for specific staff member
+  type      String      // NEW_ORDER, ORDER_SHIPPED, ORDER_DELIVERED, RETURN_REQUESTED, etc.
   title     String
-  message   String   @db.Text
-  orderId   String?  // Reference to order if notification is order-related
-  returnId  String?  // Reference to return/dispute if notification is return-related
-  isRead    Boolean  @default(false)
+  message   String      @db.Text
+  orderId   String?    // Reference to order if notification is order-related
+  returnId  String?    // Reference to return/dispute if notification is return-related
+  isRead    Boolean     @default(false)
   readAt    DateTime?
-  createdAt DateTime @default(now())
-  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  order     Order?   @relation("SellerNotificationOrder", fields: [orderId], references: [id], onDelete: Cascade)
-  dispute   Dispute? @relation("SellerNotificationDispute", fields: [returnId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  seller    Seller      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  staff     SellerStaff? @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  order     Order?      @relation("SellerNotificationOrder", fields: [orderId], references: [id], onDelete: Cascade)
+  dispute   Dispute?    @relation("SellerNotificationDispute", fields: [returnId], references: [id], onDelete: Cascade)
 
   @@index([sellerId])
+  @@index([staffId])
   @@index([isRead])
   @@index([createdAt])
   @@index([orderId])
