@@ -30,7 +30,7 @@ export class PasswordResetService {
     userType: 'buyer' | 'seller' | 'staff'
   ): Promise<boolean> {
     // Frontend URL for reset links
-    const baseUrl = 'http://localhost:3000';
+    const baseUrl = 'https://simbi-market-sigma.vercel.app';
     
     const resetUrl = `${baseUrl}/reset-password?token=${resetToken}&type=${userType}`;
     
