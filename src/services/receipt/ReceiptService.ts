@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { logger } from "../../utils/logger";
+import puppeteer from 'puppeteer';
 
 export interface ReceiptData {
   orderNumber: string;
@@ -395,6 +396,51 @@ Receipt generated on ${formatDate(new Date())}
 `;
 
     return text;
+  }
+
+  /**
+   * Generate receipt as PDF from HTML
+   */
+  async generateReceiptPDF(data: ReceiptData): Promise<Buffer | null> {
+    try {
+      const html = this.generateReceiptHTML(data);
+      
+      // Launch headless browser
+      const browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'], // Required for some server environments
+      });
+      
+      try {
+        const page = await browser.newPage();
+        
+        // Set content and wait for it to load
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        
+        // Generate PDF
+        const pdf = await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: {
+            top: '20mm',
+            right: '15mm',
+            bottom: '20mm',
+            left: '15mm',
+          },
+        });
+        
+        return Buffer.from(pdf);
+      } finally {
+        await browser.close();
+      }
+    } catch (error: any) {
+      logger.error('Failed to generate receipt PDF', {
+        orderNumber: data.orderNumber,
+        error: error.message,
+        stack: error.stack,
+      });
+      return null;
+    }
   }
 }
 

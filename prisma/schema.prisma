@@ -882,9 +882,9 @@ model QuoteResponse {
 model Order {
   id                    String                      @id @default(uuid())
   orderNumber           String                      @unique
-  buyerId               String
+  buyerId               String?                     // Nullable for individual/guest buyers
   sellerId              String
-  addressId             String
+  addressId             String?                     // Nullable for guest orders (address stored separately)
   poNumber              String?
   costCenter            String?
   subtotal              Float
@@ -914,17 +914,29 @@ model Order {
   eccBaselineUploaded   Boolean                     @default(false)
   eccBaselineUploadedAt DateTime?
   eccBaselineUrls       Json?                       // Pre-shipment evidence URLs
-  // Guest checkout fields
+  // Guest checkout fields (for individual buyers without accounts)
   isGuestOrder          Boolean                     @default(false)
   guestAccessToken      String?                     // Cryptographic token for guest tracking
   mobileNumber          String?                     // For guest orders (identity anchor)
   paymentToken          String?                     // Tokenized card data (PCI DSS compliant)
+  // Individual buyer information (when buyerId is null)
+  guestFirstName        String?                     // First name for individual buyers
+  guestLastName         String?                     // Last name for individual buyers
+  guestEmail            String?                     // Email for individual buyers
+  guestPhoneNumber      String?                     // Phone number for individual buyers
+  // Guest shipping address (when addressId is null)
+  guestShippingPhoneNumber String?                 // Phone number for shipping
+  guestShippingAddressLine1 String?                // Address line 1
+  guestShippingAddressLine2 String?                // Address line 2
+  guestShippingCity        String?                 // City
+  guestShippingProvince    String?                 // Province
+  guestShippingPostalCode  String?                 // Postal code
   createdAt             DateTime                    @default(now())
   updatedAt             DateTime                    @updatedAt
   disputes              Dispute?
   items                 OrderItem[]
-  shippingAddress       BuyerAddress                @relation(fields: [addressId], references: [id])
-  buyer                 Buyer                       @relation(fields: [buyerId], references: [id])
+  shippingAddress       BuyerAddress?               @relation(fields: [addressId], references: [id]) // Optional for guest orders
+  buyer                 Buyer?                      @relation(fields: [buyerId], references: [id]) // Optional for guest orders
   seller                Seller                      @relation(fields: [sellerId], references: [id])
   driver                Driver?                     @relation(fields: [driverId], references: [id])
   gatewayTransactions   PaymentGatewayTransaction[]

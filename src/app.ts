@@ -134,7 +134,9 @@ app.use("/api/products", productReviewRoutes);
 
 // Guest checkout routes (public)
 import guestCheckoutRoutes from "./routes/guest/checkout";
+import guestOrderRoutes from "./routes/guest/orders";
 app.use("/api/guest", guestCheckoutRoutes);
+app.use("/api/guest", guestOrderRoutes);
 
 // Media upload routes
 import mediaRoutes from "./routes/media";

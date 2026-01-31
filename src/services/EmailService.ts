@@ -1205,7 +1205,8 @@ This is an automated message. Please do not reply to this email.
     buyerName: string,
     orderNumber: string,
     trackingNumber: string | null,
-    estimatedDeliveryDate: string | null
+    estimatedDeliveryDate: string | null,
+    isGuestOrder: boolean = false
   ): Promise<boolean> {
     const subject = `Order Shipped - ${orderNumber}`;
 
@@ -1288,7 +1289,10 @@ This is an automated message. Please do not reply to this email.
       ${estimatedDeliveryDate ? `<p><strong>Estimated Delivery:</strong> ${estimatedDeliveryDate}</p>` : ''}
     </div>
 
-    <p>You can track your order status in your account dashboard. We'll notify you once your order is delivered.</p>
+    ${isGuestOrder 
+      ? `<p>We'll notify you once your order is delivered.</p>`
+      : `<p>You can track your order status in your account dashboard. We'll notify you once your order is delivered.</p>`
+    }
 
     <div class="footer">
       <p>This is an automated message from Simbi Market. Please do not reply to this email.</p>
@@ -1314,7 +1318,8 @@ This is an automated message. Please do not reply to this email.
     buyerName: string,
     orderNumber: string,
     deliveryDate: string,
-    receiptHtml?: string
+    receiptHtml?: string,
+    receiptPdf?: Buffer
   ): Promise<boolean> {
     const subject = `Order Delivered - ${orderNumber}`;
 
@@ -1421,11 +1426,22 @@ This is an automated message. Please do not reply to this email.
 </html>
     `;
 
-    const attachments = receiptHtml ? [{
-      filename: `receipt-${orderNumber}.html`,
-      content: receiptHtml,
-      contentType: 'text/html',
-    }] : undefined;
+    // Prefer PDF over HTML for receipt attachment
+    const attachments: any[] = [];
+    if (receiptPdf) {
+      attachments.push({
+        filename: `receipt-${orderNumber}.pdf`,
+        content: receiptPdf,
+        contentType: 'application/pdf',
+      });
+    } else if (receiptHtml) {
+      // Fallback to HTML if PDF generation failed
+      attachments.push({
+        filename: `receipt-${orderNumber}.html`,
+        content: receiptHtml,
+        contentType: 'text/html',
+      });
+    }
 
     return await this.sendEmail({
       to: buyerEmail,
@@ -1433,6 +1449,133 @@ This is an automated message. Please do not reply to this email.
       subject,
       htmlBody,
       attachments,
+    });
+  }
+
+  /**
+   * Send order cancellation email to buyer
+   */
+  async sendOrderCancellationEmail(
+    buyerEmail: string,
+    buyerName: string,
+    orderNumber: string,
+    cancellationReason: string,
+    orderTotal: number,
+    currency: string = 'USD'
+  ): Promise<boolean> {
+    const subject = `Order Cancelled - ${orderNumber}`;
+
+    const formattedTotal = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency,
+    }).format(orderTotal);
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Cancelled</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+    .container {
+      background-color: #ffffff;
+      border-radius: 8px;
+      padding: 40px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #ffc107;
+      margin-bottom: 30px;
+    }
+    h1 {
+      color: #ffc107;
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .alert-badge {
+      background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+      color: white;
+      padding: 15px 25px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      margin: 25px 0;
+    }
+    .order-info {
+      background-color: #f8f9fa;
+      border-left: 4px solid #ffc107;
+      padding: 20px;
+      margin: 25px 0;
+      border-radius: 4px;
+    }
+    .reason-box {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    .footer {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #e0e0e0;
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Order Cancelled</h1>
+    </div>
+    <p>Hello ${buyerName},</p>
+    <p>We regret to inform you that your order <strong>${orderNumber}</strong> has been cancelled.</p>
+    
+    <div class="alert-badge">
+      Order Status: CANCELLED
+    </div>
+
+    <div class="order-info">
+      <p><strong>Order Number:</strong> ${orderNumber}</p>
+      <p><strong>Order Total:</strong> ${formattedTotal}</p>
+    </div>
+
+    <div class="reason-box">
+      <p><strong>Cancellation Reason:</strong></p>
+      <p>${cancellationReason}</p>
+    </div>
+
+    <p>If you have any questions or concerns about this cancellation, please contact our support team.</p>
+    <p>If payment was already made, you will receive a refund according to our refund policy.</p>
+
+    <div class="footer">
+      <p>This is an automated message from Simbi Market. Please do not reply to this email.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    return await this.sendEmail({
+      to: buyerEmail,
+      toName: buyerName,
+      subject,
+      htmlBody,
     });
   }
 

@@ -365,52 +365,76 @@ export class SellerOrderService {
       }
 
       // Send email notification to buyer when order is rejected
-      if (status === 'REJECTED' && updatedOrder.buyer) {
+      if (status === 'REJECTED') {
         try {
           const { emailService } = await import('../../EmailService');
-          const buyerName = `${updatedOrder.buyer.firstName} ${updatedOrder.buyer.lastName}`.trim() || updatedOrder.buyer.email;
           const sellerBusinessName = updatedOrder.seller?.businessName || 'Seller';
           
-          await emailService.sendOrderRejectionEmail(
-            updatedOrder.buyer.email,
-            buyerName,
-            updatedOrder.orderNumber,
-            sellerBusinessName,
-            rejectionReason || 'No reason provided',
-            updatedOrder.totalAmount,
-            updatedOrder.currency || 'USD'
-          );
-
-          logger.info('Order rejection email sent to buyer', {
-            orderId: updatedOrder.id,
-            orderNumber: updatedOrder.orderNumber,
-            buyerEmail: updatedOrder.buyer.email,
-            sellerBusinessName
-          });
-
-          // Create notification for buyer
-          try {
-            const { BuyerNotificationService } = await import('../../buyer/notifications/BuyerNotificationService');
-            const buyerNotificationService = new BuyerNotificationService();
-            await buyerNotificationService.createNotification(
-              updatedOrder.buyer.id,
-              'ORDER_REJECTED',
-              'Order Rejected',
-              `Your order #${updatedOrder.orderNumber} has been rejected by the seller. Reason: ${rejectionReason || 'No reason provided'}`,
-              updatedOrder.id
+          // Check if it's a guest order (individual buyer)
+          if (updatedOrder.isGuestOrder && updatedOrder.guestEmail) {
+            // Individual buyer - send email only (no in-app notification)
+            const buyerName = `${updatedOrder.guestFirstName || ''} ${updatedOrder.guestLastName || ''}`.trim() || updatedOrder.guestEmail;
+            
+            await emailService.sendOrderRejectionEmail(
+              updatedOrder.guestEmail,
+              buyerName,
+              updatedOrder.orderNumber,
+              sellerBusinessName,
+              rejectionReason || 'No reason provided',
+              updatedOrder.totalAmount,
+              updatedOrder.currency || 'USD'
             );
-          } catch (notifError: any) {
-            logger.error('Failed to create buyer notification for order rejection', {
+
+            logger.info('Order rejection email sent to individual buyer', {
               orderId: updatedOrder.id,
-              buyerId: updatedOrder.buyer.id,
-              error: notifError.message
+              orderNumber: updatedOrder.orderNumber,
+              buyerEmail: updatedOrder.guestEmail,
+              sellerBusinessName
             });
+          } else if (updatedOrder.buyer) {
+            // Commercial buyer - send email + in-app notification
+            const buyerName = `${updatedOrder.buyer.firstName} ${updatedOrder.buyer.lastName}`.trim() || updatedOrder.buyer.email;
+            
+            await emailService.sendOrderRejectionEmail(
+              updatedOrder.buyer.email,
+              buyerName,
+              updatedOrder.orderNumber,
+              sellerBusinessName,
+              rejectionReason || 'No reason provided',
+              updatedOrder.totalAmount,
+              updatedOrder.currency || 'USD'
+            );
+
+            logger.info('Order rejection email sent to buyer', {
+              orderId: updatedOrder.id,
+              orderNumber: updatedOrder.orderNumber,
+              buyerEmail: updatedOrder.buyer.email,
+              sellerBusinessName
+            });
+
+            // Create notification for buyer
+            try {
+              const { BuyerNotificationService } = await import('../../buyer/notifications/BuyerNotificationService');
+              const buyerNotificationService = new BuyerNotificationService();
+              await buyerNotificationService.createNotification(
+                updatedOrder.buyer.id,
+                'ORDER_REJECTED',
+                'Order Rejected',
+                `Your order #${updatedOrder.orderNumber} has been rejected by the seller. Reason: ${rejectionReason || 'No reason provided'}`,
+                updatedOrder.id
+              );
+            } catch (notifError: any) {
+              logger.error('Failed to create buyer notification for order rejection', {
+                orderId: updatedOrder.id,
+                buyerId: updatedOrder.buyer.id,
+                error: notifError.message
+              });
+            }
           }
         } catch (emailError: any) {
           // Log error but don't fail the order update
           logger.error('Failed to send order rejection email', {
             orderId: updatedOrder.id,
-            buyerEmail: updatedOrder.buyer.email,
             error: emailError.message
           });
         }
