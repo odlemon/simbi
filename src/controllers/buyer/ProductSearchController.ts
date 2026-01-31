@@ -43,7 +43,7 @@ export class ProductSearchController {
         productType,
         // Pagination
         page = 1,
-        limit = 20,
+        limit = 30,
         // Sorting - support both sortBy and sort
         sortBy,
         sort

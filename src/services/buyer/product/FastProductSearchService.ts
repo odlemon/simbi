@@ -31,7 +31,7 @@ const searchCriteriaSchema = z.object({
   sortBy: z.string().optional(),
   sort: z.string().optional(),
   page: z.number().default(1),
-  limit: z.number().default(20),
+  limit: z.number().default(30),
   onlyCheapest: z.boolean().optional() // When true, return only cheapest product per master product
 });
 
@@ -64,23 +64,19 @@ interface FastProductResult {
 export class FastProductSearchService {
   
   /**
-   * ULTRA-FAST: Single query with all pricing calculated in memory
+   * ULTRA-FAST: Returns all master products with inventory status
+   * Merges master products with seller inventory, doesn't duplicate
    */
   async fastSearch(criteria: z.infer<typeof searchCriteriaSchema>): Promise<{ success: boolean; data?: FastProductResult[]; pagination?: any; error?: string }> {
     try {
       const validatedCriteria = searchCriteriaSchema.parse(criteria);
       const { page = 1, limit = 20, onlyCheapest = false } = validatedCriteria;
       
-      // Build optimized where clause
+      // Build optimized where clause for master products
       const whereClause = this.buildWhereClause(validatedCriteria);
-
-      // If onlyCheapest is true, we need to fetch more listings to ensure we have
-      // all products for deduplication, then group and paginate in memory
-      const fetchLimit = onlyCheapest ? limit * 50 : limit; // Fetch more when deduplicating
-      const skip = onlyCheapest ? 0 : (page - 1) * limit; // Don't skip initially if deduplicating
+      whereClause.isActive = true; // Only active master products
 
       // Build inventory where clause
-      // SKU search is handled separately since it's in SellerInventory, not MasterProduct
       const searchTerm = criteria.q || criteria.search;
       const inventoryWhereClause: any = {
         isActive: true,
@@ -89,21 +85,30 @@ export class FastProductSearchService {
           sriScore: { gte: 70 }
         }
       };
+      
+      // DEBUG: Log the filters being applied
+      console.log(`[Marketplace] Query filters:`, {
+        searchTerm: searchTerm || '(none)',
+        inStock: criteria.inStock,
+        onlyCheapest,
+        masterProductFilters: Object.keys(whereClause).length > 1 ? 'Applied' : 'None',
+        sellerFilters: 'isEligible=true, sriScore>=70'
+      });
 
-      // Handle stock filter - if inStock is explicitly provided, use it; otherwise default to in-stock only
-      if (criteria.inStock !== undefined) {
-        if (criteria.inStock === true) {
-          inventoryWhereClause.quantity = { gte: 1 }; // inStock=true: stock >= 1
-        } else if (criteria.inStock === false) {
-          inventoryWhereClause.quantity = { lte: 0 }; // inStock=false: stock <= 0
-        }
-      } else {
-        // Default: only show in-stock items (quantity > 0)
-        inventoryWhereClause.quantity = { gt: 0 };
+      // Handle stock filter for inventory items only
+      // Note: Master products will always be included, but marked as inStock: false if not in inventory
+      // IMPORTANT: We always fetch master products separately, so the inStock filter only affects inventory items
+      if (criteria.inStock !== undefined && criteria.inStock === true) {
+        // When inStock=true, only get inventory items that are actually in stock
+        // But we'll still fetch master products (which will be marked as inStock: false)
+        inventoryWhereClause.quantity = { gte: 1 };
+      } else if (criteria.inStock === false) {
+        // When inStock=false, only get inventory items that are out of stock
+        inventoryWhereClause.quantity = { lte: 0 };
       }
+      // If inStock is not specified, get all inventory items (both in stock and out of stock)
 
       // If search term exists, combine masterProduct search with SKU search using OR
-      // Otherwise, just use masterProduct where clause
       if (searchTerm) {
         inventoryWhereClause.OR = [
           { 
@@ -114,11 +119,33 @@ export class FastProductSearchService {
           }
         ];
       } else {
-        // No search term, just use masterProduct filters
         inventoryWhereClause.masterProduct = whereClause;
       }
 
-      // SINGLE QUERY - Get seller listings directly (not master products)
+      // OPTIMIZED APPROACH: Fetch inventory items first, then fetch master products not in inventory
+      // This avoids fetching all 3M+ master products at once
+      
+      // DEBUG: Check how many inventory items exist without master product filters
+      const baseInventoryWhereClause: any = {
+        isActive: true,
+        seller: {
+          isEligible: true,
+          sriScore: { gte: 70 }
+        }
+      };
+      if (criteria.inStock !== undefined && criteria.inStock === true) {
+        baseInventoryWhereClause.quantity = { gte: 1 };
+      } else if (criteria.inStock === false) {
+        baseInventoryWhereClause.quantity = { lte: 0 };
+      }
+      const totalInventoryCount = await prisma.sellerInventory.count({
+        where: baseInventoryWhereClause
+      });
+      console.log(`[Marketplace] Total inventory items (before master product filters): ${totalInventoryCount}`);
+
+      // Step 1: Get ALL seller inventory items (these have pricing and stock info)
+      // IMPORTANT: Fetch ALL inventory items, not just a limited set
+      // We'll deduplicate later if onlyCheapest is true
       const sellerListings = await prisma.sellerInventory.findMany({
         where: inventoryWhereClause,
         include: {
@@ -149,25 +176,199 @@ export class FastProductSearchService {
             }
           }
         },
-        skip,
-        take: fetchLimit,
+        // Don't limit here - fetch all matching inventory items
+        // Order by price if onlyCheapest, otherwise by creation date
         orderBy: onlyCheapest 
           ? { sellerPrice: 'asc' } // Order by price ascending to get cheapest first
           : { createdAt: 'desc' }
       });
+      
+      console.log(`[Marketplace] Fetched ${sellerListings.length} inventory items from database (after master product filters)`);
+      if (totalInventoryCount > sellerListings.length) {
+        console.log(`[Marketplace] ⚠️ ${totalInventoryCount - sellerListings.length} inventory items filtered out by master product criteria`);
+      }
+      
+      // Log details of fetched items for debugging
+      if (sellerListings.length > 0) {
+        console.log(`[Marketplace] Sample inventory items:`, sellerListings.slice(0, 3).map(l => ({
+          id: l.id,
+          masterProductId: l.masterProductId,
+          masterProductName: l.masterProduct?.name,
+          quantity: l.quantity,
+          sellerId: l.sellerId,
+          sellerName: l.seller?.businessName,
+          sellerEligible: l.seller?.isEligible,
+          sellerSRI: l.seller?.sriScore
+        })));
+      }
 
-      // Calculate pricing in memory (NO DATABASE QUERIES!)
-      let results = sellerListings.map(listing => this.calculateFastPricingFromListing(listing));
+      // Step 2: Create a set of master product IDs that are in inventory
+      const inventoryProductIds = new Set<string>();
+      sellerListings.forEach(listing => {
+        inventoryProductIds.add(listing.masterProductId);
+      });
+
+      // Step 3: Fetch master products NOT in inventory in batches
+      // We'll fetch enough to fill the page alongside inventory items
+      // If we have fewer inventory items than the limit, fetch more master products to fill the gap
+      const masterProductBatchSize = 30; // Fetch 30 at a time
+      const inventoryCount = sellerListings.length;
+      // Calculate how many master products we need: if we have 6 inventory items and limit is 100, fetch 94 more
+      const masterProductsNeeded = Math.max(0, limit - inventoryCount);
+      const maxMasterProductsToFetch = Math.max(masterProductsNeeded, limit); // At least fetch 'limit' amount
+      let masterProducts: any[] = [];
+      let skip = 0;
+      let hasMore = true;
+
+      // Build where clause for master products NOT in inventory
+      const masterProductWhereClause: any = {
+        ...whereClause
+      };
+      
+      // Only exclude inventory products if we have any (to avoid fetching all 3M+ products)
+      // If no inventory items, we'll fetch master products directly (but limited by maxMasterProductsToFetch)
+      if (inventoryProductIds.size > 0) {
+        masterProductWhereClause.id = {
+          notIn: Array.from(inventoryProductIds)
+        };
+      }
+
+      // Fetch master products in batches until we have enough or run out
+      // Use a timeout to avoid hanging if the query is too slow
+      const fetchStartTime = Date.now();
+      const maxFetchTime = 5000; // 5 seconds max for fetching master products
+      
+      while (masterProducts.length < maxMasterProductsToFetch && hasMore) {
+        // Check if we've exceeded the time limit
+        if (Date.now() - fetchStartTime > maxFetchTime) {
+          console.log(`[Marketplace] Master products fetch timeout after ${maxMasterProductsToFetch} products`);
+          break;
+        }
+        
+        try {
+          const batch = await prisma.masterProduct.findMany({
+            where: masterProductWhereClause,
+            include: {
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true
+                }
+              }
+            },
+            skip: skip,
+            take: masterProductBatchSize,
+            orderBy: { createdAt: 'desc' }
+          });
+
+          if (batch.length === 0) {
+            hasMore = false;
+          } else {
+            masterProducts = [...masterProducts, ...batch];
+            skip += masterProductBatchSize;
+            
+            // If we got fewer than batch size, we've reached the end
+            if (batch.length < masterProductBatchSize) {
+              hasMore = false;
+            }
+          }
+        } catch (error: any) {
+          console.error('[Marketplace] Error fetching master products batch:', error.message);
+          // If query fails, stop trying to fetch more
+          hasMore = false;
+          break;
+        }
+      }
+      
+      console.log(`[Marketplace] Fetched ${masterProducts.length} master products (needed: ${maxMasterProductsToFetch})`);
+
+      // Process inventory items (these have stock info and pricing)
+      const inventoryResults = sellerListings.map(listing => {
+        const result = this.calculateFastPricingFromListing(listing);
+        result.inStock = listing.quantity > 0; // Mark as in stock if quantity > 0
+        return result;
+      });
+
+      // Process master products that are NOT in inventory (these are out of stock)
+      // These will have inStock: false
+      // Note: We already filtered them in the query (id: { notIn: inventoryProductIds })
+      const masterProductResults = masterProducts.map(masterProduct => 
+        this.calculateFastPricingFromMasterProduct(masterProduct)
+      );
+
+      // Debug: Log counts
+      const inStockInventoryCount = inventoryResults.filter(r => r.inStock === true).length;
+      const outOfStockInventoryCount = inventoryResults.filter(r => r.inStock === false).length;
+      console.log(`[Marketplace] Inventory items: ${inventoryResults.length} (${inStockInventoryCount} in-stock, ${outOfStockInventoryCount} out-of-stock), Master products: ${masterProductResults.length}`);
+
+      // IMPORTANT: Separate in-stock and out-of-stock items
+      // In-stock inventory items should ALWAYS appear first
+      const inStockItems = inventoryResults.filter(r => r.inStock === true);
+      const outOfStockInventoryItems = inventoryResults.filter(r => r.inStock === false);
+      
+      // Combine results with explicit ordering: in-stock items FIRST, then out-of-stock inventory, then master products
+      let allResults = [
+        ...inStockItems,           // In-stock inventory items (highest priority)
+        ...outOfStockInventoryItems, // Out-of-stock inventory items
+        ...masterProductResults     // Master products not in inventory (lowest priority)
+      ];
+      
+      console.log(`[Marketplace] Combined results: ${allResults.length} total (${inStockItems.length} in-stock, ${outOfStockInventoryItems.length} out-of-stock inventory, ${masterProductResults.length} master products)`);
 
       // Apply filters in memory
-      let filteredResults = this.applyFilters(results, validatedCriteria);
+      let filteredResults = this.applyFilters(allResults, validatedCriteria);
+
+      // Apply inStock filter if specified
+      // IMPORTANT: Always include ALL master products (not in inventory)
+      // The inStock filter should only affect inventory items
+      if (criteria.inStock !== undefined) {
+        filteredResults = filteredResults.filter(result => {
+          // If it's a master product (no inventoryId or empty inventoryId), always include it
+          // Master products are always shown regardless of inStock filter
+          if (!result.inventoryId || result.inventoryId === '') {
+            return true;
+          }
+          // For inventory items, filter based on inStock parameter
+          return result.inStock === criteria.inStock;
+        });
+      }
+
+      // CRITICAL: Re-sort to ensure in-stock items are ALWAYS first
+      // This must happen AFTER all other sorting/filtering to maintain priority
+      filteredResults.sort((a, b) => {
+        // In-stock items (inStock: true) ALWAYS come first
+        if (a.inStock === true && b.inStock !== true) return -1;
+        if (a.inStock !== true && b.inStock === true) return 1;
+        // If both have same stock status, maintain their current order (from previous sorting)
+        return 0;
+      });
 
       // If onlyCheapest is true, deduplicate by master product ID and keep only cheapest
+      // IMPORTANT: Deduplication prioritizes in-stock items
       if (onlyCheapest) {
+        const beforeDedupCount = filteredResults.length;
+        const beforeDedupInStock = filteredResults.filter(r => r.inStock === true).length;
+        
+        // Deduplicate, prioritizing in-stock items
         filteredResults = this.deduplicateProducts(filteredResults);
+        
+        const afterDedupCount = filteredResults.length;
+        const afterDedupInStock = filteredResults.filter(r => r.inStock === true).length;
+        
+        console.log(`[Marketplace] Deduplication: ${beforeDedupCount} -> ${afterDedupCount} (in-stock: ${beforeDedupInStock} -> ${afterDedupInStock})`);
+        
+        // Re-sort after deduplication to ensure in-stock items are still first
+        filteredResults.sort((a, b) => {
+          if (a.inStock === true && b.inStock !== true) return -1;
+          if (a.inStock !== true && b.inStock === true) return 1;
+          return 0;
+        });
         
         // Apply pagination after deduplication
         const paginatedResults = filteredResults.slice((page - 1) * limit, page * limit);
+        
+        console.log(`[Marketplace] After pagination (page ${page}, limit ${limit}): ${paginatedResults.length} items (${paginatedResults.filter(r => r.inStock === true).length} in-stock)`);
         
         return {
           success: true,
@@ -183,9 +384,20 @@ export class FastProductSearchService {
         };
       }
 
+      // Apply pagination
+      const paginatedResults = filteredResults.slice((page - 1) * limit, page * limit);
+
       return {
         success: true,
-        data: filteredResults
+        data: paginatedResults,
+        pagination: {
+          page,
+          limit,
+          total: filteredResults.length,
+          totalPages: Math.ceil(filteredResults.length / limit),
+          hasNext: page * limit < filteredResults.length,
+          hasPrev: page > 1
+        }
       };
 
     } catch (error) {
@@ -390,6 +602,64 @@ export class FastProductSearchService {
   }
 
   /**
+   * Calculate pricing from master product (when not in inventory)
+   */
+  private calculateFastPricingFromMasterProduct(masterProduct: any): FastProductResult {
+    const product = masterProduct;
+    
+    // Extract vehicle compatibility info
+    const compatibility = product.vehicleCompatibility || {};
+    const make = compatibility.make || 'Unknown';
+    const model = compatibility.model || 'Unknown';
+    const year = compatibility.year || 0;
+    // Use category from relationship if available, otherwise fallback to compatibility JSON
+    const category = product.category?.name || compatibility.category || 'General';
+    const subcategory = compatibility.subcategory || 'General';
+    
+    // Handle imageUrls - parse if it's JSON string, otherwise use as-is
+    let imageUrlsArray: string[] = [];
+    if (product.imageUrls) {
+      if (typeof product.imageUrls === 'string') {
+        try {
+          imageUrlsArray = JSON.parse(product.imageUrls);
+        } catch {
+          imageUrlsArray = [product.imageUrls];
+        }
+      } else if (Array.isArray(product.imageUrls)) {
+        imageUrlsArray = product.imageUrls;
+      } else {
+        imageUrlsArray = [];
+      }
+    }
+
+    return {
+      id: product.id, // Master product ID
+      inventoryId: '', // No inventory available - product is not in stock
+      name: product.name,
+      make: make,
+      model: model,
+      year: typeof year === 'string' ? parseInt(year) : year,
+      category: category,
+      subcategory: subcategory,
+      displayPrice: 0, // No price available (not in inventory)
+      currency: 'USD',
+      inStock: false, // Not in stock - product is not in any seller inventory
+      sellerCount: 0, // No sellers have this product
+      lowestPrice: 0, // No price available
+      commission: 0, // No commission (no price)
+      imageUrls: imageUrlsArray,
+      oemPartNumber: product.oemPartNumber || '',
+      manufacturer: product.manufacturer || '',
+      description: product.description || '',
+      sellerId: '', // No seller
+      sellerName: '', // No seller
+      sku: '', // No SKU
+      averageRating: 0, // No reviews
+      reviewCount: 0 // No reviews
+    };
+  }
+
+  /**
    * Calculate pricing in memory (NO DATABASE QUERIES!) - Legacy method
    */
   private calculateFastPricing(product: any): FastProductResult {
@@ -471,23 +741,41 @@ export class FastProductSearchService {
 
 
   /**
-   * Deduplicate products by master product ID, keeping only the cheapest one
+   * Deduplicate products by master product ID, keeping only the best one
+   * IMPORTANT: Prioritizes in-stock items over out-of-stock items
    */
   private deduplicateProducts(results: FastProductResult[]): FastProductResult[] {
     const productMap = new Map<string, FastProductResult>();
 
-    // Group by master product ID and keep only the cheapest
+    // Group by master product ID and keep only the best one
+    // Priority: 1) In-stock items, 2) Cheapest price
     for (const product of results) {
       const masterProductId = product.id;
       const existing = productMap.get(masterProductId);
 
-      // If no existing product or this one is cheaper, keep this one
-      if (!existing || product.displayPrice < existing.displayPrice) {
+      if (!existing) {
+        // No existing product, add this one
         productMap.set(masterProductId, product);
+      } else {
+        // We have an existing product, decide which to keep
+        // Priority 1: In-stock items over out-of-stock items
+        if (product.inStock === true && existing.inStock !== true) {
+          // New product is in-stock, existing is not - keep the new one
+          productMap.set(masterProductId, product);
+        } else if (product.inStock !== true && existing.inStock === true) {
+          // Existing is in-stock, new is not - keep existing (do nothing)
+          // Don't replace
+        } else {
+          // Both have same stock status, keep the cheaper one
+          if (product.displayPrice < existing.displayPrice) {
+            productMap.set(masterProductId, product);
+          }
+          // If prices are equal or existing is cheaper, keep existing (do nothing)
+        }
       }
     }
 
-    // Return array of deduplicated products (already sorted by price from query)
+    // Return array of deduplicated products
     return Array.from(productMap.values());
   }
 
@@ -534,14 +822,9 @@ export class FastProductSearchService {
       filtered = filtered.filter(r => r.displayPrice <= criteria.maxPrice);
     }
     
-    // Stock filter - handled at database level, but also double-check here for consistency
-    if (criteria.inStock !== undefined) {
-      if (criteria.inStock === true) {
-        filtered = filtered.filter(r => r.inStock && r.inStock === true);
-      } else if (criteria.inStock === false) {
-        filtered = filtered.filter(r => !r.inStock || r.inStock === false);
-      }
-    }
+    // NOTE: inStock filter is handled separately in the main method
+    // to ensure master products (not in inventory) are always included
+    // DO NOT filter by inStock here - it will remove master products
 
     // Vehicle compatibility filters (in-memory filtering)
     if (criteria.make) {
