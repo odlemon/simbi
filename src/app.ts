@@ -36,6 +36,7 @@ app.use(cors({
     "http://localhost:5001",
     "http://localhost:5000",
     "http://31.220.82.129:3003",
+    "https://simbi-market-fawn.vercel.app",
     "http://172.20.20.10.9:5001",
     "https://car-parts-hub.vercel.app",
     "https://simbi-market-sigma.vercel.app",
