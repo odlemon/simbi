@@ -11,7 +11,11 @@ const productController = new ProductSearchController();
  * @desc Get all marketplace products (public - no authentication required)
  * @access Public
  */
-router.get('/marketplace', productController.getMarketplaceProducts.bind(productController));
+router.get('/marketplace', (req, res, next) => {
+  // Allow browsers & CDNs to cache for 30s, serve stale while revalidating
+  res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+  next();
+}, productController.getMarketplaceProducts.bind(productController));
 
 /**
  * @route POST /api/buyer/products/vin-decode

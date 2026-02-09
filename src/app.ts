@@ -2,6 +2,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import dotenv from "dotenv";
 
 import { errorMiddleware } from "./middleware/error";
@@ -14,6 +15,9 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3006;
+
+// Response compression (gzip/brotli) — reduces payload 60-80%
+app.use(compression());
 
 // Security middleware
 app.use(helmet({
