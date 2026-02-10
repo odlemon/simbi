@@ -75,7 +75,7 @@ const searchCriteriaSchema = z.object({
   sortBy: z.string().optional(),
   sort: z.string().optional(),
   page: z.number().default(1),
-  limit: z.number().default(30),
+  limit: z.number().default(60),
   onlyCheapest: z.boolean().optional()
 });
 
@@ -133,6 +133,19 @@ export class FastProductSearchService {
 
       // ── Build filter conditions ─────────────────────────────
       const { inStockConditions, inStockParams, mpWhereSQL, mpParams, categoryValues, brandValues, subcategoryValues } = this.buildFilterConditions(criteria, searchTerm);
+      
+      // Debug logging for search
+      if (searchTerm.length > 0) {
+        console.log(`[Marketplace] Search term: "${searchTerm}"`);
+        console.log(`[Marketplace] inStock filter: ${criteria.inStock}`);
+        console.log(`[Marketplace] MP WHERE SQL: ${mpWhereSQL}`);
+        console.log(`[Marketplace] MP Params:`, mpParams.slice(0, 5)); // Show first 5 params
+      }
+      
+      // IMPORTANT: When searching, ignore inStock filter to show all matching products
+      // Users expect to see all products when searching, not just in-stock ones
+      const shouldShowAllProducts = searchTerm.length > 0;
+      const effectiveInStockFilter = shouldShowAllProducts ? undefined : criteria.inStock;
 
       // ── Build sort clauses ──────────────────────────────────
       const sortValue = ((criteria.sortBy || criteria.sort || 'featured') as string).toLowerCase();
@@ -154,8 +167,19 @@ export class FastProductSearchService {
       }
 
       // ── SQL: In-stock products (cheapest per master product) ──
+      // IMPORTANT: We ALWAYS page in SQL (LIMIT/OFFSET). We never "only search the first 30".
       const inStockWhereSQL = inStockConditions.join(' AND ');
-      const finalInStockSQL = `
+
+      const inStockCountSQL = `
+        SELECT COUNT(DISTINCT mp.id) as total
+        FROM seller_inventory si
+        INNER JOIN master_products mp ON si.masterProductId = mp.id
+        INNER JOIN sellers s ON si.sellerId = s.id
+        LEFT JOIN product_categories pc ON mp.categoryId = pc.id
+        WHERE ${inStockWhereSQL}
+      `;
+
+      const inStockPageSQL = `
         SELECT 
           ranked.masterProductId, ranked.mpName, ranked.oemPartNumber, ranked.manufacturer,
           ranked.description, ranked.vehicleCompatibility, ranked.imageUrls,
@@ -182,11 +206,12 @@ export class FastProductSearchService {
         ) ranked
         WHERE ranked.rn = 1
         ORDER BY ${inStockOrderBy}
+        LIMIT ? OFFSET ?
       `;
 
-      // ── SQL: Out-of-stock master products (LEFT JOIN IS NULL) ──
-      // Uses LEFT JOIN instead of NOT EXISTS — often faster on large tables
-      const outOfStockSQL = `
+      // ── SQL: Out-of-stock master products (paged) ──
+      // NOTE: For this endpoint, "out-of-stock" means "no eligible active inventory with qty>0".
+      const outOfStockPageSQL = `
         SELECT 
           mp.id as masterProductId, mp.name as mpName, mp.oemPartNumber, mp.manufacturer,
           mp.description, mp.vehicleCompatibility, mp.imageUrls,
@@ -201,45 +226,36 @@ export class FastProductSearchService {
           AND (si.id IS NULL OR s.id IS NULL)
           ${mpWhereSQL}
         ORDER BY ${outOfStockOrderBy}
-        LIMIT ?
+        LIMIT ? OFFSET ?
       `;
-      // Speculatively fetch enough to fill current page + buffer
-      const outOfStockFetchLimit = offset + limit;
 
       // ── SQL: Total count (check 5-minute cache first) ──
       const countCacheKey = `count:${mpWhereSQL}:${JSON.stringify(mpParams)}`;
       const cachedCount = countCache.get(countCacheKey);
 
       // ══════════════════════════════════════════════════════════
-      // FIRE ALL QUERIES IN PARALLEL — no sequential waits
+      // FIRE INITIAL QUERIES IN PARALLEL
+      // We need:
+      //  - in-stock COUNT (to know where the out-of-stock zone starts)
+      //  - total COUNT (cached)
+      //  - in-stock PAGE slice (cheap, 30 rows)
       // ══════════════════════════════════════════════════════════
-      const queries: Promise<any>[] = [
-        prisma.$queryRawUnsafe(finalInStockSQL, ...inStockParams),
-      ];
+      const totalCountPromise = (cachedCount !== null)
+        ? Promise.resolve([{ total: cachedCount }])
+        : prisma.$queryRawUnsafe(`
+            SELECT COUNT(*) as total
+            FROM master_products mp
+            LEFT JOIN product_categories pc ON mp.categoryId = pc.id
+            WHERE mp.isActive = 1 ${mpWhereSQL}
+          `, ...mpParams);
 
-      // Only run out-of-stock query if not filtering to inStock only
-      if (criteria.inStock !== true) {
-        queries.push(prisma.$queryRawUnsafe(outOfStockSQL, ...mpParams, outOfStockFetchLimit));
-      } else {
-        queries.push(Promise.resolve([]));
-      }
+      const [inStockCountRows, totalCountRows, inStockPageRows] = await Promise.all([
+        prisma.$queryRawUnsafe(inStockCountSQL, ...inStockParams),
+        totalCountPromise,
+        prisma.$queryRawUnsafe(inStockPageSQL, ...inStockParams, limit, offset),
+      ]) as [any[], any[], any[]];
 
-      // Only run COUNT if not cached
-      if (cachedCount !== null) {
-        queries.push(Promise.resolve([{ total: cachedCount }]));
-      } else {
-        const totalCountSQL = `
-          SELECT COUNT(*) as total
-          FROM master_products mp
-          LEFT JOIN product_categories pc ON mp.categoryId = pc.id
-          WHERE mp.isActive = 1 ${mpWhereSQL}
-        `;
-        queries.push(prisma.$queryRawUnsafe(totalCountSQL, ...mpParams));
-      }
-
-      const [inStockRows, outOfStockRows, totalCountRows] = await Promise.all(queries) as [any[], any[], any[]];
-
-      const inStockCount = (inStockRows as any[]).length;
+      const inStockCount = Number((inStockCountRows as any[])[0]?.total ?? 0);
       const totalCount = Number((totalCountRows as any[])[0]?.total ?? 0);
 
       // Cache the count for 5 minutes
@@ -251,13 +267,12 @@ export class FastProductSearchService {
       // ASSEMBLE PAGE — zero additional DB calls
       // ══════════════════════════════════════════════════════════
 
-      // If user explicitly wants only in-stock
-      if (criteria.inStock === true) {
-        const paginatedInStock = (inStockRows as any[]).slice(offset, offset + limit);
-        const data = paginatedInStock.map((row: any) => this.transformRawRow(row, true));
+      // If user explicitly wants only in-stock (but NOT when searching - search shows all)
+      if (effectiveInStockFilter === true) {
+        const data = (inStockPageRows as any[]).map((row: any) => this.transformRawRow(row, true));
 
         const duration = Date.now() - startTime;
-        console.log(`[Marketplace] ${duration}ms | inStock=true | ${data.length} results | ${inStockCount} total`);
+        console.log(`[Marketplace] ${duration}ms | inStock=true | ${data.length} results | ${inStockCount} total | search: "${searchTerm}"`);
 
         const result = {
           success: true,
@@ -273,24 +288,24 @@ export class FastProductSearchService {
 
       if (offset < inStockCount) {
         // Page starts within in-stock zone
-        const inStockSlice = (inStockRows as any[]).slice(offset, Math.min(offset + limit, inStockCount));
+        const inStockSlice = (inStockPageRows as any[]);
         resultData.push(...inStockSlice.map((row: any) => this.transformRawRow(row, true)));
 
         const remaining = limit - inStockSlice.length;
         if (remaining > 0) {
-          // Fill from pre-fetched out-of-stock (already have them from parallel query)
-          const oosSlice = (outOfStockRows as any[]).slice(0, remaining);
-          resultData.push(...oosSlice.map((row: any) => this.transformRawRow(row, false)));
+          // Fill from out-of-stock zone starting at 0
+          const oosRows = await prisma.$queryRawUnsafe(outOfStockPageSQL, ...mpParams, remaining, 0);
+          resultData.push(...(oosRows as any[]).map((row: any) => this.transformRawRow(row, false)));
         }
       } else {
         // Page is entirely in out-of-stock zone
         const outOfStockOffset = offset - inStockCount;
-        const oosSlice = (outOfStockRows as any[]).slice(outOfStockOffset, outOfStockOffset + limit);
-        resultData = oosSlice.map((row: any) => this.transformRawRow(row, false));
+        const oosRows = await prisma.$queryRawUnsafe(outOfStockPageSQL, ...mpParams, limit, outOfStockOffset);
+        resultData = (oosRows as any[]).map((row: any) => this.transformRawRow(row, false));
       }
 
       const duration = Date.now() - startTime;
-      console.log(`[Marketplace] ${duration}ms | ${resultData.length} results | ${inStockCount} in-stock | ${totalCount} total | page ${page}`);
+      console.log(`[Marketplace] ${duration}ms | ${resultData.length} results | ${inStockCount} in-stock | ${totalCount} total | page ${page} | search: "${searchTerm}"`);
 
       const result = {
         success: true,
@@ -325,18 +340,45 @@ export class FastProductSearchService {
     if (criteria.minPrice) { inStockConditions.push('si.sellerPrice >= ?'); inStockParams.push(criteria.minPrice); }
     if (criteria.maxPrice) { inStockConditions.push('si.sellerPrice <= ?'); inStockParams.push(criteria.maxPrice); }
 
-    // Text search
-    if (searchTerm.length >= 3) {
-      const ftTerms = searchTerm.split(/\s+/).filter((t: string) => t.length > 0).map((t: string) => `+${t}*`).join(' ');
-      mpConditions.push(`(MATCH(mp.name, mp.oemPartNumber, mp.description, mp.manufacturer) AGAINST(? IN BOOLEAN MODE) OR mp.oemPartNumber LIKE ?)`);
-      mpParams.push(ftTerms, `%${searchTerm}%`);
-      inStockConditions.push(`(MATCH(mp.name, mp.oemPartNumber, mp.description, mp.manufacturer) AGAINST(? IN BOOLEAN MODE) OR mp.oemPartNumber LIKE ? OR si.sellerSku LIKE ?)`);
-      inStockParams.push(ftTerms, `%${searchTerm}%`, `%${searchTerm}%`);
-    } else if (searchTerm.length > 0) {
-      mpConditions.push(`(mp.name LIKE ? OR mp.oemPartNumber LIKE ? OR mp.manufacturer LIKE ?)`);
-      mpParams.push(`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`);
-      inStockConditions.push(`(mp.name LIKE ? OR mp.oemPartNumber LIKE ? OR mp.manufacturer LIKE ? OR si.sellerSku LIKE ?)`);
-      inStockParams.push(`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`);
+    // Text search - simple LIKE search that works
+    if (searchTerm.length > 0) {
+      const searchPattern = `%${searchTerm}%`;
+      
+      // Build LIKE conditions for master products
+      const mpLikeCondition = `(
+        mp.name LIKE ? OR 
+        mp.oemPartNumber LIKE ? OR 
+        mp.description LIKE ? OR 
+        mp.manufacturer LIKE ?
+      )`;
+      
+      // Build LIKE conditions for in-stock (includes SKU)
+      const inStockLikeCondition = `(
+        mp.name LIKE ? OR 
+        mp.oemPartNumber LIKE ? OR 
+        mp.description LIKE ? OR 
+        mp.manufacturer LIKE ? OR
+        si.sellerSku LIKE ?
+      )`;
+      
+      // Add FULLTEXT if words are long enough
+      const searchWords = searchTerm.split(/\s+/).filter((t: string) => t.length >= 3);
+      if (searchWords.length > 0) {
+        const ftTerms = searchWords.map((t: string) => `${t}*`).join(' ');
+        // Combine LIKE and FULLTEXT with OR
+        mpConditions.push(`(${mpLikeCondition} OR MATCH(mp.name, mp.oemPartNumber, mp.description, mp.manufacturer) AGAINST(? IN BOOLEAN MODE))`);
+        mpParams.push(searchPattern, searchPattern, searchPattern, searchPattern, ftTerms);
+        
+        inStockConditions.push(`(${inStockLikeCondition} OR MATCH(mp.name, mp.oemPartNumber, mp.description, mp.manufacturer) AGAINST(? IN BOOLEAN MODE))`);
+        inStockParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, ftTerms);
+      } else {
+        // Just use LIKE if words are too short for FULLTEXT
+        mpConditions.push(mpLikeCondition);
+        mpParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+        
+        inStockConditions.push(inStockLikeCondition);
+        inStockParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+      }
     }
 
     // Category

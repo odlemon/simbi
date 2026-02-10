@@ -43,7 +43,7 @@ export class ProductSearchController {
         productType,
         // Pagination
         page = 1,
-        limit = 30,
+        limit = 60,
         // Sorting - support both sortBy and sort
         sortBy,
         sort
@@ -51,7 +51,7 @@ export class ProductSearchController {
 
       const criteria: any = {
         page: parseInt(page as string) || 1,
-        limit: parseInt(limit as string) || 20
+        limit: parseInt(limit as string) || 60
       };
 
       // Text search - prioritize q, fallback to search
