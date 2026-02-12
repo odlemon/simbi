@@ -134,12 +134,9 @@ export class FastProductSearchService {
       // ── Build filter conditions ─────────────────────────────
       const { inStockConditions, inStockParams, mpWhereSQL, mpParams, categoryValues, brandValues, subcategoryValues } = this.buildFilterConditions(criteria, searchTerm);
       
-      // Debug logging for search
-      if (searchTerm.length > 0) {
-        console.log(`[Marketplace] Search term: "${searchTerm}"`);
-        console.log(`[Marketplace] inStock filter: ${criteria.inStock}`);
-        console.log(`[Marketplace] MP WHERE SQL: ${mpWhereSQL}`);
-        console.log(`[Marketplace] MP Params:`, mpParams.slice(0, 5)); // Show first 5 params
+      // Debug logging for search and filters
+      if (searchTerm.length > 0 || criteria.make || criteria.model || criteria.category || criteria.categories || criteria.year || criteria.yearFrom || criteria.yearTo) {
+        console.log(`[Marketplace] Search: "${searchTerm}" | Make: ${criteria.make || 'none'} | Model: ${criteria.model || 'none'} | Category: ${criteria.category || criteria.categories || 'none'} | Year: ${criteria.year || criteria.yearFrom ? `${criteria.yearFrom || ''}-${criteria.yearTo || ''}` : criteria.year || 'none'}`);
       }
       
       // IMPORTANT: When searching, ignore inStock filter to show all matching products
@@ -381,12 +378,15 @@ export class FastProductSearchService {
       }
     }
 
-    // Category
+    // Category - flexible matching (case-insensitive, supports partial matches)
     const categoryValues = this.parseCommaSeparated(criteria.categories || criteria.category);
     if (categoryValues.length > 0) {
-      const ph = categoryValues.map(() => '?').join(',');
-      mpConditions.push(`pc.name IN (${ph})`); mpParams.push(...categoryValues);
-      inStockConditions.push(`pc.name IN (${ph})`); inStockParams.push(...categoryValues);
+      // Use LIKE for flexible matching instead of exact IN match
+      // This allows "Brake" to match "Brake System", "Brake Pads", etc.
+      const categoryClause = categoryValues.map(() => 'pc.name LIKE ?').join(' OR ');
+      const categoryParams = categoryValues.map((cat: string) => `%${cat}%`);
+      mpConditions.push(`(${categoryClause})`); mpParams.push(...categoryParams);
+      inStockConditions.push(`(${categoryClause})`); inStockParams.push(...categoryParams);
     }
 
     // Brand
@@ -398,31 +398,63 @@ export class FastProductSearchService {
       inStockConditions.push(clause); inStockParams.push(...vals);
     }
 
-    // Vehicle make/model/year
+    // Vehicle make - case-insensitive, flexible matching
     if (criteria.make) {
-      const c = `JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.make')) LIKE ?`;
-      mpConditions.push(c); mpParams.push(`%${criteria.make}%`);
-      inStockConditions.push(c); inStockParams.push(`%${criteria.make}%`);
+      const makeValue = String(criteria.make).trim();
+      if (makeValue.length > 0) {
+        // Use LOWER() for case-insensitive matching
+        const c = `LOWER(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.make'))) LIKE LOWER(?)`;
+        mpConditions.push(c); mpParams.push(`%${makeValue}%`);
+        inStockConditions.push(c); inStockParams.push(`%${makeValue}%`);
+      }
     }
+    // Vehicle model - case-insensitive, flexible matching
     if (criteria.model) {
-      const c = `JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.model')) LIKE ?`;
-      mpConditions.push(c); mpParams.push(`%${criteria.model}%`);
-      inStockConditions.push(c); inStockParams.push(`%${criteria.model}%`);
+      const modelValue = String(criteria.model).trim();
+      if (modelValue.length > 0) {
+        // Use LOWER() for case-insensitive matching
+        const c = `LOWER(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.model'))) LIKE LOWER(?)`;
+        mpConditions.push(c); mpParams.push(`%${modelValue}%`);
+        inStockConditions.push(c); inStockParams.push(`%${modelValue}%`);
+      }
     }
+    // Year filter - handles both single years and year ranges (e.g., "2018" or "2018-2023")
+    // Uses LIKE for flexible matching since year can be stored as string, number, or range
     if (criteria.year) {
-      const c = `CAST(COALESCE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year'), '0') AS UNSIGNED) = ?`;
-      mpConditions.push(c); mpParams.push(criteria.year);
-      inStockConditions.push(c); inStockParams.push(criteria.year);
+      const yearValue = String(criteria.year).trim();
+      if (yearValue.length > 0) {
+        // Simple approach: Check if the year field contains the search year
+        // This works for: "2018", "2018-2023", "2018,2019,2020", etc.
+        const c = `JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')) LIKE ?`;
+        mpConditions.push(c); mpParams.push(`%${yearValue}%`);
+        inStockConditions.push(c); inStockParams.push(`%${yearValue}%`);
+      }
     }
     if (criteria.yearFrom) {
-      const c = `CAST(COALESCE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year'), '0') AS UNSIGNED) >= ?`;
-      mpConditions.push(c); mpParams.push(criteria.yearFrom);
-      inStockConditions.push(c); inStockParams.push(criteria.yearFrom);
+      const yearFromValue = parseInt(String(criteria.yearFrom));
+      if (!isNaN(yearFromValue)) {
+        // Extract numeric year from the JSON field and compare
+        // Handles both "2018" and "2018-2023" formats
+        const c = `(
+          CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')), '0') AS UNSIGNED) >= ? OR
+          CAST(SUBSTRING_INDEX(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')), '0'), '-', 1) AS UNSIGNED) >= ?
+        )`;
+        mpConditions.push(c); mpParams.push(yearFromValue, yearFromValue);
+        inStockConditions.push(c); inStockParams.push(yearFromValue, yearFromValue);
+      }
     }
     if (criteria.yearTo) {
-      const c = `CAST(COALESCE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year'), '0') AS UNSIGNED) <= ?`;
-      mpConditions.push(c); mpParams.push(criteria.yearTo);
-      inStockConditions.push(c); inStockParams.push(criteria.yearTo);
+      const yearToValue = parseInt(String(criteria.yearTo));
+      if (!isNaN(yearToValue)) {
+        // Extract numeric year from the JSON field and compare
+        // For ranges, check if the start year is <= yearTo
+        const c = `(
+          CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')), '9999') AS UNSIGNED) <= ? OR
+          CAST(SUBSTRING_INDEX(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')), '0'), '-', 1) AS UNSIGNED) <= ?
+        )`;
+        mpConditions.push(c); mpParams.push(yearToValue, yearToValue);
+        inStockConditions.push(c); inStockParams.push(yearToValue, yearToValue);
+      }
     }
 
     // Subcategory
