@@ -53,17 +53,19 @@ const searchCriteriaSchema = z.object({
   search: z.string().optional(),
   make: z.string().optional(),
   model: z.string().optional(),
-  year: z.number().optional(),
-  yearFrom: z.number().optional(),
-  yearTo: z.number().optional(),
+  // Allow year filters as number or string (e.g. from query params)
+  year: z.union([z.number(), z.string()]).optional(),
+  yearFrom: z.union([z.number(), z.string()]).optional(),
+  yearTo: z.union([z.number(), z.string()]).optional(),
   category: z.union([z.string(), z.array(z.string())]).optional(),
   categories: z.union([z.string(), z.array(z.string())]).optional(),
   subcategory: z.union([z.string(), z.array(z.string())]).optional(),
   manufacturer: z.union([z.string(), z.array(z.string())]).optional(),
   brand: z.union([z.string(), z.array(z.string())]).optional(),
   brands: z.union([z.string(), z.array(z.string())]).optional(),
-  minPrice: z.number().optional(),
-  maxPrice: z.number().optional(),
+  // Allow price filters as number or string
+  minPrice: z.union([z.number(), z.string()]).optional(),
+  maxPrice: z.union([z.number(), z.string()]).optional(),
   inStock: z.union([z.boolean(), z.string()]).optional().transform(val => {
     if (val === undefined) return undefined;
     if (typeof val === 'boolean') return val;
@@ -74,8 +76,9 @@ const searchCriteriaSchema = z.object({
   productType: z.string().optional(),
   sortBy: z.string().optional(),
   sort: z.string().optional(),
-  page: z.number().default(1),
-  limit: z.number().default(60),
+  // Page & limit can be number or string; normalize later
+  page: z.union([z.number(), z.string()]).default(1),
+  limit: z.union([z.number(), z.string()]).default(60),
   onlyCheapest: z.boolean().optional()
 });
 
@@ -118,13 +121,23 @@ export class FastProductSearchService {
   async fastSearch(criteria: z.infer<typeof searchCriteriaSchema>): Promise<{ success: boolean; data?: FastProductResult[]; pagination?: any; error?: string }> {
     try {
       const startTime = Date.now();
-      const validatedCriteria = searchCriteriaSchema.parse(criteria);
-      const { page = 1, limit = 30 } = validatedCriteria;
+      const validatedCriteria: any = searchCriteriaSchema.parse(criteria);
+
+      // Normalize pagination (1-based page, enforce sensible max limit)
+      let page = Number(validatedCriteria.page ?? 1);
+      if (!Number.isFinite(page) || page < 1) page = 1;
+      page = Math.floor(page);
+
+      let limit = Number(validatedCriteria.limit ?? 60);
+      if (!Number.isFinite(limit) || limit < 1) limit = 60;
+      // Enforce an upper bound to avoid accidental huge pages
+      limit = Math.min(100, Math.floor(limit));
+
       const offset = (page - 1) * limit;
-      const searchTerm = (criteria.q || criteria.search || '').toString().trim();
+      const searchTerm = (validatedCriteria.q || validatedCriteria.search || '').toString().trim();
 
       // ── Cache check ─────────────────────────────────────────
-      const cacheKey = JSON.stringify({ ...validatedCriteria, q: searchTerm });
+      const cacheKey = JSON.stringify({ ...validatedCriteria, page, limit, q: searchTerm });
       const cached = marketplaceCache.get(cacheKey);
       if (cached) {
         console.log(`[Marketplace] CACHE HIT ${Date.now() - startTime}ms | page ${page}`);
@@ -132,182 +145,179 @@ export class FastProductSearchService {
       }
 
       // ── Build filter conditions ─────────────────────────────
-      const { inStockConditions, inStockParams, mpWhereSQL, mpParams, categoryValues, brandValues, subcategoryValues } = this.buildFilterConditions(criteria, searchTerm);
+      const { mpWhereSQL, mpParams } =
+        this.buildFilterConditions(validatedCriteria, searchTerm);
       
       // Debug logging for search and filters
-      if (searchTerm.length > 0 || criteria.make || criteria.model || criteria.category || criteria.categories || criteria.year || criteria.yearFrom || criteria.yearTo) {
-        console.log(`[Marketplace] Search: "${searchTerm}" | Make: ${criteria.make || 'none'} | Model: ${criteria.model || 'none'} | Category: ${criteria.category || criteria.categories || 'none'} | Year: ${criteria.year || criteria.yearFrom ? `${criteria.yearFrom || ''}-${criteria.yearTo || ''}` : criteria.year || 'none'}`);
+      if (
+        searchTerm.length > 0 ||
+        validatedCriteria.make ||
+        validatedCriteria.model ||
+        validatedCriteria.category ||
+        validatedCriteria.categories ||
+        validatedCriteria.year ||
+        validatedCriteria.yearFrom ||
+        validatedCriteria.yearTo
+      ) {
+        console.log(
+          `[Marketplace] Search: "${searchTerm}" | Make: ${validatedCriteria.make || 'none'} | Model: ${validatedCriteria.model || 'none'} | Category: ${validatedCriteria.category || validatedCriteria.categories || 'none'} | Year: ${
+            validatedCriteria.year || validatedCriteria.yearFrom
+              ? `${validatedCriteria.yearFrom || ''}-${validatedCriteria.yearTo || ''}`
+              : validatedCriteria.year || 'none'
+          }`
+        );
       }
       
-      // IMPORTANT: When searching, ignore inStock filter to show all matching products
-      // Users expect to see all products when searching, not just in-stock ones
-      const shouldShowAllProducts = searchTerm.length > 0;
-      const effectiveInStockFilter = shouldShowAllProducts ? undefined : criteria.inStock;
+      // inStock filter: when provided, always respect it
+      const effectiveInStockFilter =
+        typeof validatedCriteria.inStock === 'boolean' ? validatedCriteria.inStock : undefined;
 
-      // ── Build sort clauses ──────────────────────────────────
-      const sortValue = ((criteria.sortBy || criteria.sort || 'featured') as string).toLowerCase();
-      let inStockOrderBy = 'ranked.sellerPrice ASC';
-      let outOfStockOrderBy = 'mp.name ASC';
+      // ── Build sort clause ──────────────────────────────────
+      const sortValue = ((validatedCriteria.sortBy || validatedCriteria.sort || 'featured') as string).toLowerCase();
+      let orderByClause = 'best.sellerPrice IS NULL ASC, best.sellerPrice ASC';
       switch (sortValue) {
         case 'price-asc': case 'price_low': case 'price_low_to_high':
-          inStockOrderBy = 'ranked.sellerPrice ASC'; break;
+          orderByClause = 'best.sellerPrice IS NULL ASC, best.sellerPrice ASC'; break;
         case 'price-desc': case 'price_high': case 'price_high_to_low':
-          inStockOrderBy = 'ranked.sellerPrice DESC'; break;
+          orderByClause = 'best.sellerPrice IS NULL ASC, best.sellerPrice DESC'; break;
         case 'name-asc': case 'name': case 'name_a_to_z':
-          inStockOrderBy = 'ranked.mpName ASC'; outOfStockOrderBy = 'mp.name ASC'; break;
+          orderByClause = 'mp.name ASC'; break;
         case 'name-desc': case 'name_z_to_a':
-          inStockOrderBy = 'ranked.mpName DESC'; outOfStockOrderBy = 'mp.name DESC'; break;
+          orderByClause = 'mp.name DESC'; break;
         case 'newest':
-          inStockOrderBy = 'ranked.mpName ASC'; outOfStockOrderBy = 'mp.createdAt DESC'; break;
+          orderByClause = 'mp.createdAt DESC'; break;
         default:
-          inStockOrderBy = 'ranked.sellerPrice ASC'; break;
+          orderByClause = 'best.sellerPrice IS NULL ASC, best.sellerPrice ASC'; break;
       }
 
-      // ── SQL: In-stock products (cheapest per master product) ──
-      // IMPORTANT: We ALWAYS page in SQL (LIMIT/OFFSET). We never "only search the first 30".
-      const inStockWhereSQL = inStockConditions.join(' AND ');
+      // ── Build WHERE conditions for the unified query ────────
+      // mpConditions apply to the outer master_products; they use mp.* and pc.*
+      // Additional conditions that reference best.* (price, stock) are built here
+      const outerConditions: string[] = ['mp.isActive = 1'];
+      const outerParams: any[] = [];
 
-      const inStockCountSQL = `
-        SELECT COUNT(DISTINCT mp.id) as total
-        FROM seller_inventory si
-        INNER JOIN master_products mp ON si.masterProductId = mp.id
-        INNER JOIN sellers s ON si.sellerId = s.id
+      // Add all mp-level conditions from buildFilterConditions
+      if (mpWhereSQL.length > 0) {
+        outerConditions.push(mpWhereSQL.replace(/^AND\s+/i, ''));
+        outerParams.push(...mpParams);
+      }
+
+      // Price filters reference the best-seller subquery
+      if (validatedCriteria.minPrice) {
+        const minP = Number(validatedCriteria.minPrice);
+        if (Number.isFinite(minP)) { outerConditions.push('best.sellerPrice >= ?'); outerParams.push(minP); }
+      }
+      if (validatedCriteria.maxPrice) {
+        const maxP = Number(validatedCriteria.maxPrice);
+        if (Number.isFinite(maxP)) { outerConditions.push('best.sellerPrice <= ?'); outerParams.push(maxP); }
+      }
+
+      // inStock filter
+      if (effectiveInStockFilter === true) {
+        outerConditions.push('best.inventoryId IS NOT NULL AND best.quantity > 0');
+      } else if (effectiveInStockFilter === false) {
+        outerConditions.push('(best.inventoryId IS NULL OR best.quantity <= 0)');
+      }
+
+      const outerWhereSQL = outerConditions.join(' AND ');
+
+      // ── Unified SQL: master_products LEFT JOIN best seller ──
+      const countSQL = `
+        SELECT COUNT(*) as total
+        FROM master_products mp
         LEFT JOIN product_categories pc ON mp.categoryId = pc.id
-        WHERE ${inStockWhereSQL}
-      `;
-
-      const inStockPageSQL = `
-        SELECT 
-          ranked.masterProductId, ranked.mpName, ranked.oemPartNumber, ranked.manufacturer,
-          ranked.description, ranked.vehicleCompatibility, ranked.imageUrls,
-          ranked.categoryName,
-          ranked.inventoryId, ranked.sellerPrice, ranked.currency, ranked.quantity,
-          ranked.sellerSku, ranked.averageRating, ranked.reviewCount,
-          ranked.sellerId, ranked.sellerName
-        FROM (
-          SELECT 
-            mp.id as masterProductId, mp.name as mpName, mp.oemPartNumber, mp.manufacturer,
-            mp.description, mp.vehicleCompatibility, mp.imageUrls,
-            pc.name as categoryName,
-            si.id as inventoryId, si.sellerPrice, si.currency, si.quantity,
+        LEFT JOIN (
+          SELECT
+            si.masterProductId,
+            si.id as inventoryId,
+            si.sellerPrice,
+            si.currency,
+            si.quantity,
             si.sellerSku,
             COALESCE(si.averageRating, 0) as averageRating,
             COALESCE(si.reviewCount, 0) as reviewCount,
-            s.id as sellerId, s.businessName as sellerName,
-            ROW_NUMBER() OVER (PARTITION BY mp.id ORDER BY si.sellerPrice ASC) as rn
+            s.id as sellerId,
+            s.businessName as sellerName,
+            ROW_NUMBER() OVER (PARTITION BY si.masterProductId ORDER BY si.sellerPrice ASC) as rn
           FROM seller_inventory si
-          INNER JOIN master_products mp ON si.masterProductId = mp.id
           INNER JOIN sellers s ON si.sellerId = s.id
-          LEFT JOIN product_categories pc ON mp.categoryId = pc.id
-          WHERE ${inStockWhereSQL}
-        ) ranked
-        WHERE ranked.rn = 1
-        ORDER BY ${inStockOrderBy}
-        LIMIT ? OFFSET ?
+          WHERE si.isActive = 1 AND s.isEligible = 1 AND s.sriScore >= 70
+        ) best ON best.masterProductId = mp.id AND best.rn = 1
+        WHERE ${outerWhereSQL}
       `;
 
-      // ── SQL: Out-of-stock master products (paged) ──
-      // NOTE: For this endpoint, "out-of-stock" means "no eligible active inventory with qty>0".
-      const outOfStockPageSQL = `
-        SELECT 
-          mp.id as masterProductId, mp.name as mpName, mp.oemPartNumber, mp.manufacturer,
-          mp.description, mp.vehicleCompatibility, mp.imageUrls,
-          pc.name as categoryName
+      const pageSQL = `
+        SELECT
+          mp.id as masterProductId,
+          mp.name as mpName,
+          mp.oemPartNumber,
+          mp.manufacturer,
+          mp.description,
+          mp.vehicleCompatibility,
+          mp.imageUrls,
+          pc.name as categoryName,
+          best.inventoryId,
+          best.sellerPrice,
+          best.currency,
+          best.quantity,
+          best.sellerSku,
+          best.averageRating,
+          best.reviewCount,
+          best.sellerId,
+          best.sellerName
         FROM master_products mp
-        LEFT JOIN seller_inventory si 
-          ON si.masterProductId = mp.id AND si.isActive = 1
-        LEFT JOIN sellers s 
-          ON si.sellerId = s.id AND s.isEligible = 1 AND s.sriScore >= 70
         LEFT JOIN product_categories pc ON mp.categoryId = pc.id
-        WHERE mp.isActive = 1
-          AND (si.id IS NULL OR s.id IS NULL)
-          ${mpWhereSQL}
-        ORDER BY ${outOfStockOrderBy}
+        LEFT JOIN (
+          SELECT
+            si.masterProductId,
+            si.id as inventoryId,
+            si.sellerPrice,
+            si.currency,
+            si.quantity,
+            si.sellerSku,
+            COALESCE(si.averageRating, 0) as averageRating,
+            COALESCE(si.reviewCount, 0) as reviewCount,
+            s.id as sellerId,
+            s.businessName as sellerName,
+            ROW_NUMBER() OVER (PARTITION BY si.masterProductId ORDER BY si.sellerPrice ASC) as rn
+          FROM seller_inventory si
+          INNER JOIN sellers s ON si.sellerId = s.id
+          WHERE si.isActive = 1 AND s.isEligible = 1 AND s.sriScore >= 70
+        ) best ON best.masterProductId = mp.id AND best.rn = 1
+        WHERE ${outerWhereSQL}
+        ORDER BY ${orderByClause}
         LIMIT ? OFFSET ?
       `;
 
-      // ── SQL: Total count (check 5-minute cache first) ──
-      const countCacheKey = `count:${mpWhereSQL}:${JSON.stringify(mpParams)}`;
-      const cachedCount = countCache.get(countCacheKey);
+      // ── Run COUNT + PAGE in parallel ────────────────────────
+      const [countRows, pageRows] = await Promise.all([
+        prisma.$queryRawUnsafe(countSQL, ...outerParams),
+        prisma.$queryRawUnsafe(pageSQL, ...outerParams, limit, offset),
+      ]) as [any[], any[]];
 
-      // ══════════════════════════════════════════════════════════
-      // FIRE INITIAL QUERIES IN PARALLEL
-      // We need:
-      //  - in-stock COUNT (to know where the out-of-stock zone starts)
-      //  - total COUNT (cached)
-      //  - in-stock PAGE slice (cheap, 30 rows)
-      // ══════════════════════════════════════════════════════════
-      const totalCountPromise = (cachedCount !== null)
-        ? Promise.resolve([{ total: cachedCount }])
-        : prisma.$queryRawUnsafe(`
-            SELECT COUNT(*) as total
-            FROM master_products mp
-            LEFT JOIN product_categories pc ON mp.categoryId = pc.id
-            WHERE mp.isActive = 1 ${mpWhereSQL}
-          `, ...mpParams);
+      const totalCount = Number((countRows as any[])[0]?.total ?? 0);
 
-      const [inStockCountRows, totalCountRows, inStockPageRows] = await Promise.all([
-        prisma.$queryRawUnsafe(inStockCountSQL, ...inStockParams),
-        totalCountPromise,
-        prisma.$queryRawUnsafe(inStockPageSQL, ...inStockParams, limit, offset),
-      ]) as [any[], any[], any[]];
-
-      const inStockCount = Number((inStockCountRows as any[])[0]?.total ?? 0);
-      const totalCount = Number((totalCountRows as any[])[0]?.total ?? 0);
-
-      // Cache the count for 5 minutes
-      if (cachedCount === null) {
-        countCache.set(countCacheKey, totalCount);
-      }
-
-      // ══════════════════════════════════════════════════════════
-      // ASSEMBLE PAGE — zero additional DB calls
-      // ══════════════════════════════════════════════════════════
-
-      // If user explicitly wants only in-stock (but NOT when searching - search shows all)
-      if (effectiveInStockFilter === true) {
-        const data = (inStockPageRows as any[]).map((row: any) => this.transformRawRow(row, true));
-
-        const duration = Date.now() - startTime;
-        console.log(`[Marketplace] ${duration}ms | inStock=true | ${data.length} results | ${inStockCount} total | search: "${searchTerm}"`);
-
-        const result = {
-          success: true,
-          data,
-          pagination: { page, limit, total: inStockCount, totalPages: Math.ceil(inStockCount / limit), hasNext: page * limit < inStockCount, hasPrev: page > 1 }
-        };
-        marketplaceCache.set(cacheKey, result);
-        return result;
-      }
-
-      // Merge: in-stock first, then fill with out-of-stock
-      let resultData: FastProductResult[] = [];
-
-      if (offset < inStockCount) {
-        // Page starts within in-stock zone
-        const inStockSlice = (inStockPageRows as any[]);
-        resultData.push(...inStockSlice.map((row: any) => this.transformRawRow(row, true)));
-
-        const remaining = limit - inStockSlice.length;
-        if (remaining > 0) {
-          // Fill from out-of-stock zone starting at 0
-          const oosRows = await prisma.$queryRawUnsafe(outOfStockPageSQL, ...mpParams, remaining, 0);
-          resultData.push(...(oosRows as any[]).map((row: any) => this.transformRawRow(row, false)));
-        }
-      } else {
-        // Page is entirely in out-of-stock zone
-        const outOfStockOffset = offset - inStockCount;
-        const oosRows = await prisma.$queryRawUnsafe(outOfStockPageSQL, ...mpParams, limit, outOfStockOffset);
-        resultData = (oosRows as any[]).map((row: any) => this.transformRawRow(row, false));
-      }
+      // ── Transform rows ──────────────────────────────────────
+      const resultData: FastProductResult[] = (pageRows as any[]).map((row: any) => {
+        const hasInventory = row.inventoryId != null && Number(row.quantity) > 0;
+        return this.transformRawRow(row, hasInventory);
+      });
 
       const duration = Date.now() - startTime;
-      console.log(`[Marketplace] ${duration}ms | ${resultData.length} results | ${inStockCount} in-stock | ${totalCount} total | page ${page} | search: "${searchTerm}"`);
+      console.log(`[Marketplace] ${duration}ms | ${resultData.length} results | ${totalCount} total | page ${page} | search: "${searchTerm}"`);
 
+      const totalPages = totalCount > 0 ? Math.ceil(totalCount / limit) : 0;
       const result = {
         success: true,
         data: resultData,
-        pagination: { page, limit, total: totalCount, totalPages: Math.ceil(totalCount / limit), hasNext: page * limit < totalCount, hasPrev: page > 1 }
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        }
       };
       marketplaceCache.set(cacheKey, result);
       return result;
@@ -319,141 +329,103 @@ export class FastProductSearchService {
   }
 
   /**
-   * Build all filter conditions for both in-stock and out-of-stock queries
+   * Build filter conditions that apply to the master_products + category level.
+   * Price and stock filters are handled separately in fastSearch since they
+   * reference the best-seller subquery alias.
    */
   private buildFilterConditions(criteria: any, searchTerm: string) {
-    // ── Conditions for master_products (used in out-of-stock + count) ──
     const mpConditions: string[] = [];
     const mpParams: any[] = [];
 
-    // ── Conditions for in-stock query (includes inventory filters) ──
-    const inStockConditions: string[] = [
-      'si.isActive = 1', 'si.quantity > 0', 'mp.isActive = 1',
-      's.isEligible = 1', 's.sriScore >= 70',
-    ];
-    const inStockParams: any[] = [];
-
-    // Price filters (in-stock only)
-    if (criteria.minPrice) { inStockConditions.push('si.sellerPrice >= ?'); inStockParams.push(criteria.minPrice); }
-    if (criteria.maxPrice) { inStockConditions.push('si.sellerPrice <= ?'); inStockParams.push(criteria.maxPrice); }
-
-    // Text search - simple LIKE search that works
+    // Text search on mp.* columns
     if (searchTerm.length > 0) {
       const searchPattern = `%${searchTerm}%`;
-      
-      // Build LIKE conditions for master products
-      const mpLikeCondition = `(
-        mp.name LIKE ? OR 
-        mp.oemPartNumber LIKE ? OR 
-        mp.description LIKE ? OR 
+
+      const likeCond = `(
+        mp.name LIKE ? OR
+        mp.oemPartNumber LIKE ? OR
+        mp.description LIKE ? OR
         mp.manufacturer LIKE ?
       )`;
-      
-      // Build LIKE conditions for in-stock (includes SKU)
-      const inStockLikeCondition = `(
-        mp.name LIKE ? OR 
-        mp.oemPartNumber LIKE ? OR 
-        mp.description LIKE ? OR 
-        mp.manufacturer LIKE ? OR
-        si.sellerSku LIKE ?
-      )`;
-      
-      // Add FULLTEXT if words are long enough
+
       const searchWords = searchTerm.split(/\s+/).filter((t: string) => t.length >= 3);
       if (searchWords.length > 0) {
         const ftTerms = searchWords.map((t: string) => `${t}*`).join(' ');
-        // Combine LIKE and FULLTEXT with OR
-        mpConditions.push(`(${mpLikeCondition} OR MATCH(mp.name, mp.oemPartNumber, mp.description, mp.manufacturer) AGAINST(? IN BOOLEAN MODE))`);
+        mpConditions.push(`(${likeCond} OR MATCH(mp.name, mp.oemPartNumber, mp.description, mp.manufacturer) AGAINST(? IN BOOLEAN MODE))`);
         mpParams.push(searchPattern, searchPattern, searchPattern, searchPattern, ftTerms);
-        
-        inStockConditions.push(`(${inStockLikeCondition} OR MATCH(mp.name, mp.oemPartNumber, mp.description, mp.manufacturer) AGAINST(? IN BOOLEAN MODE))`);
-        inStockParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, ftTerms);
       } else {
-        // Just use LIKE if words are too short for FULLTEXT
-        mpConditions.push(mpLikeCondition);
+        mpConditions.push(likeCond);
         mpParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
-        
-        inStockConditions.push(inStockLikeCondition);
-        inStockParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
       }
     }
 
-    // Category - flexible matching (case-insensitive, supports partial matches)
+    // Category
     const categoryValues = this.parseCommaSeparated(criteria.categories || criteria.category);
     if (categoryValues.length > 0) {
-      // Use LIKE for flexible matching instead of exact IN match
-      // This allows "Brake" to match "Brake System", "Brake Pads", etc.
       const categoryClause = categoryValues.map(() => 'pc.name LIKE ?').join(' OR ');
       const categoryParams = categoryValues.map((cat: string) => `%${cat}%`);
-      mpConditions.push(`(${categoryClause})`); mpParams.push(...categoryParams);
-      inStockConditions.push(`(${categoryClause})`); inStockParams.push(...categoryParams);
+      mpConditions.push(`(${categoryClause})`);
+      mpParams.push(...categoryParams);
     }
 
-    // Brand
+    // Brand / Manufacturer
     const brandValues = this.parseCommaSeparated(criteria.brands || criteria.brand || criteria.manufacturer);
     if (brandValues.length > 0) {
       const clause = `(${brandValues.map(() => 'mp.manufacturer LIKE ?').join(' OR ')})`;
       const vals = brandValues.map((b: string) => `%${b}%`);
-      mpConditions.push(clause); mpParams.push(...vals);
-      inStockConditions.push(clause); inStockParams.push(...vals);
+      mpConditions.push(clause);
+      mpParams.push(...vals);
     }
 
-    // Vehicle make - case-insensitive, flexible matching
+    // Vehicle make
     if (criteria.make) {
       const makeValue = String(criteria.make).trim();
       if (makeValue.length > 0) {
-        // Use LOWER() for case-insensitive matching
         const c = `LOWER(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.make'))) LIKE LOWER(?)`;
-        mpConditions.push(c); mpParams.push(`%${makeValue}%`);
-        inStockConditions.push(c); inStockParams.push(`%${makeValue}%`);
+        mpConditions.push(c);
+        mpParams.push(`%${makeValue}%`);
       }
     }
-    // Vehicle model - case-insensitive, flexible matching
+
+    // Vehicle model
     if (criteria.model) {
       const modelValue = String(criteria.model).trim();
       if (modelValue.length > 0) {
-        // Use LOWER() for case-insensitive matching
         const c = `LOWER(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.model'))) LIKE LOWER(?)`;
-        mpConditions.push(c); mpParams.push(`%${modelValue}%`);
-        inStockConditions.push(c); inStockParams.push(`%${modelValue}%`);
+        mpConditions.push(c);
+        mpParams.push(`%${modelValue}%`);
       }
     }
-    // Year filter - handles both single years and year ranges (e.g., "2018" or "2018-2023")
-    // Uses LIKE for flexible matching since year can be stored as string, number, or range
+
+    // Year (single value or range string)
     if (criteria.year) {
       const yearValue = String(criteria.year).trim();
       if (yearValue.length > 0) {
-        // Simple approach: Check if the year field contains the search year
-        // This works for: "2018", "2018-2023", "2018,2019,2020", etc.
         const c = `JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')) LIKE ?`;
-        mpConditions.push(c); mpParams.push(`%${yearValue}%`);
-        inStockConditions.push(c); inStockParams.push(`%${yearValue}%`);
+        mpConditions.push(c);
+        mpParams.push(`%${yearValue}%`);
       }
     }
     if (criteria.yearFrom) {
       const yearFromValue = parseInt(String(criteria.yearFrom));
       if (!isNaN(yearFromValue)) {
-        // Extract numeric year from the JSON field and compare
-        // Handles both "2018" and "2018-2023" formats
         const c = `(
           CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')), '0') AS UNSIGNED) >= ? OR
           CAST(SUBSTRING_INDEX(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')), '0'), '-', 1) AS UNSIGNED) >= ?
         )`;
-        mpConditions.push(c); mpParams.push(yearFromValue, yearFromValue);
-        inStockConditions.push(c); inStockParams.push(yearFromValue, yearFromValue);
+        mpConditions.push(c);
+        mpParams.push(yearFromValue, yearFromValue);
       }
     }
     if (criteria.yearTo) {
       const yearToValue = parseInt(String(criteria.yearTo));
       if (!isNaN(yearToValue)) {
-        // Extract numeric year from the JSON field and compare
-        // For ranges, check if the start year is <= yearTo
         const c = `(
           CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')), '9999') AS UNSIGNED) <= ? OR
           CAST(SUBSTRING_INDEX(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.year')), '0'), '-', 1) AS UNSIGNED) <= ?
         )`;
-        mpConditions.push(c); mpParams.push(yearToValue, yearToValue);
-        inStockConditions.push(c); inStockParams.push(yearToValue, yearToValue);
+        mpConditions.push(c);
+        mpParams.push(yearToValue, yearToValue);
       }
     }
 
@@ -462,13 +434,13 @@ export class FastProductSearchService {
     if (subcategoryValues.length > 0) {
       const clause = `(${subcategoryValues.map(() => `JSON_UNQUOTE(JSON_EXTRACT(mp.vehicleCompatibility, '$.subcategory')) LIKE ?`).join(' OR ')})`;
       const vals = subcategoryValues.map((s: string) => `%${s}%`);
-      mpConditions.push(clause); mpParams.push(...vals);
-      inStockConditions.push(clause); inStockParams.push(...vals);
+      mpConditions.push(clause);
+      mpParams.push(...vals);
     }
 
     const mpWhereSQL = mpConditions.length > 0 ? 'AND ' + mpConditions.join(' AND ') : '';
 
-    return { inStockConditions, inStockParams, mpWhereSQL, mpParams, categoryValues, brandValues, subcategoryValues };
+    return { mpWhereSQL, mpParams, categoryValues, brandValues, subcategoryValues };
   }
 
   /**
