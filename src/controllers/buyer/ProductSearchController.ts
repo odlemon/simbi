@@ -117,12 +117,9 @@ export class ProductSearchController {
       if (result.success) {
         res.status(200).json({
           success: true,
-          message: 'Marketplace products retrieved successfully',
+          message: 'Products fetched successfully',
           data: result.data,
-          pagination: result.pagination || {
-            page: parseInt(page as string) || 1,
-            limit: parseInt(limit as string) || 20
-          },
+          pagination: result.pagination,
           timestamp: new Date().toISOString()
         });
       } else {
