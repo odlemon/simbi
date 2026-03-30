@@ -143,6 +143,10 @@ import guestOrderRoutes from "./routes/guest/orders";
 app.use("/api/guest", guestCheckoutRoutes);
 app.use("/api/guest", guestOrderRoutes);
 
+// Public commerce hints (cart / checkout UI; no auth)
+import commerceShippingRoutes from "./routes/commerceShipping.routes";
+app.use("/api/commerce", commerceShippingRoutes);
+
 // Media upload routes
 import mediaRoutes from "./routes/media";
 app.use("/api/media", mediaRoutes);

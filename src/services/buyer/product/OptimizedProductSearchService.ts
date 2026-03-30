@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { z } from 'zod';
 import { prisma } from '../../../utils/database';
+import { CommercePricingService, type CommercePricingSnapshot } from '../../admin/settings/CommercePricingService';
 
 // Optimized search criteria schema
 const searchCriteriaSchema = z.object({
@@ -38,7 +39,8 @@ interface OptimizedProductResult {
 }
 
 export class OptimizedProductSearchService {
-  
+  private commercePricing = new CommercePricingService();
+
   /**
    * OPTIMIZED: Single query with all pricing calculated in one go
    */
@@ -47,6 +49,8 @@ export class OptimizedProductSearchService {
       const validatedCriteria = searchCriteriaSchema.parse(criteria);
       const { page = 1, limit = 20 } = validatedCriteria;
       const skip = (page - 1) * limit;
+
+      const pricingSnapshot = await this.commercePricing.getSnapshot();
 
       // Build optimized where clause
       const whereClause = this.buildWhereClause(validatedCriteria);
@@ -82,8 +86,9 @@ export class OptimizedProductSearchService {
         orderBy: { name: 'asc' }
       });
 
-      // Calculate pricing efficiently in memory (no more database queries!)
-      const results = products.map(product => this.calculateOptimizedPricing(product));
+      const results = products.map((product) =>
+        this.calculateOptimizedPricing(product, pricingSnapshot)
+      );
 
       // Apply price filters in memory
       const filteredResults = this.applyPriceFilters(results, validatedCriteria);
@@ -144,7 +149,7 @@ export class OptimizedProductSearchService {
   /**
    * Calculate pricing in memory (NO DATABASE QUERIES!)
    */
-  private calculateOptimizedPricing(product: any): OptimizedProductResult {
+  private calculateOptimizedPricing(product: any, pricingSnapshot: CommercePricingSnapshot): OptimizedProductResult {
     const offers = product.sellerInventory || [];
     
     if (offers.length === 0) {
@@ -169,8 +174,10 @@ export class OptimizedProductSearchService {
     const prices = offers.map(offer => offer.priceUsd);
     const lowestPrice = Math.min(...prices);
     
-    // Calculate commission (in memory - no database query!)
-    const commissionRate = this.getCommissionRateInMemory(product.category);
+    const commissionRate = this.commercePricing.getEffectiveCategoryDisplayRate(
+      product.category,
+      pricingSnapshot
+    );
     const commission = lowestPrice * commissionRate;
     const displayPrice = lowestPrice + commission;
 
@@ -189,25 +196,6 @@ export class OptimizedProductSearchService {
       lowestPrice,
       commission
     };
-  }
-
-  /**
-   * Get commission rate in memory (NO DATABASE QUERY!)
-   */
-  private getCommissionRateInMemory(category: string): number {
-    const commissionRates: { [key: string]: number } = {
-      'Engine': 0.08,
-      'Transmission': 0.10,
-      'Brakes': 0.12,
-      'Suspension': 0.10,
-      'Electrical': 0.15,
-      'Body': 0.12,
-      'Interior': 0.15,
-      'Exhaust': 0.10,
-      'default': 0.10
-    };
-    
-    return commissionRates[category] || commissionRates.default;
   }
 
   /**
@@ -264,7 +252,8 @@ export class OptimizedProductSearchService {
       });
 
       if (cachedDecode?.masterProduct) {
-        const result = this.calculateOptimizedPricing(cachedDecode.masterProduct);
+        const pricingSnapshot = await this.commercePricing.getSnapshot();
+        const result = this.calculateOptimizedPricing(cachedDecode.masterProduct, pricingSnapshot);
         return { success: true, data: [result] };
       }
 

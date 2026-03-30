@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
 import { CouponService } from "../../CouponService";
+import { CommercePricingService } from "../../admin/settings/CommercePricingService";
 
 
 
@@ -31,7 +32,9 @@ const createOrderSchema = z.object({
   poNumber: z.string().optional(),
   costCenter: z.string().optional(),
   notes: z.string().optional(),
-  couponCode: z.string().optional() // Optional coupon code
+  couponCode: z.string().optional(), // Optional coupon code
+  /** When admin shipping mode is `distance`, used to compute shipping per seller order; optional. */
+  deliveryDistanceKm: z.number().min(0).finite().optional()
 }).refine(
   (data) => {
     // If shippingAddress is provided (even as empty object), it takes precedence
@@ -64,7 +67,8 @@ const createOrderFromCartSchema = z.object({
   poNumber: z.string().optional(), // Optional - can be auto-generated for commercial buyers
   costCenter: z.string().optional(),
   notes: z.string().optional(),
-  couponCode: z.string().optional() // Optional coupon code
+  couponCode: z.string().optional(), // Optional coupon code
+  deliveryDistanceKm: z.number().min(0).finite().optional()
 });
 
 const reorderFromOrderSchema = z.object({
@@ -72,7 +76,8 @@ const reorderFromOrderSchema = z.object({
   poNumber: z.string().optional(), // Optional - can be auto-generated for commercial buyers
   costCenter: z.string().optional(),
   notes: z.string().optional(),
-  couponCode: z.string().optional() // Optional coupon code
+  couponCode: z.string().optional(), // Optional coupon code
+  deliveryDistanceKm: z.number().min(0).finite().optional()
 });
 
 const updateOrderStatusSchema = z.object({
@@ -100,6 +105,7 @@ export interface OrderData {
   costCenter?: string;
   notes?: string;
   couponCode?: string;
+  deliveryDistanceKm?: number;
 }
 
 export interface OrderItemData {
@@ -183,24 +189,11 @@ export interface CommissionBreakdown {
 
 export class OrderService {
   private couponService: CouponService;
+  private commercePricing: CommercePricingService;
 
   constructor() {
     this.couponService = new CouponService();
-  }
-
-  /**
-   * Get commission rate based on product category
-   */
-  private getCommissionRate(productName: string): number {
-    // Simple commission rate logic - can be enhanced
-    const name = productName.toLowerCase();
-    if (name.includes('brake') || name.includes('filter')) {
-      return 0.10; // 10% for brake parts and filters
-    } else if (name.includes('engine') || name.includes('transmission')) {
-      return 0.15; // 15% for engine and transmission parts
-    } else {
-      return 0.12; // 12% default
-    }
+    this.commercePricing = new CommercePricingService();
   }
 
   /**
@@ -216,11 +209,18 @@ export class OrderService {
         poNumber: orderData.poNumber,
         costCenter: orderData.costCenter,
         notes: orderData.notes,
-        couponCode: orderData.couponCode
+        couponCode: orderData.couponCode,
+        deliveryDistanceKm: orderData.deliveryDistanceKm
       });
 
       // Generate order number
       const orderNumber = await this.generateOrderNumber();
+
+      const pricingSnapshot = await this.commercePricing.getSnapshot();
+      const shippingCostPerSeller = CommercePricingService.computeShippingCost(
+        pricingSnapshot,
+        validatedData.deliveryDistanceKm
+      );
 
       // Process each item to get seller and pricing info
       const processedItems = await Promise.all(
@@ -260,8 +260,11 @@ export class OrderService {
             throw new Error(`Product ${item.productId} not found in seller listings or insufficient stock`);
           }
 
-          // Calculate commission and display price
-          const commissionRate = this.getCommissionRate(sellerListing.masterProduct.name);
+          // Calculate commission and display price (admin-configurable + optional tiered rules)
+          const commissionRate = this.commercePricing.getEffectiveProductCommissionRate(
+            sellerListing.masterProduct.name,
+            pricingSnapshot
+          );
           const commission = sellerListing.sellerPrice * commissionRate;
           const displayPrice = sellerListing.sellerPrice + commission;
 
@@ -500,7 +503,8 @@ export class OrderService {
             }
           }
           
-          const sellerTotal = sellerTotalBeforeDiscount - sellerDiscountAmount;
+          const sellerTotal =
+            sellerTotalBeforeDiscount - sellerDiscountAmount + shippingCostPerSeller;
 
           // Generate unique order number for this seller
           const sellerOrderNumber = await this.generateOrderNumber();
@@ -515,7 +519,7 @@ export class OrderService {
               poNumber: validatedData.poNumber,
               costCenter: validatedData.costCenter,
               subtotal: sellerSubtotal,
-              shippingCost: 0, // TODO: Calculate shipping cost
+              shippingCost: shippingCostPerSeller,
               platformCommission: sellerCommission,
               discountAmount: sellerDiscountAmount,
               couponCode: couponValidation?.isValid ? couponValidation.coupon.code : null,
@@ -995,7 +999,8 @@ export class OrderService {
         poNumber: poNumber || originalOrder.poNumber || undefined,
         costCenter: validatedData.costCenter || originalOrder.costCenter || undefined,
         notes: validatedData.notes || `Reordered from order ${originalOrder.orderNumber}`,
-        couponCode: validatedData.couponCode || undefined
+        couponCode: validatedData.couponCode || undefined,
+        deliveryDistanceKm: validatedData.deliveryDistanceKm
       };
 
       // createOrder will handle seller notifications (NEW_ORDER) automatically
@@ -1177,7 +1182,8 @@ export class OrderService {
         poNumber: poNumber,
         costCenter: validatedData.costCenter || undefined,
         notes: validatedData.notes || undefined,
-        couponCode: validatedData.couponCode || undefined
+        couponCode: validatedData.couponCode || undefined,
+        deliveryDistanceKm: validatedData.deliveryDistanceKm
       };
 
       const orderResult = await this.createOrder(orderData);
@@ -1761,16 +1767,30 @@ export class OrderService {
    */
   async calculateCommission(orderItems: OrderItemData[]): Promise<CommissionBreakdown> {
     try {
+      const pricingSnapshot = await this.commercePricing.getSnapshot();
       let subtotal = 0;
       let totalCommission = 0;
 
       for (const item of orderItems) {
         const lineTotal = item.quantity * item.unitPrice;
         subtotal += lineTotal;
-        
-        // Calculate commission (10% default, TODO: get from category)
-        const commission = lineTotal * 0.1;
-        totalCommission += commission;
+
+        let rate: number;
+        if (pricingSnapshot.useAdvancedProductRules) {
+          const inv = await prisma.sellerInventory.findFirst({
+            where: {
+              OR: [{ id: item.productId }, { masterProductId: item.productId }],
+            },
+            select: { masterProduct: { select: { name: true } } },
+          });
+          rate = this.commercePricing.getEffectiveProductCommissionRate(
+            inv?.masterProduct?.name || "",
+            pricingSnapshot
+          );
+        } else {
+          rate = this.commercePricing.getEffectiveProductCommissionRate("", pricingSnapshot);
+        }
+        totalCommission += lineTotal * rate;
       }
 
       return {
@@ -1778,7 +1798,7 @@ export class OrderService {
         commission: totalCommission,
         total: subtotal + totalCommission,
         currency: 'USD',
-        commissionRate: 0.1
+        commissionRate: subtotal > 0 ? totalCommission / subtotal : 0,
       };
 
     } catch (error) {
@@ -1933,22 +1953,36 @@ export class OrderService {
    * Calculate order totals
    */
   private async calculateOrderTotals(items: OrderItemData[]): Promise<{ subtotal: number; commission: number; total: number }> {
+    const pricingSnapshot = await this.commercePricing.getSnapshot();
     let subtotal = 0;
     let totalCommission = 0;
 
     for (const item of items) {
       const lineTotal = item.quantity * item.unitPrice;
       subtotal += lineTotal;
-      
-      // Calculate commission (10% default)
-      const commission = lineTotal * 0.1;
-      totalCommission += commission;
+
+      let rate: number;
+      if (pricingSnapshot.useAdvancedProductRules) {
+        const inv = await prisma.sellerInventory.findFirst({
+          where: {
+            OR: [{ id: item.productId }, { masterProductId: item.productId }],
+          },
+          select: { masterProduct: { select: { name: true } } },
+        });
+        rate = this.commercePricing.getEffectiveProductCommissionRate(
+          inv?.masterProduct?.name || "",
+          pricingSnapshot
+        );
+      } else {
+        rate = this.commercePricing.getEffectiveProductCommissionRate("", pricingSnapshot);
+      }
+      totalCommission += lineTotal * rate;
     }
 
     return {
       subtotal,
       commission: totalCommission,
-      total: subtotal + totalCommission
+      total: subtotal + totalCommission,
     };
   }
 

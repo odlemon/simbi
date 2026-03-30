@@ -183,6 +183,42 @@ export class SystemSettingsService {
           dataType: "boolean",
           description: "Enable enterprise features",
         },
+        {
+          key: "commerce.shipping.mode",
+          value: "fixed",
+          dataType: "string",
+          description: "Shipping: fixed (flat rate) or distance (price per km block)",
+        },
+        {
+          key: "commerce.shipping.flatRate",
+          value: "10",
+          dataType: "number",
+          description: "Flat shipping per seller order when mode is fixed, or fallback for distance mode",
+        },
+        {
+          key: "commerce.shipping.dynamicPrice",
+          value: "5",
+          dataType: "number",
+          description: "Price charged per shippingDynamicDistanceKm block when mode is distance",
+        },
+        {
+          key: "commerce.shipping.dynamicDistanceKm",
+          value: "10",
+          dataType: "number",
+          description: "Kilometers per pricing block for distance shipping",
+        },
+        {
+          key: "commerce.platform.commissionPercent",
+          value: "10",
+          dataType: "number",
+          description: "Platform commission percentage (0–100) when advanced product rules are off",
+        },
+        {
+          key: "commerce.platform.useAdvancedProductRules",
+          value: "true",
+          dataType: "boolean",
+          description: "Use tiered commission by product name (orders) / category (browse)",
+        },
       ];
 
       let created = 0;
