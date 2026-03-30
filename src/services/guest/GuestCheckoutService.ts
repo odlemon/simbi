@@ -25,6 +25,7 @@ const createGuestOrderSchema = z.object({
   paymentMethod: z.enum(["CARD_TOKENIZED", "CASH", "MOBILE_MONEY"]),
   paymentToken: z.string().optional(), // Required for CARD_TOKENIZED
   currency: z.enum(["USD", "ZWL"]).default("USD"),
+  deliveryDistanceKm: z.number().min(0).finite().optional(),
 });
 
 export interface GuestOrderResult {
@@ -136,6 +137,10 @@ export class GuestCheckoutService {
         })
       );
 
+      const { CommercePricingService } = await import("../admin/settings/CommercePricingService");
+      const commercePricing = new CommercePricingService();
+      const pricingSnapshot = await commercePricing.getSnapshot();
+
       // Group items by seller (orders are per seller)
       const sellerGroups = new Map<string, typeof items>();
       items.forEach((item) => {
@@ -150,8 +155,18 @@ export class GuestCheckoutService {
       const orders = [];
       for (const [sellerId, sellerItems] of sellerGroups) {
         const subtotal = sellerItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-        const shippingCost = 10.0; // TODO: Calculate actual shipping cost
-        const platformCommission = subtotal * 0.1; // 10% commission
+        const shippingCost = CommercePricingService.computeShippingCost(
+          pricingSnapshot,
+          validatedData.deliveryDistanceKm
+        );
+        const lineCommissions = sellerItems.map((item) => {
+          const rate = commercePricing.getEffectiveProductCommissionRate(
+            item.inventory.masterProduct.name,
+            pricingSnapshot
+          );
+          return item.unitPrice * item.quantity * rate;
+        });
+        const platformCommission = lineCommissions.reduce((a, b) => a + b, 0);
         const totalAmount = subtotal + shippingCost - platformCommission;
 
         // Generate order number
@@ -178,12 +193,12 @@ export class GuestCheckoutService {
             mobileNumber: validatedData.mobileNumber,
             paymentToken: validatedData.paymentToken || null,
             items: {
-              create: sellerItems.map((item) => ({
+              create: sellerItems.map((item, index) => ({
                 inventoryId: item.inventory.id,
                 quantity: item.quantity,
                 unitPrice: item.unitPrice,
                 displayPrice: item.unitPrice,
-                commission: platformCommission / sellerItems.length,
+                commission: lineCommissions[index],
               })),
             },
           },

@@ -2,6 +2,10 @@
 import { z } from 'zod';
 import { prisma } from '../../../utils/database';
 import { MoneyUtils } from '../../../utils/money';
+import {
+  CommercePricingService,
+  type CommercePricingSnapshot,
+} from '../../admin/settings/CommercePricingService';
 
 // ──────────────────────────────────────────────────────────
 // In-memory LRU cache with TTL (no external dependencies)
@@ -109,6 +113,7 @@ interface FastProductResult {
 }
 
 export class FastProductSearchService {
+  private commercePricing = new CommercePricingService();
 
   /**
    * HIGH-PERFORMANCE marketplace search using raw SQL
@@ -136,8 +141,23 @@ export class FastProductSearchService {
       const offset = (page - 1) * limit;
       const searchTerm = (validatedCriteria.q || validatedCriteria.search || '').toString().trim();
 
+      const pricingSnapshot = await this.commercePricing.getSnapshot();
+
       // ── Cache check ─────────────────────────────────────────
-      const cacheKey = JSON.stringify({ ...validatedCriteria, page, limit, q: searchTerm });
+      const cacheKey = JSON.stringify({
+        ...validatedCriteria,
+        page,
+        limit,
+        q: searchTerm,
+        _pricing: {
+          shippingMode: pricingSnapshot.shippingMode,
+          shippingFlatRate: pricingSnapshot.shippingFlatRate,
+          shippingDynamicPrice: pricingSnapshot.shippingDynamicPrice,
+          shippingDynamicDistanceKm: pricingSnapshot.shippingDynamicDistanceKm,
+          commissionPercent: pricingSnapshot.commissionPercent,
+          useAdvancedProductRules: pricingSnapshot.useAdvancedProductRules,
+        },
+      });
       const cached = marketplaceCache.get(cacheKey);
       if (cached) {
         console.log(`[Marketplace] CACHE HIT ${Date.now() - startTime}ms | page ${page}`);
@@ -300,7 +320,7 @@ export class FastProductSearchService {
       // ── Transform rows ──────────────────────────────────────
       const resultData: FastProductResult[] = (pageRows as any[]).map((row: any) => {
         const hasInventory = row.inventoryId != null && Number(row.quantity) > 0;
-        return this.transformRawRow(row, hasInventory);
+        return this.transformRawRow(row, hasInventory, pricingSnapshot);
       });
 
       const duration = Date.now() - startTime;
@@ -446,7 +466,7 @@ export class FastProductSearchService {
   /**
    * Transform a raw SQL row into FastProductResult
    */
-  private transformRawRow(row: any, isInStock: boolean): FastProductResult {
+  private transformRawRow(row: any, isInStock: boolean, pricingSnapshot: CommercePricingSnapshot): FastProductResult {
     // Parse vehicleCompatibility (JSON column)
     let compatibility: any = {};
     if (row.vehicleCompatibility) {
@@ -474,9 +494,9 @@ export class FastProductSearchService {
       }
     }
 
-    // Calculate commission + display price (cheap in-memory math)
+    // Calculate commission + display price (admin commerce settings + optional category tiers)
     const sellerPrice = Number(row.sellerPrice) || 0;
-    const commissionRate = MoneyUtils.getCommissionRate(category);
+    const commissionRate = this.commercePricing.getEffectiveCategoryDisplayRate(category, pricingSnapshot);
     const commission = MoneyUtils.calculateCommission(sellerPrice, commissionRate);
     const displayPrice = MoneyUtils.calculateDisplayPrice(sellerPrice, commission);
 
@@ -525,7 +545,7 @@ export class FastProductSearchService {
   /**
    * Calculate pricing from seller listing (used by getProductById)
    */
-  private calculateFastPricingFromListing(listing: any): FastProductResult {
+  private calculateFastPricingFromListing(listing: any, pricingSnapshot: CommercePricingSnapshot): FastProductResult {
     const product = listing.masterProduct;
     const sellerPrice = listing.sellerPrice;
     const currency = listing.currency;
@@ -541,7 +561,7 @@ export class FastProductSearchService {
     const category = product.category?.name || compatibility.category || 'General';
     const subcategory = compatibility.subcategory || 'General';
 
-    const commissionRate = MoneyUtils.getCommissionRate(category);
+    const commissionRate = this.commercePricing.getEffectiveCategoryDisplayRate(category, pricingSnapshot);
     const commission = MoneyUtils.calculateCommission(sellerPrice, commissionRate);
     const displayPrice = MoneyUtils.calculateDisplayPrice(sellerPrice, commission);
 
@@ -688,7 +708,8 @@ export class FastProductSearchService {
         return { success: false, error: 'Product not found in seller listings' };
       }
 
-      return { success: true, data: this.calculateFastPricingFromListing(sellerListing) };
+      const pricingSnapshot = await this.commercePricing.getSnapshot();
+      return { success: true, data: this.calculateFastPricingFromListing(sellerListing, pricingSnapshot) };
     } catch (error) {
       console.error('Get product by ID error:', error);
       return { success: false, error: 'Failed to get product' };

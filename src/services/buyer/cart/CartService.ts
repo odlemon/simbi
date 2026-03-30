@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { prisma } from "../../../utils/database";
+import { CommercePricingService } from "../../admin/settings/CommercePricingService";
 
 // Validation schemas
 const addToCartSchema = z.object({
@@ -66,17 +67,7 @@ export interface CartResult {
 }
 
 export class CartService {
-  /**
-   * Get commission rate based on product category
-   */
-  private getCommissionRate(productName: string): number {
-    const name = productName.toLowerCase();
-    if (name.includes('brake') || name.includes('engine') || name.includes('transmission')) {
-      return 0.15; // 15% for critical parts
-    } else {
-      return 0.12; // 12% default
-    }
-  }
+  private commercePricing = new CommercePricingService();
 
   /**
    * Get or create cart for buyer
@@ -238,6 +229,7 @@ export class CartService {
    */
   async getCart(buyerId: string): Promise<{ success: boolean; message: string; data?: CartResult; error?: string }> {
     try {
+      const pricingSnapshot = await this.commercePricing.getSnapshot();
       const cart = await this.getOrCreateCart(buyerId);
 
       const cartItems = await prisma.cartItem.findMany({
@@ -264,7 +256,10 @@ export class CartService {
 
       // Transform cart items
       const items: CartItemResult[] = cartItems.map(item => {
-        const commissionRate = this.getCommissionRate(item.inventory.masterProduct.name);
+        const commissionRate = this.commercePricing.getEffectiveProductCommissionRate(
+          item.inventory.masterProduct.name,
+          pricingSnapshot
+        );
         const commission = item.inventory.sellerPrice * commissionRate;
         const displayPrice = item.inventory.sellerPrice + commission;
 

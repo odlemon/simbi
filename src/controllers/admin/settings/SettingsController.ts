@@ -2,14 +2,111 @@
 import { Response } from "express";
 import { AuthenticatedRequest } from "../../../types";
 import { SystemSettingsService } from "../../../services/admin/settings/SystemSettingsService";
+import { CommercePricingService } from "../../../services/admin/settings/CommercePricingService";
 import { logger } from "../../../utils/logger";
 
 export class SettingsController {
   private settingsService: SystemSettingsService;
+  private commercePricingService: CommercePricingService;
 
   constructor() {
     this.settingsService = new SystemSettingsService();
+    this.commercePricingService = new CommercePricingService();
   }
+
+  getCommercePricing = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      await this.commercePricingService.ensureDefaults();
+      const data = await this.commercePricingService.getSnapshot();
+      res.status(200).json({
+        success: true,
+        data,
+        keys: {
+          shippingMode: "commerce.shipping.mode",
+          shippingFlatRate: "commerce.shipping.flatRate",
+          shippingDynamicPrice: "commerce.shipping.dynamicPrice",
+          shippingDynamicDistanceKm: "commerce.shipping.dynamicDistanceKm",
+          commissionPercent: "commerce.platform.commissionPercent",
+          useAdvancedProductRules: "commerce.platform.useAdvancedProductRules",
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getCommercePricing", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch commerce pricing settings",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  updateCommercePricing = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const {
+        shippingMode,
+        shippingFlatRate,
+        shippingDynamicPrice,
+        shippingDynamicDistanceKm,
+        commissionPercent,
+        useAdvancedProductRules,
+      } = req.body || {};
+      if (
+        shippingMode === undefined &&
+        shippingFlatRate === undefined &&
+        shippingDynamicPrice === undefined &&
+        shippingDynamicDistanceKm === undefined &&
+        commissionPercent === undefined &&
+        useAdvancedProductRules === undefined
+      ) {
+        res.status(400).json({
+          success: false,
+          message:
+            "Provide at least one of: shippingMode (fixed|distance), shippingFlatRate, shippingDynamicPrice, shippingDynamicDistanceKm, commissionPercent (0–100), useAdvancedProductRules (boolean)",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const data = await this.commercePricingService.updateSnapshot(
+        {
+          shippingMode,
+          shippingFlatRate,
+          shippingDynamicPrice,
+          shippingDynamicDistanceKm,
+          commissionPercent,
+          useAdvancedProductRules,
+        },
+        req.admin.id
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Commerce pricing updated successfully",
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in updateCommercePricing", { error: error.message });
+      const status = error.message?.includes("must be") ? 400 : 500;
+      res.status(status).json({
+        success: false,
+        message: status === 400 ? error.message : "Failed to update commerce pricing",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
 
   // GET /api/admin/settings
   getAllSettings = async (req: AuthenticatedRequest, res: Response): Promise<void> => {

@@ -5,6 +5,7 @@ import { logger } from '../../utils/logger';
 import { OrderStatus, PaymentStatus, Currency } from '@prisma/client';
 import { EmailService } from '../EmailService';
 import { SellerNotificationService } from '../seller/notifications/SellerNotificationService';
+import { CommercePricingService } from '../admin/settings/CommercePricingService';
 
 const createIndividualBuyerOrderSchema = z.object({
   // Buyer information
@@ -33,6 +34,7 @@ const createIndividualBuyerOrderSchema = z.object({
   // Optional fields
   notes: z.string().optional(),
   currency: z.enum(["USD", "ZWL"]).default("USD"),
+  deliveryDistanceKm: z.number().min(0).finite().optional(),
 });
 
 export interface IndividualBuyerOrderResult {
@@ -48,10 +50,12 @@ export interface IndividualBuyerOrderResult {
 export class IndividualBuyerOrderService {
   private emailService: EmailService;
   private notificationService: SellerNotificationService;
+  private commercePricing: CommercePricingService;
 
   constructor() {
     this.emailService = new EmailService();
     this.notificationService = new SellerNotificationService();
+    this.commercePricing = new CommercePricingService();
   }
 
   /**
@@ -64,25 +68,12 @@ export class IndividualBuyerOrderService {
   }
 
   /**
-   * Calculate commission rate (same logic as commercial orders)
-   */
-  private getCommissionRate(productName: string): number {
-    const name = productName.toLowerCase();
-    if (name.includes('brake') || name.includes('filter')) {
-      return 0.10; // 10% for brake parts and filters
-    } else if (name.includes('engine') || name.includes('transmission')) {
-      return 0.15; // 15% for engine and transmission parts
-    } else {
-      return 0.12; // 12% default
-    }
-  }
-
-  /**
    * Create order for individual buyer (no login required)
    */
   async createOrder(data: z.infer<typeof createIndividualBuyerOrderSchema>): Promise<IndividualBuyerOrderResult> {
     try {
       const validatedData = createIndividualBuyerOrderSchema.parse(data);
+      const pricingSnapshot = await this.commercePricing.getSnapshot();
 
       // Validate items and calculate totals
       const processedItems = await Promise.all(
@@ -156,14 +147,19 @@ export class IndividualBuyerOrderService {
           0
         );
         
-        // Calculate commission per item
         const itemCommissions = sellerItems.map((item) => {
-          const commissionRate = this.getCommissionRate(item.inventory.masterProduct.name);
+          const commissionRate = this.commercePricing.getEffectiveProductCommissionRate(
+            item.inventory.masterProduct.name,
+            pricingSnapshot
+          );
           return item.unitPrice * item.quantity * commissionRate;
         });
         const platformCommission = itemCommissions.reduce((sum, comm) => sum + comm, 0);
-        
-        const shippingCost = 10.0; // TODO: Calculate actual shipping cost based on address
+
+        const shippingCost = CommercePricingService.computeShippingCost(
+          pricingSnapshot,
+          validatedData.deliveryDistanceKm
+        );
         const totalAmount = subtotal + shippingCost - platformCommission;
 
         const orderNumber = await this.generateOrderNumber();

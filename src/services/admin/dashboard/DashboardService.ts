@@ -1244,13 +1244,17 @@ export class DashboardService {
       });
 
       adminActivityLogs.forEach(log => {
+        const admin = log.admin;
+        const adminLabel = admin
+          ? `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || admin.email || "Admin"
+          : "Unknown admin";
         allActivities.push({
           id: log.id,
           userType: "ADMIN",
           type: log.action,
-          description: `${log.admin.firstName} ${log.admin.lastName} performed ${log.action} on ${log.entityType}`,
+          description: `${adminLabel} performed ${log.action} on ${log.entityType}`,
           timestamp: log.createdAt,
-          user: `${log.admin.firstName} ${log.admin.lastName}`,
+          user: adminLabel,
           entityType: log.entityType,
           entityId: log.entityId,
         });
@@ -1277,13 +1281,18 @@ export class DashboardService {
       });
 
       staffActivityLogs.forEach(log => {
+        const staff = log.staff;
+        const staffLabel = staff
+          ? `${staff.firstName || ""} ${staff.lastName || ""}`.trim() || staff.email || "Staff"
+          : "Unknown staff";
+        const sellerLabel = staff?.seller?.businessName ?? "Unknown seller";
         allActivities.push({
           id: log.id,
           userType: "STAFF",
           type: log.action || log.activityType || "ACTION",
-          description: `${log.staff.firstName} ${log.staff.lastName} (${log.staff.seller.businessName}) ${log.description}`,
+          description: `${staffLabel} (${sellerLabel}) ${log.description}`,
           timestamp: log.createdAt,
-          user: `${log.staff.firstName} ${log.staff.lastName} - ${log.staff.seller.businessName}`,
+          user: `${staffLabel} - ${sellerLabel}`,
           entityType: log.entityType || undefined,
           entityId: log.entityId || undefined,
         });
@@ -1308,13 +1317,14 @@ export class DashboardService {
       });
 
       recentSellerOrders.forEach(order => {
+        const sellerName = order.seller?.businessName ?? "Unknown seller";
         allActivities.push({
           id: `seller-order-${order.id}`,
           userType: "SELLER",
           type: "ORDER_RECEIVED",
-          description: `${order.seller.businessName} received order ${order.orderNumber}`,
+          description: `${sellerName} received order ${order.orderNumber}`,
           timestamp: order.createdAt,
-          user: order.seller.businessName,
+          user: sellerName,
           entityType: "ORDER",
           entityId: order.id,
         });
@@ -1345,13 +1355,15 @@ export class DashboardService {
 
       recentInventoryUpdates.forEach(inventory => {
         const isNew = inventory.createdAt.getTime() === inventory.updatedAt.getTime();
+        const sellerName = inventory.seller?.businessName ?? "Unknown seller";
+        const productName = inventory.masterProduct?.name ?? "product";
         allActivities.push({
           id: `seller-inventory-${inventory.id}`,
           userType: "SELLER",
           type: isNew ? "PRODUCT_ADDED" : "PRODUCT_UPDATED",
-          description: `${inventory.seller.businessName} ${isNew ? 'added' : 'updated'} product ${inventory.masterProduct.name}`,
+          description: `${sellerName} ${isNew ? "added" : "updated"} product ${productName}`,
           timestamp: inventory.updatedAt,
-          user: inventory.seller.businessName,
+          user: sellerName,
           entityType: "INVENTORY",
           entityId: inventory.id,
         });
@@ -1365,6 +1377,9 @@ export class DashboardService {
           id: true,
           orderNumber: true,
           createdAt: true,
+          guestFirstName: true,
+          guestLastName: true,
+          guestEmail: true,
           buyer: {
             select: {
               id: true,
@@ -1377,7 +1392,11 @@ export class DashboardService {
       });
 
       recentBuyerOrders.forEach(order => {
-        const buyerName = `${order.buyer.firstName || ''} ${order.buyer.lastName || ''}`.trim() || order.buyer.email;
+        const buyerName = order.buyer
+          ? `${order.buyer.firstName || ""} ${order.buyer.lastName || ""}`.trim() || order.buyer.email || "Buyer"
+          : `${order.guestFirstName || ""} ${order.guestLastName || ""}`.trim() ||
+            order.guestEmail ||
+            "Guest";
         allActivities.push({
           id: `buyer-order-${order.id}`,
           userType: "BUYER",
@@ -1423,8 +1442,12 @@ export class DashboardService {
       const orders = recentOrders.map(order => ({
         id: order.id,
         orderNumber: order.orderNumber,
-        buyerName: `${order.buyer.firstName || ''} ${order.buyer.lastName || ''}`.trim() || order.buyer.email,
-        sellerName: order.seller.businessName,
+        buyerName: order.buyer
+          ? `${order.buyer.firstName || ""} ${order.buyer.lastName || ""}`.trim() || order.buyer.email || "Buyer"
+          : `${order.guestFirstName || ""} ${order.guestLastName || ""}`.trim() ||
+            order.guestEmail ||
+            "Guest",
+        sellerName: order.seller?.businessName ?? "Unknown seller",
         totalAmount: order.totalAmount,
         status: order.status,
         createdAt: order.createdAt,

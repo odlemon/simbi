@@ -9,6 +9,11 @@ const controller = new SettingsController();
 
 // System Settings
 router.get("/", authenticateAdmin, requireAnyAdmin, controller.getAllSettings);
+
+// Commerce pricing (must be registered before /:key)
+router.get("/commerce-pricing", authenticateAdmin, requireAnyAdmin, controller.getCommercePricing);
+router.put("/commerce-pricing", authenticateAdmin, requireSuperAdmin, controller.updateCommercePricing);
+
 router.get("/:key", authenticateAdmin, requireAnyAdmin, controller.getSettingByKey);
 router.post("/", authenticateAdmin, requireSuperAdmin, controller.createSetting);
 router.put("/:key", authenticateAdmin, requireSuperAdmin, controller.updateSetting);

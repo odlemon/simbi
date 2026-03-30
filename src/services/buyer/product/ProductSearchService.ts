@@ -3,6 +3,7 @@ import { MasterProduct, SellerInventory, Seller } from '@prisma/client';
 import { z } from 'zod';
 
 import { prisma } from "../../../utils/database";
+import { CommercePricingService } from "../../admin/settings/CommercePricingService";
 
 
 
@@ -95,6 +96,8 @@ export interface SavedSearch {
 }
 
 export class ProductSearchService {
+  private commercePricing = new CommercePricingService();
+
   /**
    * Decode VIN and get vehicle information
    */
@@ -443,24 +446,11 @@ export class ProductSearchService {
   }
 
   /**
-   * Get commission rate for product category
+   * Get commission rate for product category (admin commerce settings)
    */
   private async getCommissionRate(category: string): Promise<number> {
-    // Default commission rates by category
-    const commissionRates: { [key: string]: number } = {
-      'Engine': 0.08,
-      'Transmission': 0.10,
-      'Brakes': 0.12,
-      'Suspension': 0.10,
-      'Electrical': 0.15,
-      'Body': 0.12,
-      'Interior': 0.15,
-      'Exhaust': 0.10,
-      'Cooling': 0.12,
-      'Fuel': 0.10
-    };
-
-    return commissionRates[category] || 0.10; // Default 10%
+    const snap = await this.commercePricing.getSnapshot();
+    return this.commercePricing.getEffectiveCategoryDisplayRate(category, snap);
   }
 
   /**
