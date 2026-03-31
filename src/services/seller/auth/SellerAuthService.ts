@@ -108,39 +108,10 @@ export class SellerAuthService {
   async login(email: string, password: string, ipAddress?: string) {
     const clientIp = ipAddress || "unknown";
 
-    // Check IP rate limiting first (applies to all attempts)
-    const ipRateLimit = await AccountLockoutService.isIPRateLimited(
-      clientIp,
-      "seller"
-    );
-    if (ipRateLimit.isLimited) {
-      await AccountLockoutService.recordFailedAttempt(
-        email,
-        clientIp,
-        "seller",
-        false
-      );
-      // Get recent attempts count across ALL user types for this IP (only if model exists)
-      let recentAttempts = 0;
-      if (prisma.failedLoginAttempt) {
-        try {
-          recentAttempts = await prisma.failedLoginAttempt.count({
-            where: {
-              ipAddress: clientIp,
-              // Don't filter by userType - check all attempts from this IP
-              createdAt: {
-                gte: new Date(Date.now() - 15 * 60 * 1000),
-              },
-            },
-          });
-        } catch (error) {
-          // Ignore errors - rate limiting is optional
-        }
-      }
-      throw new Error(
-        AccountLockoutService.getIPRateLimitErrorMessage(ipRateLimit.resetAt, recentAttempts)
-      );
-    }
+    /* RE-ENABLE LOCKOUT: IP rate limit (DB queries)
+    const ipRateLimit = await AccountLockoutService.isIPRateLimited(clientIp, "seller");
+    if (ipRateLimit.isLimited) { ... throw new Error(...); }
+    */
 
     // ✅ Check if email belongs to staff first
     const staff = await prisma.sellerStaff.findUnique({
@@ -169,62 +140,20 @@ export class SellerAuthService {
         throw new Error("Your seller account is not active. Please contact support.");
       }
 
-      // Check account lockout
-      if (staff.accountLockedUntil) {
-        const isLocked = AccountLockoutService.isAccountLocked(staff.accountLockedUntil);
-        
-        if (isLocked) {
-          await AccountLockoutService.recordFailedAttempt(
-            email,
-            clientIp,
-            "staff",
-            true
-          );
-
-          const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(
-            staff.accountLockedUntil
-          );
-          throw new Error(
-            `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`
-          );
-        } else {
-          // Lockout expired, reset
-          await prisma.sellerStaff.update({
-            where: { id: staff.id },
-            data: {
-              failedLoginAttempts: 0,
-              accountLockedUntil: null,
-            },
-          });
-          staff.failedLoginAttempts = 0;
-          staff.accountLockedUntil = null;
-        }
-      }
+      /* RE-ENABLE LOCKOUT: staff accountLockedUntil branch
+      if (staff.accountLockedUntil) { ... }
+      */
 
       // Verify password
       const isValidPassword = await bcrypt.compare(password, staff.passwordHash);
       if (!isValidPassword) {
-        await AccountLockoutService.recordFailedAttempt(
-          email,
-          clientIp,
-          "staff",
-          true
-        );
-
-        const lockoutResult = AccountLockoutService.handleFailedLogin(
-          staff.failedLoginAttempts || 0,
-          staff.accountLockedUntil
-        );
-
-        await prisma.sellerStaff.update({
-          where: { id: staff.id },
-          data: {
-            failedLoginAttempts: lockoutResult.failedAttempts,
-            accountLockedUntil: lockoutResult.lockedUntil,
-          },
-        });
-
+        /* RE-ENABLE LOCKOUT: recordFailedAttempt + handleFailedLogin + prisma.sellerStaff.update
+        await AccountLockoutService.recordFailedAttempt(email, clientIp, "staff", true);
+        const lockoutResult = AccountLockoutService.handleFailedLogin(...);
+        await prisma.sellerStaff.update({ ... });
         throw new Error(lockoutResult.message);
+        */
+        throw new Error("Invalid credentials");
       }
 
       // Reset failed attempts on successful login
@@ -292,73 +221,13 @@ export class SellerAuthService {
     });
 
     if (!seller) {
-      // Record failed attempt for non-existent email (for IP tracking only)
-      await AccountLockoutService.recordFailedAttempt(
-        email,
-        clientIp,
-        "seller",
-        false
-      );
-
-      // Don't check email rate limiting - focus on IP only
-      // This prevents attackers from bypassing by changing emails
+      /* RE-ENABLE LOCKOUT: await AccountLockoutService.recordFailedAttempt(...); */
       throw new Error("Invalid credentials");
     }
 
-    // Check if account is locked (MUST check before password verification)
-    if (seller.accountLockedUntil) {
-      const isLocked = AccountLockoutService.isAccountLocked(seller.accountLockedUntil);
-      
-      if (isLocked) {
-        // Record attempt on locked account
-        await AccountLockoutService.recordFailedAttempt(
-          email,
-          clientIp,
-          "seller",
-          true
-        );
-
-        const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(
-          seller.accountLockedUntil
-        );
-        const errorMessage = `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`;
-        
-        logger.warn("Login attempt on locked seller account", {
-          email,
-          sellerId: seller.id,
-          lockedUntil: seller.accountLockedUntil,
-          remainingMinutes,
-          failedAttempts: seller.failedLoginAttempts,
-        });
-        
-        throw new Error(errorMessage);
-      } else {
-        // Lockout expired, reset the failed attempts in database AND update local object
-        logger.info("Lockout expired, resetting failed attempts", {
-          email,
-          sellerId: seller.id,
-          previousAttempts: seller.failedLoginAttempts,
-          previousLockedUntil: seller.accountLockedUntil,
-        });
-        
-        await prisma.seller.update({
-          where: { id: seller.id },
-          data: {
-            failedLoginAttempts: 0,
-            accountLockedUntil: null,
-          },
-        });
-        // Update local seller object to reflect reset
-        seller.failedLoginAttempts = 0;
-        seller.accountLockedUntil = null;
-        
-        logger.info("Lockout reset complete", {
-          email,
-          sellerId: seller.id,
-          newAttempts: seller.failedLoginAttempts,
-        });
-      }
-    }
+    /* RE-ENABLE LOCKOUT: seller accountLockedUntil branch
+    if (seller.accountLockedUntil) { ... prisma.seller.update ... }
+    */
 
     // Check password
     logger.info("Checking password", {
@@ -371,50 +240,14 @@ export class SellerAuthService {
     const isValidPassword = await bcrypt.compare(password, seller.password);
 
     if (!isValidPassword) {
-      logger.warn("Password check failed", {
-        email,
-        sellerId: seller.id,
-        currentFailedAttempts: seller.failedLoginAttempts,
-      });
-      // Record failed attempt
-      await AccountLockoutService.recordFailedAttempt(
-        email,
-        clientIp,
-        "seller",
-        true
-      );
-
-      // Handle failed login attempt (account-level lockout)
-      // Use current seller values (which may have been reset if lockout expired)
-      const lockoutResult = AccountLockoutService.handleFailedLogin(
-        seller.failedLoginAttempts || 0,
-        seller.accountLockedUntil
-      );
-
-      // Update failed attempts and lockout status
-      await prisma.seller.update({
-        where: { id: seller.id },
-        data: {
-          failedLoginAttempts: lockoutResult.failedAttempts,
-          accountLockedUntil: lockoutResult.lockedUntil,
-        },
-      });
-
-      logger.warn("Failed seller login attempt", {
-        email,
-        sellerId: seller.id,
-        failedAttempts: lockoutResult.failedAttempts,
-        remainingAttempts: lockoutResult.remainingAttempts,
-        isLocked: lockoutResult.isLocked,
-        lockedUntil: lockoutResult.lockedUntil,
-        message: lockoutResult.message,
-      });
-
-      // Always throw with the message from lockoutResult
-      // This will include attempt count warnings or lockout message
-      const errorMessage = lockoutResult.message || "Invalid credentials";
-      logger.info("Throwing login error", { email, message: errorMessage, isLocked: lockoutResult.isLocked });
-      throw new Error(errorMessage);
+      logger.warn("Password check failed", { email, sellerId: seller.id });
+      /* RE-ENABLE LOCKOUT: recordFailedAttempt + handleFailedLogin + prisma.seller.update
+      await AccountLockoutService.recordFailedAttempt(email, clientIp, "seller", true);
+      const lockoutResult = AccountLockoutService.handleFailedLogin(...);
+      await prisma.seller.update({ ... });
+      throw new Error(lockoutResult.message || "Invalid credentials");
+      */
+      throw new Error("Invalid credentials");
     }
 
     // Check status

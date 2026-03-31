@@ -80,39 +80,26 @@ export class AuthService {
     try {
       const clientIp = ipAddress || "unknown";
 
-      // Check IP rate limiting first (applies to all attempts)
-      const ipRateLimit = await AccountLockoutService.isIPRateLimited(
-        clientIp,
-        "admin"
-      );
+      /* RE-ENABLE LOCKOUT: IP rate limit (extra DB queries on every login)
+      const ipRateLimit = await AccountLockoutService.isIPRateLimited(clientIp, "admin");
       if (ipRateLimit.isLimited) {
-        await AccountLockoutService.recordFailedAttempt(
-          email,
-          clientIp,
-          "admin",
-          false
-        );
-        // Get recent attempts count across ALL user types for this IP (only if model exists)
+        await AccountLockoutService.recordFailedAttempt(email, clientIp, "admin", false);
         let recentAttempts = 0;
         if (prisma.failedLoginAttempt) {
           try {
             recentAttempts = await prisma.failedLoginAttempt.count({
               where: {
                 ipAddress: clientIp,
-                // Don't filter by userType - check all attempts from this IP
-                createdAt: {
-                  gte: new Date(Date.now() - 15 * 60 * 1000),
-                },
+                createdAt: { gte: new Date(Date.now() - 15 * 60 * 1000) },
               },
             });
-          } catch (error) {
-            // Ignore errors - rate limiting is optional
-          }
+          } catch (error) {}
         }
         throw new Error(
           AccountLockoutService.getIPRateLimitErrorMessage(ipRateLimit.resetAt, recentAttempts)
         );
       }
+      */
 
       // Find admin by email
       const admin = await prisma.admin.findUnique({
@@ -120,60 +107,29 @@ export class AuthService {
       });
 
       if (!admin) {
-        // Record failed attempt for non-existent email (for IP tracking only)
-        await AccountLockoutService.recordFailedAttempt(
-          email,
-          clientIp,
-          "admin",
-          false
-        );
-
-        // Don't check email rate limiting - focus on IP only
-        // This prevents attackers from bypassing by changing emails
+        /* RE-ENABLE LOCKOUT: await AccountLockoutService.recordFailedAttempt(email, clientIp, "admin", false); */
         throw new Error("Invalid email or password");
       }
 
-      // Check if account is locked (MUST check before password verification)
+      /* RE-ENABLE LOCKOUT: account lockout branch (DB reset when lock expired)
       if (admin.accountLockedUntil) {
         const isLocked = AccountLockoutService.isAccountLocked(admin.accountLockedUntil);
-        
         if (isLocked) {
-          // Record attempt on locked account
-          await AccountLockoutService.recordFailedAttempt(
-            email,
-            clientIp,
-            "admin",
-            true
+          await AccountLockoutService.recordFailedAttempt(email, clientIp, "admin", true);
+          const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(admin.accountLockedUntil);
+          throw new Error(
+            `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`
           );
-
-          const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(
-            admin.accountLockedUntil
-          );
-          const errorMessage = `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`;
-          
-          logger.warn("Login attempt on locked account", {
-            email,
-            ipAddress: clientIp,
-            lockedUntil: admin.accountLockedUntil,
-            remainingMinutes,
-            failedAttempts: admin.failedLoginAttempts,
-          });
-          
-          throw new Error(errorMessage);
         } else {
-          // Lockout expired, reset the failed attempts in database AND update local object
           await prisma.admin.update({
             where: { id: admin.id },
-            data: {
-              failedLoginAttempts: 0,
-              accountLockedUntil: null,
-            },
+            data: { failedLoginAttempts: 0, accountLockedUntil: null },
           });
-          // Update local admin object to reflect reset
           admin.failedLoginAttempts = 0;
           admin.accountLockedUntil = null;
         }
       }
+      */
 
       // Check if account is active
       if (admin.status !== UserStatus.ACTIVE) {
@@ -186,22 +142,12 @@ export class AuthService {
       const isPasswordValid = await bcrypt.compare(password, admin.password);
 
       if (!isPasswordValid) {
-        // Record failed attempt
-        await AccountLockoutService.recordFailedAttempt(
-          email,
-          clientIp,
-          "admin",
-          true
-        );
-
-        // Handle failed login attempt (account-level lockout)
-        // Use current admin values (which may have been reset if lockout expired)
+        /* RE-ENABLE LOCKOUT: record attempt + prisma update failedLoginAttempts / accountLockedUntil
+        await AccountLockoutService.recordFailedAttempt(email, clientIp, "admin", true);
         const lockoutResult = AccountLockoutService.handleFailedLogin(
           admin.failedLoginAttempts || 0,
           admin.accountLockedUntil
         );
-
-        // Update failed attempts and lockout status
         await prisma.admin.update({
           where: { id: admin.id },
           data: {
@@ -209,20 +155,10 @@ export class AuthService {
             accountLockedUntil: lockoutResult.lockedUntil,
           },
         });
-
-        logger.warn("Failed login attempt", {
-          email,
-          ipAddress: clientIp,
-          failedAttempts: lockoutResult.failedAttempts,
-          remainingAttempts: lockoutResult.remainingAttempts,
-          isLocked: lockoutResult.isLocked,
-          lockedUntil: lockoutResult.lockedUntil,
-          message: lockoutResult.message,
-        });
-
-        // Always throw with the message from lockoutResult
-        // This will include attempt count warnings or lockout message
+        logger.warn("Failed login attempt", { email, ipAddress: clientIp, ...lockoutResult });
         throw new Error(lockoutResult.message);
+        */
+        throw new Error("Invalid email or password");
       }
 
       // Check if MFA is enabled (future enhancement)
