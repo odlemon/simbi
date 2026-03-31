@@ -18,39 +18,10 @@ export class StaffAuthService {
   async login(data: StaffLoginDTO, ipAddress?: string) {
     const clientIp = ipAddress || "unknown";
 
-    // Check IP rate limiting first (applies to all attempts)
-    const ipRateLimit = await AccountLockoutService.isIPRateLimited(
-      clientIp,
-      "staff"
-    );
-    if (ipRateLimit.isLimited) {
-      await AccountLockoutService.recordFailedAttempt(
-        data.email,
-        clientIp,
-        "staff",
-        false
-      );
-      // Get recent attempts count across ALL user types for this IP (only if model exists)
-      let recentAttempts = 0;
-      if (prisma.failedLoginAttempt) {
-        try {
-          recentAttempts = await prisma.failedLoginAttempt.count({
-            where: {
-              ipAddress: clientIp,
-              // Don't filter by userType - check all attempts from this IP
-              createdAt: {
-                gte: new Date(Date.now() - 15 * 60 * 1000),
-              },
-            },
-          });
-        } catch (error) {
-          // Ignore errors - rate limiting is optional
-        }
-      }
-      throw new Error(
-        AccountLockoutService.getIPRateLimitErrorMessage(ipRateLimit.resetAt, recentAttempts)
-      );
-    }
+    /* RE-ENABLE LOCKOUT: IP rate limit
+    const ipRateLimit = await AccountLockoutService.isIPRateLimited(clientIp, "staff");
+    if (ipRateLimit.isLimited) { ... throw ... }
+    */
 
     // Find staff member
     const staff = await prisma.sellerStaff.findUnique({
@@ -68,60 +39,13 @@ export class StaffAuthService {
     });
 
     if (!staff) {
-      // Record failed attempt for non-existent email (for IP tracking only)
-      await AccountLockoutService.recordFailedAttempt(
-        data.email,
-        clientIp,
-        "staff",
-        false
-      );
-
-      // Don't check email rate limiting - focus on IP only
-      // This prevents attackers from bypassing by changing emails
+      /* RE-ENABLE LOCKOUT: recordFailedAttempt */
       throw new Error("Invalid credentials");
     }
 
-    // Check if account is locked (MUST check before password verification)
-    if (staff.accountLockedUntil) {
-      const isLocked = AccountLockoutService.isAccountLocked(staff.accountLockedUntil);
-      
-      if (isLocked) {
-        // Record attempt on locked account
-        await AccountLockoutService.recordFailedAttempt(
-          data.email,
-          clientIp,
-          "staff",
-          true
-        );
-
-        const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(
-          staff.accountLockedUntil
-        );
-        const errorMessage = `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`;
-        
-        logger.warn("Login attempt on locked staff account", {
-          email: data.email,
-          staffId: staff.id,
-          lockedUntil: staff.accountLockedUntil,
-          remainingMinutes,
-          failedAttempts: staff.failedLoginAttempts,
-        });
-        
-        throw new Error(errorMessage);
-      } else {
-        // Lockout expired, reset the failed attempts in database AND update local object
-        await prisma.sellerStaff.update({
-          where: { id: staff.id },
-          data: {
-            failedLoginAttempts: 0,
-            accountLockedUntil: null,
-          },
-        });
-        // Update local staff object to reflect reset
-        staff.failedLoginAttempts = 0;
-        staff.accountLockedUntil = null;
-      }
-    }
+    /* RE-ENABLE LOCKOUT: accountLockedUntil branch
+    if (staff.accountLockedUntil) { ... }
+    */
 
     // Check if staff is active
     if (!staff.isActive) {
@@ -136,43 +60,13 @@ export class StaffAuthService {
     // Verify password
     const isValidPassword = await bcrypt.compare(data.password, staff.passwordHash);
     if (!isValidPassword) {
-      // Record failed attempt
-      await AccountLockoutService.recordFailedAttempt(
-        data.email,
-        clientIp,
-        "staff",
-        true
-      );
-
-      // Handle failed login attempt (account-level lockout)
-      // Use current staff values (which may have been reset if lockout expired)
-      const lockoutResult = AccountLockoutService.handleFailedLogin(
-        staff.failedLoginAttempts || 0,
-        staff.accountLockedUntil
-      );
-
-      // Update failed attempts and lockout status
-      await prisma.sellerStaff.update({
-        where: { id: staff.id },
-        data: {
-          failedLoginAttempts: lockoutResult.failedAttempts,
-          accountLockedUntil: lockoutResult.lockedUntil,
-        },
-      });
-
-      logger.warn("Failed staff login attempt", {
-        email: data.email,
-        staffId: staff.id,
-        failedAttempts: lockoutResult.failedAttempts,
-        remainingAttempts: lockoutResult.remainingAttempts,
-        isLocked: lockoutResult.isLocked,
-        lockedUntil: lockoutResult.lockedUntil,
-        message: lockoutResult.message,
-      });
-
-      // Always throw with the message from lockoutResult
-      // This will include attempt count warnings or lockout message
+      /* RE-ENABLE LOCKOUT: recordFailedAttempt + handleFailedLogin + prisma update
+      await AccountLockoutService.recordFailedAttempt(data.email, clientIp, "staff", true);
+      const lockoutResult = AccountLockoutService.handleFailedLogin(...);
+      await prisma.sellerStaff.update({ ... });
       throw new Error(lockoutResult.message);
+      */
+      throw new Error("Invalid credentials");
     }
 
     // Reset failed login attempts on successful login

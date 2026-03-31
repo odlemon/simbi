@@ -288,41 +288,10 @@ export class BuyerAuthService {
       const validatedData = loginSchema.parse(data);
       const clientIp = ipAddress || "unknown";
 
-      // Check IP rate limiting first (applies to all attempts)
-      const ipRateLimit = await AccountLockoutService.isIPRateLimited(
-        clientIp,
-        "buyer"
-      );
-      if (ipRateLimit.isLimited) {
-        await AccountLockoutService.recordFailedAttempt(
-          validatedData.email,
-          clientIp,
-          "buyer",
-          false
-        );
-        // Get recent attempts count across ALL user types for this IP (only if model exists)
-        let recentAttempts = 0;
-        if (prisma.failedLoginAttempt) {
-          try {
-            recentAttempts = await prisma.failedLoginAttempt.count({
-              where: {
-                ipAddress: clientIp,
-                // Don't filter by userType - check all attempts from this IP
-                createdAt: {
-                  gte: new Date(Date.now() - 15 * 60 * 1000),
-                },
-              },
-            });
-          } catch (error) {
-            // Ignore errors - rate limiting is optional
-          }
-        }
-        return {
-          success: false,
-          message: AccountLockoutService.getIPRateLimitErrorMessage(ipRateLimit.resetAt, recentAttempts),
-          error: 'IP_RATE_LIMITED'
-        };
-      }
+      /* RE-ENABLE LOCKOUT: IP rate limit
+      const ipRateLimit = await AccountLockoutService.isIPRateLimited(clientIp, "buyer");
+      if (ipRateLimit.isLimited) { ... return { error: 'IP_RATE_LIMITED' }; }
+      */
 
       // Find buyer
       const buyer = await prisma.buyer.findUnique({
@@ -330,16 +299,7 @@ export class BuyerAuthService {
       });
 
       if (!buyer) {
-        // Record failed attempt for non-existent email (for IP tracking only)
-        await AccountLockoutService.recordFailedAttempt(
-          validatedData.email,
-          clientIp,
-          "buyer",
-          false
-        );
-
-        // Don't check email rate limiting - focus on IP only
-        // This prevents attackers from bypassing by changing emails
+        /* RE-ENABLE LOCKOUT: await AccountLockoutService.recordFailedAttempt(...); */
         return {
           success: false,
           message: 'Invalid email or password',
@@ -347,43 +307,9 @@ export class BuyerAuthService {
         };
       }
 
-      // Check if account is locked (MUST check before password verification)
-      if (buyer.accountLockedUntil) {
-        const isLocked = AccountLockoutService.isAccountLocked(buyer.accountLockedUntil);
-        
-        if (isLocked) {
-          // Record attempt on locked account
-          await AccountLockoutService.recordFailedAttempt(
-            validatedData.email,
-            clientIp,
-            "buyer",
-            true
-          );
-
-          const remainingMinutes = AccountLockoutService.getRemainingLockoutTime(
-            buyer.accountLockedUntil
-          );
-          const errorMessage = `Account locked due to multiple failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`;
-          
-          return {
-            success: false,
-            message: errorMessage,
-            error: 'ACCOUNT_LOCKED'
-          };
-        } else {
-          // Lockout expired, reset the failed attempts in database AND update local object
-          await prisma.buyer.update({
-            where: { id: buyer.id },
-            data: {
-              failedLoginAttempts: 0,
-              accountLockedUntil: null,
-            },
-          });
-          // Update local buyer object to reflect reset
-          buyer.failedLoginAttempts = 0;
-          buyer.accountLockedUntil = null;
-        }
-      }
+      /* RE-ENABLE LOCKOUT: account lockout branch
+      if (buyer.accountLockedUntil) { ... prisma.buyer.update reset ... }
+      */
 
       // Check if email is verified
       if (!buyer.emailVerified) {
@@ -406,36 +332,16 @@ export class BuyerAuthService {
       // Verify password
       const isPasswordValid = await bcrypt.compare(validatedData.password, buyer.password);
       if (!isPasswordValid) {
-        // Record failed attempt
-        await AccountLockoutService.recordFailedAttempt(
-          validatedData.email,
-          clientIp,
-          "buyer",
-          true
-        );
-
-        // Handle failed login attempt (account-level lockout)
-        // Use current buyer values (which may have been reset if lockout expired)
-        const lockoutResult = AccountLockoutService.handleFailedLogin(
-          buyer.failedLoginAttempts || 0,
-          buyer.accountLockedUntil
-        );
-
-        // Update failed attempts and lockout status
-        await prisma.buyer.update({
-          where: { id: buyer.id },
-          data: {
-            failedLoginAttempts: lockoutResult.failedAttempts,
-            accountLockedUntil: lockoutResult.lockedUntil,
-          },
-        });
-
-        // Always return with the message from lockoutResult
-        // This will include attempt count warnings or lockout message
+        /* RE-ENABLE LOCKOUT: recordFailedAttempt + handleFailedLogin + prisma.buyer.update
+        await AccountLockoutService.recordFailedAttempt(validatedData.email, clientIp, "buyer", true);
+        const lockoutResult = AccountLockoutService.handleFailedLogin(...);
+        await prisma.buyer.update({ ... });
+        return { success: false, message: lockoutResult.message, error: ... };
+        */
         return {
           success: false,
-          message: lockoutResult.message,
-          error: lockoutResult.isLocked ? 'ACCOUNT_LOCKED' : 'INVALID_CREDENTIALS'
+          message: 'Invalid email or password',
+          error: 'INVALID_CREDENTIALS'
         };
       }
 
