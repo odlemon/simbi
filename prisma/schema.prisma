@@ -500,22 +500,30 @@ enum PayrollStatus {
 }
 
 model FinancialPartner {
-  id               String            @id @default(uuid())
-  name             String
-  slug             String            @unique
-  logo             String?
-  description      String            @db.Text
-  minAmount        Float
-  maxAmount        Float
-  interestRate     Float
-  termMonths       Int
-  apiEndpoint      String?
-  apiKey           String?
-  webhookUrl       String?
-  isActive         Boolean           @default(true)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  loanApplications LoanApplication[]
+  id                      String            @id @default(uuid())
+  name                    String
+  slug                    String            @unique
+  logo                    String?
+  description             String            @db.Text
+  minAmount               Float
+  maxAmount               Float
+  interestRate            Float
+  termMonths              Int
+  apiEndpoint             String?
+  apiKey                  String?
+  webhookUrl              String?
+  contactEmail            String?
+  feesAndTermsSummary     String?           @db.Text
+  /** Seller-facing extra form fields: [{ key, label, type, required }] */
+  fieldDefinitionsJson    Json?
+  /** Non-secret integration: baseUrl, submitPath, statusPath, authType, header templates, bodyFieldMapping */
+  integrationConfigJson   Json?
+  /** Secrets (API keys, webhook HMAC secret). Never exposed to sellers; mask in admin list. */
+  integrationSecretsJson  Json?
+  isActive                Boolean           @default(true)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  loanApplications        LoanApplication[]
 
   @@index([slug])
   @@index([isActive])
@@ -535,6 +543,8 @@ model LoanApplication {
   storeHealthScore      Float?
   monthlyOrderCount     Int?
   applicationData       Json?
+  /** Server-computed bundle sent to partner (revenue, inventory, SRI, etc.) */
+  verifiedSnapshot      Json?
   partnerReferenceId    String?
   partnerResponse       Json?
   rejectionReason       String?          @db.Text
@@ -547,6 +557,7 @@ model LoanApplication {
   approvedAt            DateTime?
   rejectedAt            DateTime?
   disbursedAt           DateTime?
+  lastStatusSyncAt      DateTime?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
   businessExpenses      Float?
@@ -554,12 +565,29 @@ model LoanApplication {
   collateralDescription String?          @db.Text
   partner               FinancialPartner @relation(fields: [partnerId], references: [id])
   seller                Seller           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  statusEvents          LoanApplicationStatusEvent[]
 
   @@index([sellerId, status])
   @@index([partnerId])
   @@index([status])
   @@index([submittedAt])
   @@map("loan_applications")
+}
+
+model LoanApplicationStatusEvent {
+  id                String          @id @default(uuid())
+  loanApplicationId String
+  fromStatus        LoanStatus?
+  toStatus          LoanStatus
+  source            String
+  note              String?         @db.Text
+  rawPayload        Json?
+  createdAt         DateTime        @default(now())
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@index([loanApplicationId])
+  @@index([createdAt])
+  @@map("loan_application_status_events")
 }
 
 model Buyer {
@@ -1713,6 +1741,8 @@ enum ActivityType {
 enum LoanStatus {
   DRAFT
   SUBMITTED
+  /** Partner API acknowledged receipt / application entered their system */
+  PARTNER_ENTERED
   UNDER_REVIEW
   APPROVED
   REJECTED
@@ -1720,6 +1750,7 @@ enum LoanStatus {
   ACTIVE
   PAID_OFF
   DEFAULTED
+  CANCELLED
 }
 
 enum BuyerType {

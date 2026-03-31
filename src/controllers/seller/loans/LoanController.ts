@@ -62,8 +62,6 @@ export class LoanController {
    *               - partnerId
    *               - requestedAmount
    *               - purpose
-   *               - businessRevenue
-   *               - businessExpenses
    *             properties:
    *               partnerId:
    *                 type: string
@@ -71,12 +69,11 @@ export class LoanController {
    *                 type: number
    *               purpose:
    *                 type: string
-   *               businessRevenue:
-   *                 type: number
-   *               businessExpenses:
-   *                 type: number
    *               collateralDescription:
    *                 type: string
+   *               customFields:
+   *                 type: object
+   *                 description: Values for partner-specific fields from fieldDefinitionsJson
    *     responses:
    *       201:
    *         description: Loan application created successfully
@@ -121,7 +118,7 @@ export class LoanController {
    *         name: status
    *         schema:
    *           type: string
-   *           enum: [PENDING, UNDER_REVIEW, APPROVED, REJECTED, DISBURSED, CANCELLED]
+   *           enum: [DRAFT, SUBMITTED, PARTNER_ENTERED, UNDER_REVIEW, APPROVED, REJECTED, DISBURSED, ACTIVE, PAID_OFF, DEFAULTED, CANCELLED]
    *     responses:
    *       200:
    *         description: Loan applications retrieved successfully
@@ -248,6 +245,46 @@ export class LoanController {
         timestamp: new Date().toISOString(),
       };
       res.status(400).json(response);
+    }
+  }
+
+  async getStatusTimeline(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { id } = req.params;
+      const events = await loanService.getStatusTimeline(sellerId, id);
+      res.status(200).json({
+        success: true,
+        data: events,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      res.status(404).json({
+        success: false,
+        message: error.message || "Not found",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  async syncStatusFromPartner(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { id } = req.params;
+      const result = await loanService.syncStatusFromPartner(sellerId, id);
+      res.status(200).json({
+        success: result.ok,
+        message: result.message,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      const notFound = String(error.message || "").includes("not found");
+      res.status(notFound ? 404 : 400).json({
+        success: false,
+        message: error.message,
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 }

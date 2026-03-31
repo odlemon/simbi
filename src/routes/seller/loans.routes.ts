@@ -15,8 +15,14 @@ router.get("/partners", (req, res) => controller.getFinancialPartners(req, res))
 // Loan applications
 router.post("/applications", (req, res) => controller.applyForLoan(req, res));
 router.get("/applications", (req, res) => controller.getLoanApplications(req, res));
-router.get("/applications/:id", (req, res) => controller.getLoanApplication(req, res));
+router.get("/applications/:id/status-events", (req, res) =>
+  controller.getStatusTimeline(req, res)
+);
+router.post("/applications/:id/sync-status", (req, res) =>
+  controller.syncStatusFromPartner(req, res)
+);
 router.post("/applications/:id/cancel", (req, res) => controller.cancelLoanApplication(req, res));
+router.get("/applications/:id", (req, res) => controller.getLoanApplication(req, res));
 
 export default router;
 
