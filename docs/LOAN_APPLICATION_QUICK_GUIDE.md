@@ -1,5 +1,7 @@
 # 🏦 Loan Application - Quick Guide
 
+> **Updated flows:** See [Loans module (seller)](seller/LOANS_MODULE_SELLER_API.md) and [Financial partners (admin)](admin/FINANCIAL_PARTNERS_LOANS_ADMIN_API.md). Apply payloads no longer require manual `businessRevenue` / `businessExpenses`; the API attaches a **verified snapshot**.
+
 ## ✅ **Setup Complete!**
 
 8 Zimbabwe financial partners have been seeded in the database.

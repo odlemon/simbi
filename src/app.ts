@@ -129,6 +129,9 @@ app.use("/api/staff", staffAuthRoutes);
 import logisticsWebhooks from "./routes/webhooks/logisticsWebhooks";
 app.use("/api/webhooks/logistics", logisticsWebhooks);
 
+import loanPartnerWebhooks from "./routes/webhooks/loanPartnerWebhooks";
+app.use("/api/webhooks/loans", loanPartnerWebhooks);
+
 // Buyer routes
 import buyerRoutes from "./routes/buyer/index";
 app.use("/api/buyer", buyerRoutes);

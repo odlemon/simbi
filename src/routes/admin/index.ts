@@ -20,6 +20,7 @@ import userRoutes from "./users/userRoutes";
 import payoutRoutes from "./payouts/payoutRoutes";
 import reviewRoutes from "./reviews";
 import notificationRoutes from "./notifications/notificationRoutes";
+import financialPartnersRoutes from "./financialPartners.routes";
 
 const router = Router();
 
@@ -82,6 +83,9 @@ router.use("/payouts", payoutRoutes);
 
 // Review moderation routes
 router.use("/reviews", reviewRoutes);
+
+// Financial partners & loan ops (Settings → Financial partners in UI)
+router.use("/financial-partners", financialPartnersRoutes);
 
 export default router;
 
