@@ -42,6 +42,7 @@ app.use(cors({
     "http://31.220.82.129:3003",
     "https://simbi-market-fawn.vercel.app",
     "http://172.20.20.10.9:5001",
+    "https://simbimarket.com",
     "https://car-parts-hub.vercel.app",
     "https://simbi-market-sigma.vercel.app",
     "https://simbi-admin.vercel.app",
