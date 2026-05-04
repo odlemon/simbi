@@ -283,6 +283,12 @@ export class SRICalculationService {
    */
   async updateSellerSRI(sellerId: string): Promise<void> {
     try {
+      const prior = await prisma.seller.findUnique({
+        where: { id: sellerId },
+        select: { sriScore: true },
+      });
+      const previousScore = prior?.sriScore ?? this.SRI_ELIGIBILITY_THRESHOLD;
+
       const result = await this.calculateSellerSRI(sellerId);
 
       // Update seller record
@@ -319,9 +325,22 @@ export class SRICalculationService {
         },
       });
 
-      // Check if seller dropped below threshold - trigger alert
+      // Below threshold: alert only on first breach or when crossing from >=70 to <70, and never duplicate OPEN alerts
       if (result.score < this.SRI_ELIGIBILITY_THRESHOLD) {
-        await this.createSRIAlert(sellerId, result.score);
+        const openViolation = await prisma.adminAlert.findFirst({
+          where: {
+            alertCode: "SRI_VIOLATION",
+            entityId: sellerId,
+            status: "OPEN",
+          },
+          select: { id: true },
+        });
+        const crossedBelow =
+          previousScore >= this.SRI_ELIGIBILITY_THRESHOLD &&
+          result.score < this.SRI_ELIGIBILITY_THRESHOLD;
+        if (!openViolation && crossedBelow) {
+          await this.createSRIAlert(sellerId, result.score);
+        }
       }
 
       logger.info("Seller SRI updated", {

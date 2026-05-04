@@ -18,11 +18,13 @@ export class SettingsController {
     try {
       await this.commercePricingService.ensureDefaults();
       const data = await this.commercePricingService.getSnapshot();
+      const shippingEngine = await this.commercePricingService.getShippingEngine();
       res.status(200).json({
         success: true,
-        data,
+        data: { ...data, shippingEngine },
         keys: {
           shippingMode: "commerce.shipping.mode",
+          shippingEngine: "commerce.shipping.engine",
           shippingFlatRate: "commerce.shipping.flatRate",
           shippingDynamicPrice: "commerce.shipping.dynamicPrice",
           shippingDynamicDistanceKm: "commerce.shipping.dynamicDistanceKm",
@@ -55,6 +57,7 @@ export class SettingsController {
 
       const {
         shippingMode,
+        shippingEngine,
         shippingFlatRate,
         shippingDynamicPrice,
         shippingDynamicDistanceKm,
@@ -63,6 +66,7 @@ export class SettingsController {
       } = req.body || {};
       if (
         shippingMode === undefined &&
+        shippingEngine === undefined &&
         shippingFlatRate === undefined &&
         shippingDynamicPrice === undefined &&
         shippingDynamicDistanceKm === undefined &&
@@ -72,7 +76,7 @@ export class SettingsController {
         res.status(400).json({
           success: false,
           message:
-            "Provide at least one of: shippingMode (fixed|distance), shippingFlatRate, shippingDynamicPrice, shippingDynamicDistanceKm, commissionPercent (0–100), useAdvancedProductRules (boolean)",
+            "Provide at least one of: shippingMode (fixed|distance), shippingEngine (legacy|carrier_v1), shippingFlatRate, shippingDynamicPrice, shippingDynamicDistanceKm, commissionPercent (0–100), useAdvancedProductRules (boolean)",
           timestamp: new Date().toISOString(),
         });
         return;
@@ -81,6 +85,7 @@ export class SettingsController {
       const data = await this.commercePricingService.updateSnapshot(
         {
           shippingMode,
+          shippingEngine,
           shippingFlatRate,
           shippingDynamicPrice,
           shippingDynamicDistanceKm,
@@ -90,10 +95,12 @@ export class SettingsController {
         req.admin.id
       );
 
+      const shippingEngineOut = await this.commercePricingService.getShippingEngine();
+
       res.status(200).json({
         success: true,
         message: "Commerce pricing updated successfully",
-        data,
+        data: { ...data, shippingEngine: shippingEngineOut },
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {

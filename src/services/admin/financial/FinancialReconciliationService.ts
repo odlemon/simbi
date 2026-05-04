@@ -2,14 +2,210 @@
 
 import { logger } from "../../../utils/logger";
 import { Currency, PayoutStatus, Prisma } from "@prisma/client";
-import { ReconciliationRecord } from "../../../types";
+import {
+  ReconciliationRecord,
+  ReconciliationWindowLine,
+} from "../../../types";
 import { prisma } from "../../../utils/database";
 
+const RECONCILIATION_MAX_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
+const VARIANCE_TOLERANCE_PCT = 0.1;
+const EPSILON = 0.01;
+
 export class FinancialReconciliationService {
+  /**
+   * Auditable reconciliation for any [from, to] window (minute precision via ISO datetimes).
+   * Payments keyed by paidAt; per-order gateway fees summed from PaymentGatewayTransaction;
+   * compared to Payout.gatewayFee and Order.platformCommission vs Payout.platformCommission.
+   */
+  async getReconciliationWindow(
+    from: Date,
+    to: Date,
+    currency?: Currency
+  ): Promise<{
+    from: string;
+    to: string;
+    generatedAt: string;
+    totalOrders: number;
+    grossRevenue: number;
+    platformCommissionTotal: number;
+    gatewayFeesFromTransactions: number;
+    gatewayFeesFromPayouts: number;
+    sellerPayoutsNet: number;
+    netRevenueAfterGateway: number;
+    linesExceedingTolerance: number;
+    tolerancePercent: number;
+    lines: ReconciliationWindowLine[];
+    records: ReconciliationRecord[];
+  }> {
+    if (from.getTime() > to.getTime()) {
+      throw new Error("RECONCILIATION_INVALID_RANGE");
+    }
+    if (to.getTime() - from.getTime() > RECONCILIATION_MAX_RANGE_MS) {
+      throw new Error("RECONCILIATION_WINDOW_TOO_LARGE");
+    }
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        status: "COMPLETED",
+        paidAt: {
+          gte: from,
+          lte: to,
+        },
+        ...(currency
+          ? {
+              order: {
+                currency,
+              },
+            }
+          : {}),
+      },
+      include: {
+        gatewayTransactions: true,
+        order: {
+          include: {
+            payout: true,
+          },
+        },
+      },
+    });
+
+    const lines: ReconciliationWindowLine[] = [];
+    let grossRevenue = 0;
+    let platformCommissionTotal = 0;
+    let gatewayFeesFromTransactions = 0;
+    let gatewayFeesFromPayouts = 0;
+    let sellerPayoutsNet = 0;
+    let linesExceedingTolerance = 0;
+
+    for (const payment of payments) {
+      const order = payment.order;
+      if (!order) continue;
+
+      const sumGatewayTxn = (payment.gatewayTransactions || []).reduce(
+        (s: number, t: { gatewayFee: number | null }) =>
+          s + (t.gatewayFee ?? 0),
+        0
+      );
+      const payout = order.payout;
+      const payoutGf = payout != null ? payout.gatewayFee ?? 0 : null;
+      const payoutNet = payout != null ? payout.netAmount ?? 0 : null;
+      const payoutPc =
+        payout != null ? payout.platformCommission ?? null : null;
+
+      grossRevenue += order.totalAmount;
+      platformCommissionTotal += order.platformCommission;
+      gatewayFeesFromTransactions += sumGatewayTxn;
+      if (payoutGf != null) {
+        gatewayFeesFromPayouts += payoutGf;
+      }
+      if (payout) {
+        sellerPayoutsNet += payoutNet ?? 0;
+      }
+
+      const gatewayVariance =
+        payoutGf != null ? Math.abs(sumGatewayTxn - payoutGf) : sumGatewayTxn;
+      const gatewayBase = Math.max(
+        sumGatewayTxn,
+        payoutGf ?? 0,
+        order.platformCommission,
+        EPSILON
+      );
+      const gatewayVariancePct = (gatewayVariance / gatewayBase) * 100;
+
+      let commissionVariance = 0;
+      let commissionVariancePct = 0;
+      if (payout != null && payoutPc != null) {
+        commissionVariance = Math.abs(
+          order.platformCommission - payoutPc
+        );
+        const cBase = Math.max(
+          order.platformCommission,
+          payoutPc,
+          EPSILON
+        );
+        commissionVariancePct = (commissionVariance / cBase) * 100;
+      }
+
+      const flags: string[] = [];
+      if (!payout) flags.push("MISSING_PAYOUT");
+      if (gatewayVariancePct > VARIANCE_TOLERANCE_PCT) {
+        flags.push("GATEWAY_FEE_MISMATCH");
+      }
+      if (payout != null && payoutPc != null) {
+        if (commissionVariancePct > VARIANCE_TOLERANCE_PCT) {
+          flags.push("COMMISSION_MISMATCH");
+        }
+      }
+
+      const exceedsTolerance =
+        gatewayVariancePct > VARIANCE_TOLERANCE_PCT ||
+        (payout != null &&
+          payoutPc != null &&
+          commissionVariancePct > VARIANCE_TOLERANCE_PCT) ||
+        (!payout && order.platformCommission > EPSILON);
+
+      if (exceedsTolerance) linesExceedingTolerance += 1;
+
+      lines.push({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        currency: order.currency,
+        paidAt: payment.paidAt ? payment.paidAt.toISOString() : null,
+        grossOrderTotal: order.totalAmount,
+        orderPlatformCommission: order.platformCommission,
+        sumGatewayTxnFees: sumGatewayTxn,
+        payoutGatewayFee: payoutGf,
+        payoutNetAmount: payoutNet,
+        payoutPlatformCommission: payoutPc,
+        gatewayVariance,
+        gatewayVariancePct,
+        commissionVariance,
+        commissionVariancePct,
+        exceedsTolerance,
+        flags,
+      });
+    }
+
+    const netRevenueAfterGateway =
+      platformCommissionTotal - gatewayFeesFromTransactions;
+
+    const records: ReconciliationRecord[] = lines.map((l) => {
+      const payoutGf = l.payoutGatewayFee ?? 0;
+      const expectedRevenue = l.orderPlatformCommission - l.sumGatewayTxnFees;
+      const actualRevenue = l.orderPlatformCommission - payoutGf;
+      const variance = l.sumGatewayTxnFees - payoutGf;
+      return {
+        transactionId: l.orderNumber,
+        grossValue: l.grossOrderTotal,
+        expectedRevenue,
+        actualRevenue,
+        variance,
+        variancePercentage: l.gatewayVariancePct,
+        transactionTime: l.paidAt ? new Date(l.paidAt) : new Date(0),
+      };
+    });
+
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      generatedAt: new Date().toISOString(),
+      totalOrders: lines.length,
+      grossRevenue,
+      platformCommissionTotal,
+      gatewayFeesFromTransactions,
+      gatewayFeesFromPayouts,
+      sellerPayoutsNet,
+      netRevenueAfterGateway,
+      linesExceedingTolerance,
+      tolerancePercent: VARIANCE_TOLERANCE_PCT,
+      lines,
+      records,
+    };
+  }
 
   /**
-   * Get daily reconciliation report
-   * Cross-references gateway fees, seller payouts, and platform revenue
+   * Daily reconciliation (calendar day in local server TZ) — delegates to getReconciliationWindow.
    */
   async getDailyReconciliation(date: Date): Promise<{
     date: string;
@@ -22,92 +218,38 @@ export class FinancialReconciliationService {
     variance: number;
     variancePercentage: number;
     records: ReconciliationRecord[];
+    linesExceedingTolerance: number;
+    tolerancePercent: number;
+    lines: ReconciliationWindowLine[];
   }> {
     try {
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
-      // Get all completed payments for the day
-      const payments = await prisma.payment.findMany({
-        where: {
-          status: "COMPLETED",
-          paidAt: {
-            gte: startOfDay,
-            lte: endOfDay,
-          },
-        },
-        include: {
-          order: {
-            include: {
-              items: true,
-            },
-          },
-        },
-      });
-
-      // Get all payouts for the day
-      const payouts = await prisma.payout.findMany({
-        where: {
-          processedDate: {
-            gte: startOfDay,
-            lte: endOfDay,
-          },
-          status: "COMPLETED",
-        },
-      });
-
-      let grossRevenue = 0;
-      let platformCommission = 0;
-      let gatewayFees = 0;
-      const records: ReconciliationRecord[] = [];
-
-      // Process each payment
-      for (const payment of payments) {
-        const order = payment.order;
-        grossRevenue += order.totalAmount;
-        platformCommission += order.platformCommission;
-
-        // Get corresponding payout
-        const payout = payouts.find((p) => p.orderId === order.id);
-
-        const gatewayFee = payout?.gatewayFee || 0;
-        gatewayFees += gatewayFee;
-
-        const expectedRevenue = order.platformCommission - gatewayFee;
-        const actualRevenue = expectedRevenue; // In production, compare with gateway reports
-        const variance = actualRevenue - expectedRevenue;
-
-        records.push({
-          transactionId: order.orderNumber,
-          grossValue: order.totalAmount,
-          expectedRevenue,
-          actualRevenue,
-          variance,
-          variancePercentage: expectedRevenue > 0 ? (variance / expectedRevenue) * 100 : 0,
-          exchangeRate: order.exchangeRate || undefined,
-          transactionTime: payment.paidAt || new Date(),
-        });
-      }
-
-      const sellerPayouts = payouts.reduce((sum, p) => sum + p.netAmount, 0);
-      const netRevenue = platformCommission - gatewayFees;
-      const variance = records.reduce((sum, r) => sum + r.variance, 0);
-      const variancePercentage = platformCommission > 0 ? (variance / platformCommission) * 100 : 0;
+      const w = await this.getReconciliationWindow(startOfDay, endOfDay);
+      const variance = w.records.reduce((sum, r) => sum + r.variance, 0);
+      const variancePercentage =
+        w.platformCommissionTotal > 0
+          ? (Math.abs(variance) / w.platformCommissionTotal) * 100
+          : 0;
 
       return {
         date: date.toISOString().split("T")[0],
-        totalOrders: payments.length,
-        grossRevenue,
-        platformCommission,
-        gatewayFees,
-        sellerPayouts,
-        netRevenue,
+        totalOrders: w.totalOrders,
+        grossRevenue: w.grossRevenue,
+        platformCommission: w.platformCommissionTotal,
+        gatewayFees: w.gatewayFeesFromTransactions,
+        sellerPayouts: w.sellerPayoutsNet,
+        netRevenue: w.netRevenueAfterGateway,
         variance,
         variancePercentage,
-        records,
+        records: w.records,
+        linesExceedingTolerance: w.linesExceedingTolerance,
+        tolerancePercent: w.tolerancePercent,
+        lines: w.lines,
       };
     } catch (error: any) {
       logger.error("Error in daily reconciliation", {

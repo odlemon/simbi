@@ -33,10 +33,17 @@ const verifyWebhookSignature = async (
     // Fetch carrier API key
     const carrier = await prisma.carrier.findUnique({
       where: { id: carrierId },
-      select: { apiKey: true, name: true },
+      select: { apiKey: true, name: true, integrationSecretsJson: true },
     });
 
-    if (!carrier || !carrier.apiKey) {
+    const secrets =
+      (carrier?.integrationSecretsJson as Record<string, unknown> | null) || {};
+    const signingSecret =
+      (secrets.webhookSigningSecret as string) ||
+      (secrets.webhookSecret as string) ||
+      carrier?.apiKey;
+
+    if (!carrier || !signingSecret) {
       res.status(401).json({
         success: false,
         message: "Invalid carrier or missing API key",
@@ -47,7 +54,7 @@ const verifyWebhookSignature = async (
     // Verify signature using HMAC
     const payload = JSON.stringify(req.body);
     const expectedSignature = crypto
-      .createHmac("sha256", carrier.apiKey)
+      .createHmac("sha256", String(signingSecret))
       .update(payload)
       .digest("hex");
 

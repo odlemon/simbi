@@ -4,17 +4,20 @@ import { AuthenticatedRequest } from "../../../types";
 import { SellerManagementService } from "../../../services/admin/sellers/SellerManagementService";
 import { SRICalculationService } from "../../../services/admin/sellers/SRICalculationService";
 import { DocumentManagementService } from "../../../services/admin/sellers/DocumentManagementService";
+import { ComplianceAuditService } from "../../../services/admin/sellers/ComplianceAuditService";
 import { logger } from "../../../utils/logger";
 
 export class SellerController {
   private sellerService: SellerManagementService;
   private sriService: SRICalculationService;
   private documentService: DocumentManagementService;
+  private complianceAuditService: ComplianceAuditService;
 
   constructor() {
     this.sellerService = new SellerManagementService();
     this.sriService = new SRICalculationService();
     this.documentService = new DocumentManagementService();
+    this.complianceAuditService = new ComplianceAuditService();
   }
 
   // GET /api/admin/sellers/comprehensive - All seller data in one endpoint
@@ -508,6 +511,57 @@ export class SellerController {
       res.status(500).json({
         success: false,
         message: "Failed to fetch documents",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // POST /api/admin/sellers/:id/compliance-audit
+  createComplianceAudit = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({ success: false, message: "Unauthorized", timestamp: new Date().toISOString() });
+        return;
+      }
+      const { id } = req.params;
+      const { score, notes } = req.body || {};
+      const audit = await this.complianceAuditService.createAudit(id, req.admin.id, Number(score), notes);
+      res.status(201).json({
+        success: true,
+        message: "Compliance audit recorded",
+        data: audit,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in createComplianceAudit", { error: error.message });
+      const code = error.message === "Seller not found" ? 404 : 400;
+      res.status(code).json({
+        success: false,
+        message: error.message || "Failed to record compliance audit",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // GET /api/admin/sellers/:id/compliance-audit?limit=10
+  getComplianceAudit = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const [latest, history] = await Promise.all([
+        this.complianceAuditService.getLatestAudit(id),
+        this.complianceAuditService.getAuditHistory(id, limit),
+      ]);
+      res.status(200).json({
+        success: true,
+        data: { latest, history },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in getComplianceAudit", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch compliance audit",
         timestamp: new Date().toISOString(),
       });
     }

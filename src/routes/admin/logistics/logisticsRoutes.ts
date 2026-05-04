@@ -24,6 +24,14 @@ router.put("/shipments/:id", authenticateAdmin, requireLogistics, controller.upd
 router.get("/carriers/:id/performance", authenticateAdmin, requireAnyAdmin, controller.getCarrierPerformance);
 router.get("/analytics", authenticateAdmin, requireAnyAdmin, controller.getLogisticsAnalytics);
 
+// Regions & rate matrix
+router.get("/regions", authenticateAdmin, requireAnyAdmin, controller.listLogisticsRegions);
+router.post("/regions", authenticateAdmin, requireLogistics, controller.createLogisticsRegion);
+router.put("/regions/:id", authenticateAdmin, requireLogistics, controller.updateLogisticsRegion);
+router.delete("/regions/:id", authenticateAdmin, requireLogistics, controller.deleteLogisticsRegion);
+router.get("/shipping-matrix", authenticateAdmin, requireAnyAdmin, controller.listShippingRateMatrices);
+router.post("/shipping-matrix", authenticateAdmin, requireLogistics, controller.upsertShippingRateMatrix);
+
 // Polling
 router.post("/shipments/poll-updates", authenticateAdmin, requireLogistics, controller.pollShipmentUpdates);
 

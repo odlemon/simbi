@@ -232,6 +232,53 @@ export class ProductController {
   };
 
   /**
+   * DELETE /api/admin/products/:id/complete
+   * Permanently remove master product (blocked if any orders reference it)
+   */
+  deleteProductPermanently = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      const { id } = req.params;
+      await this.productService.deleteProductPermanently(id, req.admin.id);
+      res.status(200).json({
+        success: true,
+        message: "Master product deleted permanently",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in deleteProductPermanently", { error: error.message });
+      if (error.message === "Product not found") {
+        res.status(404).json({
+          success: false,
+          message: error.message,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      if (error.message?.includes("Cannot delete permanently")) {
+        res.status(409).json({
+          success: false,
+          message: error.message,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to delete product permanently",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  /**
    * GET /api/admin/products/search/vehicle
    * Search products by vehicle
    */
@@ -414,13 +461,14 @@ export class ProductController {
    */
   getCustomRequests = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { status, sellerId, page = 1, limit = 20 } = req.query;
+      const { status, sellerId, page = 1, limit = 20, overdue } = req.query;
 
       const result = await this.customRequestService.getCustomProductRequests({
         status: status as CustomProductRequestStatus | undefined,
         sellerId: sellerId as string | undefined,
         page: Number(page),
         limit: Number(limit),
+        overdue: overdue === "true" || overdue === "1",
       });
 
       res.status(200).json({
@@ -495,7 +543,18 @@ export class ProductController {
       });
     } catch (error: any) {
       logger.error("Error in approveCustomRequest", { error: error.message });
-      res.status(500).json({
+      const m = error.message || "";
+      let code = 500;
+      if (m.includes("not found")) code = 404;
+      else if (
+        m.includes("already") ||
+        m.includes("required") ||
+        m.includes("Counterfeit") ||
+        m.includes("must include")
+      ) {
+        code = 400;
+      }
+      res.status(code).json({
         success: false,
         message: error.message || "Failed to approve custom request",
         timestamp: new Date().toISOString(),
@@ -519,22 +578,21 @@ export class ProductController {
       }
 
       const { id } = req.params;
-      const { adminNotes } = req.body;
+      const { adminNotes, rejectionReason } = req.body;
+      const reason = (rejectionReason != null && String(rejectionReason).trim() !== ""
+        ? String(rejectionReason).trim()
+        : adminNotes) as string | undefined;
 
-      if (!adminNotes) {
+      if (!reason) {
         res.status(400).json({
           success: false,
-          message: "adminNotes is required for rejection",
+          message: "Rejection reason is required (adminNotes or rejectionReason)",
           timestamp: new Date().toISOString(),
         });
         return;
       }
 
-      const result = await this.customRequestService.rejectRequest(
-        id,
-        req.admin.id,
-        adminNotes
-      );
+      const result = await this.customRequestService.rejectRequest(id, req.admin.id, reason);
 
       res.status(200).json({
         success: true,
@@ -556,6 +614,35 @@ export class ProductController {
    * POST /api/admin/products/custom-requests/:id/request-info
    * Request more information from seller
    */
+  /**
+   * POST /api/admin/products/custom-requests/:id/verify-counterfeit
+   */
+  verifyCounterfeitCheck = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({ success: false, message: "Unauthorized", timestamp: new Date().toISOString() });
+        return;
+      }
+      const { id } = req.params;
+      const notes = (req.body?.notes || req.body?.counterfeitCheckNotes) as string | undefined;
+      const data = await this.customRequestService.verifyCounterfeitCheck(id, req.admin.id, notes);
+      res.status(200).json({
+        success: true,
+        data,
+        message: "Counterfeit / supplier documentation verification recorded",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in verifyCounterfeitCheck", { error: error.message });
+      const code = error.message?.includes("not found") ? 404 : 400;
+      res.status(code).json({
+        success: false,
+        message: error.message || "Failed to record verification",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
   requestMoreInfo = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       if (!req.admin) {

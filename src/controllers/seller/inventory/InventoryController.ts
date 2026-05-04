@@ -8,6 +8,93 @@ const inventoryService = new InventoryService();
 
 export class InventoryController {
   /**
+   * GET /api/seller/inventory/low-stock-alerts?limit=5
+   */
+  async getLowStockAlerts(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const limit = Math.min(50, parseInt(req.query.limit as string) || 5);
+      const data = await inventoryService.getLowStockAlerts(sellerId, limit);
+      res.status(200).json({
+        success: true,
+        message: "Low stock alerts retrieved successfully",
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Failed to get low stock alerts", { error: error.message, sellerId: req.seller?.id });
+      res.status(500).json({
+        success: false,
+        message: "Failed to get low stock alerts",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * GET /api/seller/inventory/export.csv
+   */
+  async exportInventoryCsv(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const csv = await inventoryService.exportInventoryCsv(sellerId);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename=\"inventory-${sellerId}.csv\"`);
+      res.status(200).send(csv);
+    } catch (error: any) {
+      logger.error("Failed to export inventory CSV", { error: error.message, sellerId: req.seller?.id });
+      res.status(500).json({
+        success: false,
+        message: "Failed to export inventory CSV",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+  /**
+   * PATCH /api/seller/inventory/listings/:id/quick-update
+   * Quick inline update for sellerPrice and/or quantity (dashboard grid)
+   */
+  async quickUpdateListing(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const { id } = req.params;
+      const { sellerPrice, quantity } = req.body || {};
+
+      if (sellerPrice === undefined && quantity === undefined) {
+        res.status(400).json({
+          success: false,
+          message: "At least one field is required: sellerPrice or quantity",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const updated = await inventoryService.updateListing(sellerId, id, {
+        ...(sellerPrice !== undefined ? { sellerPrice: Number(sellerPrice) } : {}),
+        ...(quantity !== undefined ? { quantity: Number(quantity) } : {}),
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Listing updated successfully",
+        data: updated,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Failed to quick update listing", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      res.status(error.message === "Inventory item not found" ? 404 : 500).json({
+        success: false,
+        message: error.message || "Failed to update listing",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+  /**
    * @swagger
    * /api/seller/inventory/catalog:
    *   get:

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { Response } from "express";
+import { UserRole } from "@prisma/client";
 import { AuthenticatedRequest } from "../../../types";
 import { DashboardService } from "../../../services/admin/dashboard/DashboardService";
 import { logger } from "../../../utils/logger";
@@ -51,8 +52,30 @@ export class DashboardController {
 
   getAlerts = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { tier, status } = req.query;
-      const alerts = await this.dashboardService.getAlerts(tier as any, status as any);
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const { tier, status, since, afterId } = req.query;
+      let sinceDate: Date | undefined;
+      if (since && typeof since === "string") {
+        const d = new Date(since);
+        if (!Number.isNaN(d.getTime())) {
+          sinceDate = d;
+        }
+      }
+
+      const alerts = await this.dashboardService.getAlerts(req.admin.role as UserRole, {
+        tier: tier as any,
+        status: status as any,
+        since: sinceDate,
+        afterId: typeof afterId === "string" ? afterId : undefined,
+      });
 
       res.status(200).json({
         success: true,
@@ -81,7 +104,11 @@ export class DashboardController {
       }
 
       const { id } = req.params;
-      await this.dashboardService.acknowledgeAlert(id, req.admin.id);
+      await this.dashboardService.acknowledgeAlert(
+        id,
+        req.admin.id,
+        req.admin.role as UserRole
+      );
 
       res.status(200).json({
         success: true,
@@ -89,6 +116,22 @@ export class DashboardController {
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {
+      if (error.message === "NOT_FOUND_ALERT") {
+        res.status(404).json({
+          success: false,
+          message: "Alert not found",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      if (error.message === "FORBIDDEN_ALERT_ACCESS") {
+        res.status(403).json({
+          success: false,
+          message: "Insufficient permissions for this alert",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
       logger.error("Error in acknowledgeAlert", { error: error.message });
       res.status(500).json({
         success: false,
@@ -121,7 +164,12 @@ export class DashboardController {
         return;
       }
 
-      await this.dashboardService.resolveAlert(id, resolutionNotes, req.admin.id);
+      await this.dashboardService.resolveAlert(
+        id,
+        resolutionNotes,
+        req.admin.id,
+        req.admin.role as UserRole
+      );
 
       res.status(200).json({
         success: true,
@@ -129,6 +177,22 @@ export class DashboardController {
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {
+      if (error.message === "NOT_FOUND_ALERT") {
+        res.status(404).json({
+          success: false,
+          message: "Alert not found",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      if (error.message === "FORBIDDEN_ALERT_ACCESS") {
+        res.status(403).json({
+          success: false,
+          message: "Insufficient permissions for this alert",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
       logger.error("Error in resolveAlert", { error: error.message });
       res.status(500).json({
         success: false,

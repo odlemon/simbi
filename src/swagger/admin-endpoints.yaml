@@ -479,6 +479,31 @@ paths:
         '200':
           description: Product deleted successfully
 
+  /api/admin/products/{id}/complete:
+    delete:
+      tags:
+        - Products
+      summary: Permanently delete master product
+      description: |
+        Removes the master product row, seller inventory rows, cart items, and related data.
+        Blocked (409) if any order line item references this product's inventory. Quote requests
+        for this product are removed. Use soft DELETE /api/admin/products/{id} to hide an active product instead.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Master product deleted permanently
+        '404':
+          description: Product not found
+        '409':
+          description: Product cannot be removed because it was sold (order line items exist)
+
   /api/admin/products/import:
     post:
       tags:

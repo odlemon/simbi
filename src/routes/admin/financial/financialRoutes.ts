@@ -11,6 +11,20 @@ const controller = new FinancialController();
 // Comprehensive Financial Dashboard - All financial data in one endpoint
 router.get("/comprehensive", authenticateAdmin, requireAnyAdmin, controller.getComprehensiveFinancialData.bind(controller));
 
+// Reconciliation (FinOps + Super Admin)
+router.get(
+  "/reconciliation/daily",
+  authenticateAdmin,
+  requireFinOps,
+  controller.getDailyReconciliation.bind(controller)
+);
+router.get(
+  "/reconciliation/window",
+  authenticateAdmin,
+  requireFinOps,
+  controller.getReconciliationWindow.bind(controller)
+);
+
 // Action endpoints (POST/PUT operations)
 router.post("/payouts/process-weekly", authenticateAdmin, requireFinOps, controller.processWeeklyPayouts.bind(controller));
 router.post("/exchange-rate", authenticateAdmin, requireFinOps, controller.updateExchangeRate.bind(controller));

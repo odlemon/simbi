@@ -21,6 +21,7 @@ import payoutRoutes from "./payouts/payoutRoutes";
 import reviewRoutes from "./reviews";
 import notificationRoutes from "./notifications/notificationRoutes";
 import financialPartnersRoutes from "./financialPartners.routes";
+import securityRoutes from "./security/securityRoutes";
 
 const router = Router();
 
@@ -44,6 +45,9 @@ router.use("/orders", orderRoutes);
 
 // Financial routes
 router.use("/financial", financialRoutes);
+
+// Security / fraud alerts
+router.use("/security", securityRoutes);
 
 // Dispute routes
 router.use("/disputes", disputeRoutes);

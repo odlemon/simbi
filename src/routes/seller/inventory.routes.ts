@@ -5,7 +5,7 @@ import { BulkUploadController } from "../../controllers/seller/inventory/BulkUpl
 import { authenticateSellerOrStaff } from "../../middleware/authenticateSellerOrStaff";
 import { requireStaffRole } from "../../middleware/staffRbac";
 import { StaffRole } from "@prisma/client";
-// import { upload } from "../../middleware/upload"; // Temporarily disabled for serverless deployment
+import { csvUpload } from "../../middleware/csvUpload";
 
 const router = Router();
 const controller = new InventoryController();
@@ -43,13 +43,27 @@ router.post("/listings", requireInventoryAccess, (req, res) => controller.create
 router.get("/listings", requireInventoryAccess, (req, res) => controller.getInventory(req, res));
 router.get("/listings/:id", requireInventoryAccess, (req, res) => controller.getInventoryItem(req, res));
 router.put("/listings/:id", requireInventoryAccess, (req, res) => controller.updateListing(req, res));
+router.patch("/listings/:id/quick-update", requireInventoryAccess, (req, res) =>
+  controller.quickUpdateListing(req, res)
+);
 router.delete("/listings/:id", requireInventoryAccess, (req, res) => controller.deleteListing(req, res));
+
+// Low stock alerts (quantity <= lowStockThreshold)
+router.get("/low-stock-alerts", requireInventoryAccess, (req, res) => controller.getLowStockAlerts(req, res));
+
+// CSV export (current listings)
+router.get("/export.csv", requireInventoryAccess, (req, res) => controller.exportInventoryCsv(req, res));
 
 // Adjustment history
 router.get("/listings/:id/history", requireInventoryAccess, (req, res) => controller.getAdjustmentHistory(req, res));
 
-// Bulk upload endpoints - temporarily disabled for serverless deployment
-// router.post("/bulk-upload", upload.single("file"), requireInventoryAccess, (req, res) => bulkUploadController.uploadCSV(req, res));
+// Bulk upload endpoints (serverless-safe memory upload)
+router.post(
+  "/bulk-upload",
+  csvUpload.single("file"),
+  requireInventoryAccess,
+  (req, res) => bulkUploadController.uploadCSV(req, res)
+);
 router.get("/bulk-upload/template", requireInventoryAccess, (req, res) => bulkUploadController.downloadTemplate(req, res));
 router.get("/bulk-upload/:uploadId/status", requireInventoryAccess, (req, res) => controller.getBulkUploadStatus(req, res));
 

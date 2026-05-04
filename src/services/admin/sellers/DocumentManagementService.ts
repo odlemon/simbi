@@ -3,6 +3,7 @@
 import { logger } from "../../../utils/logger";
 import { SellerDocument, DocumentType, DocumentStatus } from "@prisma/client";
 import { prisma } from "../../../utils/database";
+import { SellerNotificationService } from "../../seller/notifications/SellerNotificationService";
 
 export class DocumentManagementService {
   /**
@@ -46,6 +47,19 @@ export class DocumentManagementService {
       // Log view in audit trail
       await this.logDocumentAccess(documentId, adminId, "APPROVED");
 
+      // Notify seller
+      try {
+        const sns = new SellerNotificationService();
+        await sns.createNotification(
+          document.sellerId,
+          "SELLER_DOCUMENT_APPROVED",
+          "Compliance document approved",
+          `Your ${document.documentType} was approved.`
+        );
+      } catch {
+        // non-critical
+      }
+
       logger.info("Document approved", {
         documentId,
         adminId,
@@ -82,6 +96,19 @@ export class DocumentManagementService {
 
       // Log view in audit trail
       await this.logDocumentAccess(documentId, adminId, "REJECTED");
+
+      // Notify seller
+      try {
+        const sns = new SellerNotificationService();
+        await sns.createNotification(
+          document.sellerId,
+          "SELLER_DOCUMENT_REJECTED",
+          "Compliance document rejected",
+          `Your ${document.documentType} was rejected. Reason: ${rejectionReason}`
+        );
+      } catch {
+        // non-critical
+      }
 
       logger.info("Document rejected", {
         documentId,

@@ -304,6 +304,57 @@ export class ProductManagementService {
   }
 
   /**
+   * Permanently remove a master product and dependent rows (listings, cart lines, etc.).
+   * Blocked if any order line references seller inventory for this product (historical orders).
+   * QuoteRequest rows for this product are removed (cascade). CustomProductRequest link is cleared.
+   */
+  async deleteProductPermanently(productId: string, adminId: string): Promise<void> {
+    const product = await prisma.masterProduct.findUnique({ where: { id: productId } });
+    if (!product) {
+      throw new Error("Product not found");
+    }
+
+    const inventoryRows = await prisma.sellerInventory.findMany({
+      where: { masterProductId: productId },
+      select: { id: true },
+    });
+    const inventoryIds = inventoryRows.map((r) => r.id);
+
+    if (inventoryIds.length > 0) {
+      const orderItemCount = await prisma.orderItem.count({
+        where: { inventoryId: { in: inventoryIds } },
+      });
+      if (orderItemCount > 0) {
+        throw new Error(
+          "Cannot delete permanently: this master product has been sold. Order line items still reference it. Deactivate the product instead (soft delete) or keep it for history."
+        );
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.customProductRequest.updateMany({
+        where: { createdProductId: productId },
+        data: { createdProductId: null },
+      });
+
+      if (inventoryIds.length > 0) {
+        await tx.cartItem.deleteMany({
+          where: { inventoryId: { in: inventoryIds } },
+        });
+        await tx.sellerInventory.deleteMany({
+          where: { masterProductId: productId },
+        });
+      }
+
+      await tx.masterProduct.delete({
+        where: { id: productId },
+      });
+    });
+
+    logger.info("Master product deleted permanently", { productId, adminId });
+  }
+
+  /**
    * Search products by vehicle (Make/Model/Year)
    */
   async searchByVehicle(

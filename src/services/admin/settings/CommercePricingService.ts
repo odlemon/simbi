@@ -8,12 +8,15 @@ export type ShippingMode = "fixed" | "distance";
 
 export const COMMERCE_SETTING_KEYS = {
   SHIPPING_MODE: "commerce.shipping.mode",
+  SHIPPING_ENGINE: "commerce.shipping.engine",
   SHIPPING_FLAT_RATE: "commerce.shipping.flatRate",
   SHIPPING_DYNAMIC_PRICE: "commerce.shipping.dynamicPrice",
   SHIPPING_DYNAMIC_DISTANCE_KM: "commerce.shipping.dynamicDistanceKm",
   COMMISSION_PERCENT: "commerce.platform.commissionPercent",
   USE_ADVANCED_PRODUCT_RULES: "commerce.platform.useAdvancedProductRules",
 } as const;
+
+export type ShippingEngineMode = "legacy" | "carrier_v1";
 
 /** Safe subset of commerce pricing for unauthenticated cart/checkout UIs. */
 export interface PublicBuyerShippingConfig {
@@ -157,6 +160,14 @@ export class CommercePricingService {
     };
   }
 
+  async getShippingEngine(): Promise<ShippingEngineMode> {
+    await this.ensureDefaults();
+    const row = await this.settings.getSettingByKey(COMMERCE_SETTING_KEYS.SHIPPING_ENGINE);
+    const v = String(row?.value || "legacy").toLowerCase().trim();
+    if (v === "carrier_v1" || v === "carrier") return "carrier_v1";
+    return "legacy";
+  }
+
   async getSnapshot(): Promise<CommercePricingSnapshot> {
     try {
       const modeRow = await this.settings.getSettingByKey(COMMERCE_SETTING_KEYS.SHIPPING_MODE);
@@ -212,9 +223,23 @@ export class CommercePricingService {
         | "commissionPercent"
         | "useAdvancedProductRules"
       >
-    >,
+    > & { shippingEngine?: ShippingEngineMode },
     adminId: string
   ): Promise<CommercePricingSnapshot> {
+    if (input.shippingEngine !== undefined) {
+      const se = String(input.shippingEngine).toLowerCase();
+      if (se !== "legacy" && se !== "carrier_v1") {
+        throw new Error('shippingEngine must be "legacy" or "carrier_v1"');
+      }
+      await this.settings.upsertSetting(
+        COMMERCE_SETTING_KEYS.SHIPPING_ENGINE,
+        se,
+        "string",
+        "Shipping engine: legacy (flat/distance) or carrier_v1 (matrix + carriers + cache)",
+        adminId
+      );
+    }
+
     if (input.shippingMode !== undefined) {
       const m = String(input.shippingMode).toLowerCase();
       if (m !== "fixed" && m !== "distance") {
@@ -305,6 +330,12 @@ export class CommercePricingService {
   async ensureDefaults(): Promise<void> {
     const adminId = "system";
     const keys = [
+      {
+        key: COMMERCE_SETTING_KEYS.SHIPPING_ENGINE,
+        value: "legacy",
+        dataType: "string",
+        description: "Shipping engine: legacy | carrier_v1",
+      },
       {
         key: COMMERCE_SETTING_KEYS.SHIPPING_MODE,
         value: DEFAULTS.shippingMode,

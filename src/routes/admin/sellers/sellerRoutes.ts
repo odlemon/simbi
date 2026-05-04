@@ -33,6 +33,10 @@ router.get("/documents/pending", authenticateAdmin, requireCompliance, controlle
 router.get("/documents/expiring", authenticateAdmin, requireCompliance, controller.getExpiringDocuments);
 router.get("/documents/expired", authenticateAdmin, requireCompliance, controller.getExpiredDocuments);
 
+// Compliance audit score (0–100)
+router.post("/:id/compliance-audit", authenticateAdmin, requireCompliance, controller.createComplianceAudit);
+router.get("/:id/compliance-audit", authenticateAdmin, requireAnyAdmin, controller.getComplianceAudit);
+
 export default router;
 
 

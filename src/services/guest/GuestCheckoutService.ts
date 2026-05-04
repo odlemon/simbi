@@ -26,6 +26,7 @@ const createGuestOrderSchema = z.object({
   paymentToken: z.string().optional(), // Required for CARD_TOKENIZED
   currency: z.enum(["USD", "ZWL"]).default("USD"),
   deliveryDistanceKm: z.number().min(0).finite().optional(),
+  regionCode: z.string().optional(),
 });
 
 export interface GuestOrderResult {
@@ -138,8 +139,12 @@ export class GuestCheckoutService {
       );
 
       const { CommercePricingService } = await import("../admin/settings/CommercePricingService");
+      const { ShippingQuoteService } = await import("../shipping/ShippingQuoteService");
+      const { MoneyUtils } = await import("../../utils/money");
       const commercePricing = new CommercePricingService();
+      const shippingQuotes = new ShippingQuoteService();
       const pricingSnapshot = await commercePricing.getSnapshot();
+      const shippingEngine = await commercePricing.getShippingEngine();
 
       // Group items by seller (orders are per seller)
       const sellerGroups = new Map<string, typeof items>();
@@ -155,10 +160,25 @@ export class GuestCheckoutService {
       const orders = [];
       for (const [sellerId, sellerItems] of sellerGroups) {
         const subtotal = sellerItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-        const shippingCost = CommercePricingService.computeShippingCost(
+        let shippingCost = CommercePricingService.computeShippingCost(
           pricingSnapshot,
           validatedData.deliveryDistanceKm
         );
+        let shippingQuoteSnapshot: Record<string, unknown> | null = null;
+        if (shippingEngine === "carrier_v1") {
+          const quote = await shippingQuotes.getQuote({
+            sellerId,
+            lines: sellerItems.map((item) => ({
+              masterProductId: item.inventory.masterProductId,
+              quantity: item.quantity,
+            })),
+            deliveryDistanceKm: validatedData.deliveryDistanceKm,
+            regionCode: validatedData.regionCode || "DEFAULT",
+            currency: validatedData.currency,
+          });
+          shippingCost = MoneyUtils.roundToCents(quote.cost);
+          shippingQuoteSnapshot = quote.snapshot;
+        }
         const lineCommissions = sellerItems.map((item) => {
           const rate = commercePricing.getEffectiveProductCommissionRate(
             item.inventory.masterProduct.name,
@@ -192,6 +212,7 @@ export class GuestCheckoutService {
             guestAccessToken: guestAccessToken,
             mobileNumber: validatedData.mobileNumber,
             paymentToken: validatedData.paymentToken || null,
+            ...(shippingQuoteSnapshot && { shippingQuoteSnapshot }),
             items: {
               create: sellerItems.map((item, index) => ({
                 inventoryId: item.inventory.id,

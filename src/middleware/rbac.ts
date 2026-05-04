@@ -95,4 +95,11 @@ export const requireAnyAdmin = requireRole(
   UserRole.TECH_SUPPORT
 );
 
+/** FinOps or Compliance (e.g. suspected fraud flag) */
+export const requireFinOpsOrCompliance = requireRole(
+  UserRole.SUPER_ADMIN,
+  UserRole.FINOPS_ANALYST,
+  UserRole.COMPLIANCE_MANAGER
+);
+
 

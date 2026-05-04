@@ -3,6 +3,8 @@
 import { logger } from "../../../utils/logger";
 import { Carrier, CarrierStatus, Shipment, ShipmentStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../../utils/database";
+import { assertPrismaLogisticsModels } from "../../../utils/assertPrismaLogisticsModels";
+import { CarrierIntegrationService } from "../../shipping/CarrierIntegrationService";
 
 interface CreateCarrierData {
   name: string;
@@ -12,6 +14,13 @@ interface CreateCarrierData {
   apiEndpoint?: string;
   apiKey?: string;
   serviceLevels: any; // JSON array
+  hasApiIntegration?: boolean;
+  integrationConfig?: Record<string, unknown>;
+  integrationSecrets?: Record<string, unknown>;
+  slaConfig?: Record<string, unknown>;
+  supportsWebhook?: boolean;
+  pollingIntervalMinutes?: number;
+  displayPriority?: number;
 }
 
 interface CreateShipmentData {
@@ -25,15 +34,32 @@ interface CreateShipmentData {
 }
 
 export class LogisticsManagementService {
+  private carrierIntegration = new CarrierIntegrationService();
+
+  private sanitizeCarrier(c: Carrier): Record<string, unknown> {
+    const row = c as any;
+    const { apiKey, integrationSecretsJson, ...rest } = row;
+    const secrets = (integrationSecretsJson || {}) as Record<string, unknown>;
+    const integrationSecretsMasked =
+      Object.keys(secrets).length > 0
+        ? Object.fromEntries(Object.keys(secrets).map((k) => [k, "***"]))
+        : null;
+    return {
+      ...rest,
+      apiKey: apiKey ? "***" : null,
+      integrationSecretsMasked,
+    };
+  }
 
   /**
    * Get all carriers
    */
-  async getAllCarriers(): Promise<Carrier[]> {
+  async getAllCarriers(): Promise<Record<string, unknown>[]> {
     try {
-      return await prisma.carrier.findMany({
+      const rows = await prisma.carrier.findMany({
         orderBy: { name: "asc" },
       });
+      return rows.map((c) => this.sanitizeCarrier(c));
     } catch (error: any) {
       logger.error("Error fetching carriers", { error: error.message });
       throw error;
@@ -43,11 +69,12 @@ export class LogisticsManagementService {
   /**
    * Get carrier by ID
    */
-  async getCarrierById(carrierId: string): Promise<Carrier | null> {
+  async getCarrierById(carrierId: string): Promise<Record<string, unknown> | null> {
     try {
-      return await prisma.carrier.findUnique({
+      const c = await prisma.carrier.findUnique({
         where: { id: carrierId },
       });
+      return c ? this.sanitizeCarrier(c) : null;
     } catch (error: any) {
       logger.error("Error fetching carrier", { error: error.message, carrierId });
       throw error;
@@ -57,32 +84,63 @@ export class LogisticsManagementService {
   /**
    * Create carrier
    */
-  async createCarrier(data: CreateCarrierData, adminId: string): Promise<Carrier> {
+  async createCarrier(data: CreateCarrierData, adminId: string): Promise<Record<string, unknown>> {
     try {
+      const name = typeof data.name === "string" ? data.name.trim() : "";
+      const code = typeof data.code === "string" ? data.code.trim() : "";
+      const contactEmail = typeof data.contactEmail === "string" ? data.contactEmail.trim() : "";
+      const contactPhone = typeof data.contactPhone === "string" ? data.contactPhone.trim() : "";
+
+      if (!name) {
+        throw new Error("Carrier name is required");
+      }
+      if (!code) {
+        throw new Error(
+          "Carrier code is required (short unique identifier, e.g. FEDEX_ZW). Send JSON field `code`."
+        );
+      }
+      if (!contactEmail) {
+        throw new Error("contactEmail is required");
+      }
+      if (!contactPhone) {
+        throw new Error("contactPhone is required");
+      }
+
       // Check if carrier code already exists
       const existing = await prisma.carrier.findUnique({
-        where: { code: data.code },
+        where: { code },
       });
 
       if (existing) {
         throw new Error("Carrier with this code already exists");
       }
 
+      const hasApi =
+        data.hasApiIntegration ??
+        !!(data.apiEndpoint || data.integrationConfig);
+
       const carrier = await prisma.carrier.create({
         data: {
-          name: data.name,
-          code: data.code,
-          contactEmail: data.contactEmail,
-          contactPhone: data.contactPhone,
+          name,
+          code,
+          contactEmail,
+          contactPhone,
           apiEndpoint: data.apiEndpoint,
-          apiKey: data.apiKey, // TODO: Encrypt in production
-          serviceLevels: data.serviceLevels,
+          apiKey: data.apiKey,
+          serviceLevels: data.serviceLevels ?? [],
           status: CarrierStatus.ACTIVE,
+          hasApiIntegration: hasApi,
+          integrationConfigJson: data.integrationConfig ?? undefined,
+          integrationSecretsJson: data.integrationSecrets ?? undefined,
+          slaConfigJson: data.slaConfig ?? undefined,
+          supportsWebhook: data.supportsWebhook ?? true,
+          pollingIntervalMinutes: data.pollingIntervalMinutes ?? 30,
+          displayPriority: data.displayPriority ?? 0,
         },
       });
 
       logger.info("Carrier created", { carrierId: carrier.id, name: carrier.name, adminId });
-      return carrier;
+      return this.sanitizeCarrier(carrier);
     } catch (error: any) {
       logger.error("Error creating carrier", { error: error.message });
       throw error;
@@ -96,20 +154,41 @@ export class LogisticsManagementService {
     carrierId: string,
     data: Partial<CreateCarrierData>,
     adminId: string
-  ): Promise<Carrier> {
+  ): Promise<Record<string, unknown>> {
     try {
       const carrier = await prisma.carrier.update({
         where: { id: carrierId },
         data: {
           ...(data.name && { name: data.name }),
+          ...(data.contactEmail && { contactEmail: data.contactEmail }),
+          ...(data.contactPhone && { contactPhone: data.contactPhone }),
           ...(data.apiEndpoint !== undefined && { apiEndpoint: data.apiEndpoint }),
           ...(data.apiKey !== undefined && { apiKey: data.apiKey }),
           ...(data.serviceLevels && { serviceLevels: data.serviceLevels }),
+          ...(data.hasApiIntegration !== undefined && {
+            hasApiIntegration: data.hasApiIntegration,
+          }),
+          ...(data.integrationConfig !== undefined && {
+            integrationConfigJson: data.integrationConfig,
+          }),
+          ...(data.integrationSecrets !== undefined && {
+            integrationSecretsJson: data.integrationSecrets,
+          }),
+          ...(data.slaConfig !== undefined && { slaConfigJson: data.slaConfig }),
+          ...(data.supportsWebhook !== undefined && {
+            supportsWebhook: data.supportsWebhook,
+          }),
+          ...(data.pollingIntervalMinutes !== undefined && {
+            pollingIntervalMinutes: data.pollingIntervalMinutes,
+          }),
+          ...(data.displayPriority !== undefined && {
+            displayPriority: data.displayPriority,
+          }),
         },
       });
 
       logger.info("Carrier updated", { carrierId, adminId });
-      return carrier;
+      return this.sanitizeCarrier(carrier);
     } catch (error: any) {
       logger.error("Error updating carrier", { error: error.message, carrierId });
       throw error;
@@ -177,6 +256,7 @@ export class LogisticsManagementService {
    * Get shipment by ID
    */
   async getShipmentById(shipmentId: string): Promise<any> {
+    assertPrismaLogisticsModels(prisma);
     try {
       return await prisma.shipment.findUnique({
         where: { id: shipmentId },
@@ -189,6 +269,7 @@ export class LogisticsManagementService {
             },
           },
           carrier: true,
+          trackingEvents: { orderBy: { createdAt: "asc" } },
         },
       });
     } catch (error: any) {
@@ -243,9 +324,15 @@ export class LogisticsManagementService {
     status: ShipmentStatus,
     location: string,
     notes: string,
-    adminId: string
+    adminId: string,
+    meta?: {
+      rawStatus?: string;
+      rawPayload?: unknown;
+      source?: string;
+    }
   ): Promise<Shipment> {
     try {
+      assertPrismaLogisticsModels(prisma);
       const shipment = await prisma.shipment.findUnique({
         where: { id: shipmentId },
       });
@@ -285,6 +372,24 @@ export class LogisticsManagementService {
       const updatedShipment = await prisma.shipment.update({
         where: { id: shipmentId },
         data: updateData,
+      });
+
+      const source =
+        meta?.source ||
+        (adminId === "SYSTEM_WEBHOOK" ? "WEBHOOK" : "ADMIN");
+
+      await prisma.shipmentTrackingEvent.create({
+        data: {
+          shipmentId,
+          standardStatus: status,
+          rawStatus: meta?.rawStatus ?? null,
+          location,
+          notes,
+          source,
+          rawPayload: meta?.rawPayload
+            ? (meta.rawPayload as object)
+            : undefined,
+        },
       });
 
       logger.info("Shipment status updated", {
@@ -500,7 +605,12 @@ export class LogisticsManagementService {
         internalStatus,
         webhookData.location,
         `[Webhook] ${webhookData.notes}`,
-        "SYSTEM_WEBHOOK"
+        "SYSTEM_WEBHOOK",
+        {
+          rawStatus: webhookData.status,
+          source: "WEBHOOK",
+          rawPayload: webhookData,
+        }
       );
 
       logger.info("Webhook processed successfully", {
@@ -537,18 +647,20 @@ export class LogisticsManagementService {
       "out-for-delivery": "OUT_FOR_DELIVERY",
       "failed": "FAILED_DELIVERY",
       "returned": "RETURNED_TO_SENDER",
-      
-      // FedEx status codes
-      "IT": "IN_TRANSIT",
-      "OD": "OUT_FOR_DELIVERY",
-      "DL": "DELIVERED",
-      "DE": "FAILED_DELIVERY",
-      
-      // Generic
-      "pending": "PENDING_PICKUP",
-      "in_transit": "IN_TRANSIT",
-      "out_for_delivery": "OUT_FOR_DELIVERY",
-      "exception": "FAILED_DELIVERY",
+
+      // FedEx-style short codes
+      it: "IN_TRANSIT",
+      od: "OUT_FOR_DELIVERY",
+      dl: "DELIVERED",
+      de: "FAILED_DELIVERY",
+
+      // Generic + human labels
+      pending: "PENDING_PICKUP",
+      "pending-pickup": "PENDING_PICKUP",
+      "pendingpickup": "PENDING_PICKUP",
+      "in-transit": "IN_TRANSIT",
+      "out-for-delivery": "OUT_FOR_DELIVERY",
+      exception: "FAILED_DELIVERY",
     };
 
     const normalizedStatus = carrierStatus.toLowerCase().replace(/[_\s]/g, "-");
@@ -569,23 +681,51 @@ export class LogisticsManagementService {
         throw new Error("Shipment not found");
       }
 
-      // Skip if already delivered or failed
       if (["DELIVERED", "FAILED_DELIVERY", "RETURNED_TO_SENDER"].includes(shipment.status)) {
         return;
       }
 
-      // TODO: Implement actual carrier API polling
-      // For now, log that polling would happen
-      logger.info("Would poll carrier API for shipment update", {
-        shipmentId,
-        trackingNumber: shipment.trackingNumber,
-        carrierId: shipment.carrierId,
+      const carrier = shipment.carrier;
+      const cfg = (carrier.integrationConfigJson as any) || {};
+      if (!carrier.hasApiIntegration || !cfg.trackingPollPath) {
+        await prisma.shipment.update({
+          where: { id: shipmentId },
+          data: { lastPolledAt: new Date() },
+        });
+        return;
+      }
+
+      const poll = await this.carrierIntegration.pollTracking(
+        carrier,
+        shipment.trackingNumber
+      );
+
+      await prisma.shipment.update({
+        where: { id: shipmentId },
+        data: { lastPolledAt: new Date() },
       });
 
-      // In production, this would:
-      // 1. Call carrier.apiEndpoint with apiKey
-      // 2. Parse response
-      // 3. Update shipment status
+      if (!poll.ok || !poll.status) {
+        return;
+      }
+
+      const internal = this.mapCarrierStatusToInternal(poll.status);
+      if (internal === shipment.status) {
+        return;
+      }
+
+      await this.updateShipmentStatus(
+        shipmentId,
+        internal,
+        poll.location || "Unknown",
+        poll.notes || "[Poll]",
+        "SYSTEM_POLL",
+        {
+          rawStatus: poll.status,
+          source: "POLL",
+          rawPayload: poll.raw,
+        }
+      );
     } catch (error: any) {
       logger.error("Error polling carrier API", {
         error: error.message,
@@ -609,13 +749,19 @@ export class LogisticsManagementService {
             in: ["PENDING_PICKUP", "IN_TRANSIT", "OUT_FOR_DELIVERY"],
           },
         },
-        select: { id: true },
+        include: { carrier: true },
       });
 
       let updated = 0;
+      const now = Date.now();
 
       for (const shipment of pendingShipments) {
         try {
+          const intervalMin = shipment.carrier?.pollingIntervalMinutes ?? 30;
+          const last = shipment.lastPolledAt?.getTime() ?? 0;
+          if (last && now - last < intervalMin * 60 * 1000) {
+            continue;
+          }
           await this.pollCarrierForUpdates(shipment.id);
           updated++;
         } catch (error) {
@@ -701,6 +847,104 @@ export class LogisticsManagementService {
       logger.error("Error calculating return shipping cost:", error);
       throw error;
     }
+  }
+
+  async listLogisticsRegions() {
+    assertPrismaLogisticsModels(prisma);
+    return prisma.logisticsRegion.findMany({
+      orderBy: { regionCode: "asc" },
+      include: { primaryCarrier: { select: { id: true, name: true, code: true } } },
+    });
+  }
+
+  async createLogisticsRegion(data: {
+    regionCode: string;
+    name?: string;
+    primaryCarrierId: string;
+    failoverCarrierIds: string[];
+  }) {
+    assertPrismaLogisticsModels(prisma);
+    return prisma.logisticsRegion.create({
+      data: {
+        regionCode: data.regionCode.toUpperCase(),
+        name: data.name,
+        primaryCarrierId: data.primaryCarrierId,
+        failoverCarrierIds: data.failoverCarrierIds || [],
+      },
+    });
+  }
+
+  async updateLogisticsRegion(
+    id: string,
+    data: Partial<{
+      regionCode: string;
+      name: string | null;
+      primaryCarrierId: string;
+      failoverCarrierIds: string[];
+    }>
+  ) {
+    assertPrismaLogisticsModels(prisma);
+    return prisma.logisticsRegion.update({
+      where: { id },
+      data: {
+        ...(data.regionCode && { regionCode: data.regionCode.toUpperCase() }),
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.primaryCarrierId && { primaryCarrierId: data.primaryCarrierId }),
+        ...(data.failoverCarrierIds && { failoverCarrierIds: data.failoverCarrierIds }),
+      },
+    });
+  }
+
+  async deleteLogisticsRegion(id: string) {
+    assertPrismaLogisticsModels(prisma);
+    await prisma.logisticsRegion.delete({ where: { id } });
+  }
+
+  async listShippingRateMatrices() {
+    assertPrismaLogisticsModels(prisma);
+    return prisma.shippingRateMatrix.findMany({
+      where: { isActive: true },
+      orderBy: [{ currency: "asc" }, { tier: "asc" }],
+    });
+  }
+
+  async upsertShippingRateMatrix(data: {
+    currency: any;
+    tier: string;
+    maxLengthCm: number;
+    maxWidthCm: number;
+    maxHeightCm: number;
+    maxWeightKg: number;
+    baseCost: number;
+    baselineEtaHours: number;
+    isActive?: boolean;
+  }) {
+    assertPrismaLogisticsModels(prisma);
+    return prisma.shippingRateMatrix.upsert({
+      where: {
+        currency_tier: { currency: data.currency, tier: data.tier },
+      },
+      create: {
+        currency: data.currency,
+        tier: data.tier,
+        maxLengthCm: data.maxLengthCm,
+        maxWidthCm: data.maxWidthCm,
+        maxHeightCm: data.maxHeightCm,
+        maxWeightKg: data.maxWeightKg,
+        baseCost: data.baseCost,
+        baselineEtaHours: data.baselineEtaHours,
+        isActive: data.isActive ?? true,
+      },
+      update: {
+        maxLengthCm: data.maxLengthCm,
+        maxWidthCm: data.maxWidthCm,
+        maxHeightCm: data.maxHeightCm,
+        maxWeightKg: data.maxWeightKg,
+        baseCost: data.baseCost,
+        baselineEtaHours: data.baselineEtaHours,
+        isActive: data.isActive ?? true,
+      },
+    });
   }
 }
 
