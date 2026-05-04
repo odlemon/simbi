@@ -9,6 +9,7 @@ import { errorMiddleware } from "./middleware/error";
 import { prisma, checkDatabaseConnection } from "./utils/database";
 import { envConfig } from "./utils/env";
 import { logger } from "./utils/logger";
+import { LogisticsManagementService } from "./services/admin/logistics/LogisticsManagementService";
 
 // Load environment variables
 dotenv.config();
@@ -427,6 +428,27 @@ const startServer = async (): Promise<void> => {
         port: port,
       });
       logger.info(`📚 API Documentation available at http://localhost:${port}/api-docs`);
+
+      if (process.env.ENABLE_SHIPPING_POLL !== "false" && !process.env.VERCEL) {
+        const THIRTY_MIN_MS = 30 * 60 * 1000;
+        const logistics = new LogisticsManagementService();
+        const runShippingPoll = () => {
+          logistics
+            .batchPollPendingShipments()
+            .then((r) =>
+              logger.info("Shipping poll batch completed", {
+                checked: r?.checked,
+                updated: r?.updated,
+              })
+            )
+            .catch((e: any) =>
+              logger.warn("Shipping poll batch failed", { error: e?.message })
+            );
+        };
+        setTimeout(runShippingPoll, 60_000);
+        setInterval(runShippingPoll, THIRTY_MIN_MS);
+        logger.info("Scheduled shipment carrier polling (30m interval; set ENABLE_SHIPPING_POLL=false to disable)");
+      }
     });
   } catch (error: any) {
     logger.error("Failed to start server", { error: error.message });

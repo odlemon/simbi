@@ -154,6 +154,7 @@ model Seller {
   reviewResponses           ReviewResponse[]
   payrollRuns               PayrollRun[]
   notifications             SellerNotification[]
+  complianceAudits          ComplianceAudit[]
 
   @@index([email])
   @@index([status])
@@ -959,6 +960,8 @@ model Order {
   guestShippingCity        String?                 // City
   guestShippingProvince    String?                 // Province
   guestShippingPostalCode  String?                 // Postal code
+  /// Snapshot from ShippingQuoteService when commerce.shipping.engine is carrier_v1 (audit).
+  shippingQuoteSnapshot Json?
   createdAt             DateTime                    @default(now())
   updatedAt             DateTime                    @updatedAt
   disputes              Dispute?
@@ -1290,12 +1293,90 @@ model Carrier {
   apiKey            String?
   serviceLevels     Json
   status            CarrierStatus @default(ACTIVE)
+  /// Non-secret: rateQuotePath, trackingPollPath, method, header templates (loan-style).
+  integrationConfigJson   Json?
+  /// Secrets: apiKey, webhookSigningSecret — never returned in list APIs.
+  integrationSecretsJson  Json?
+  /// SLA JSON: pickupSlaHours, deliverySlaByTier { SMALL, MEDIUM, LARGE }.
+  slaConfigJson             Json?
+  supportsWebhook           Boolean @default(true)
+  pollingIntervalMinutes    Int     @default(30)
+  displayPriority             Int     @default(0)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   shipments         Shipment[]
+  logisticsRegionsPrimary LogisticsRegion[] @relation("LogisticsRegionPrimary")
 
   @@index([code])
   @@map("carriers")
+}
+
+/// Regional primary carrier + ordered failover (JSON array of carrier UUID strings).
+model LogisticsRegion {
+  id                 String   @id @default(uuid())
+  regionCode         String   @unique
+  name               String?
+  primaryCarrierId   String
+  failoverCarrierIds Json
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  primaryCarrier     Carrier  @relation("LogisticsRegionPrimary", fields: [primaryCarrierId], references: [id])
+
+  @@index([primaryCarrierId])
+  @@map("logistics_regions")
+}
+
+/// 3-tier weight/dimension matrix per currency (SMALL | MEDIUM | LARGE).
+model ShippingRateMatrix {
+  id               String   @id @default(uuid())
+  currency         Currency
+  tier             String
+  maxLengthCm      Float
+  maxWidthCm       Float
+  maxHeightCm      Float
+  maxWeightKg      Float
+  baseCost         Float
+  baselineEtaHours Int
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([currency, tier])
+  @@map("shipping_rate_matrices")
+}
+
+model ShippingQuoteCache {
+  id                 String   @id @default(uuid())
+  cacheKey           String   @unique
+  tier               String
+  currency           Currency
+  cost               Float
+  etaHours           Float
+  paddedEtaHours     Float
+  carrierId          String?
+  rawCarrierResponse Json?
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("shipping_quote_caches")
+}
+
+model ShipmentTrackingEvent {
+  id             String         @id @default(uuid())
+  shipmentId     String
+  standardStatus ShipmentStatus
+  rawStatus      String?
+  location       String?        @db.Text
+  notes          String?        @db.Text
+  source         String
+  rawPayload     Json?
+  createdAt      DateTime       @default(now())
+  shipment       Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([shipmentId, createdAt])
+  @@map("shipment_tracking_events")
 }
 
 model Shipment {
@@ -1311,10 +1392,12 @@ model Shipment {
   estimatedDelivery DateTime
   actualDelivery    DateTime?
   trackingHistory   Json?
+  lastPolledAt      DateTime?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   carrier           Carrier        @relation(fields: [carrierId], references: [id])
   order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  trackingEvents    ShipmentTrackingEvent[]
 
   @@index([orderId])
   @@index([trackingNumber])
@@ -1500,6 +1583,21 @@ model SellerNotification {
   @@map("seller_notifications")
 }
 
+model ComplianceAudit {
+  id        String   @id @default(uuid())
+  sellerId  String
+  score     Int
+  notes     String?  @db.Text
+  auditedBy String
+  createdAt DateTime @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([sellerId, createdAt])
+  @@map("compliance_audits")
+}
+
 model CustomProductRequest {
   id               String                     @id @default(uuid())
   sellerId         String
@@ -1511,6 +1609,16 @@ model CustomProductRequest {
   partCode         String?
   description      String?                    @db.Text
   imageUrls        Json?
+  /// URL of the OEM specification sheet (PDF) — required on new submissions
+  specSheetUrl     String?                    @db.Text
+  /// Supplier documentation for mandatory counterfeit check (array of PDF URLs)
+  supplierDocUrls  Json?
+  /// Admin must approve/reject within 72h of submission (SLO)
+  reviewDueAt      DateTime?
+  counterfeitCheckVerified   Boolean   @default(false)
+  counterfeitCheckVerifiedAt DateTime?
+  counterfeitCheckVerifiedBy String?
+  counterfeitCheckNotes      String?   @db.Text
   status           CustomProductRequestStatus @default(PENDING)
   adminNotes       String?                    @db.Text
   reviewedBy       String?
@@ -1524,6 +1632,8 @@ model CustomProductRequest {
   @@index([sellerId])
   @@index([status])
   @@index([createdAt])
+  @@index([reviewDueAt])
+  @@index([status, reviewDueAt])
   @@map("custom_product_requests")
 }
 

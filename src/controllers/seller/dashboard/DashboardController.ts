@@ -8,6 +8,61 @@ const dashboardService = new DashboardService();
 
 export class DashboardController {
   /**
+   * GET /api/seller/dashboard/fulfilment-queue
+   */
+  async getFulfilmentQueue(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const previewLimit = parseInt(req.query.previewLimit as string) || 10;
+      const data = await dashboardService.getFulfilmentQueue(sellerId, previewLimit);
+      res.status(200).json({
+        success: true,
+        message: "Fulfilment queue retrieved successfully",
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Failed to get fulfilment queue", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      res.status(500).json({
+        success: false,
+        message: "Failed to get fulfilment queue",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
+   * GET /api/seller/dashboard/compliance-health
+   */
+  async getComplianceHealth(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const sellerId = req.seller!.id;
+      const data = await dashboardService.getComplianceHealth(sellerId);
+      res.status(200).json({
+        success: true,
+        message: "Compliance health retrieved successfully",
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Failed to get compliance health", {
+        sellerId: req.seller?.id,
+        error: error.message,
+      });
+      res.status(500).json({
+        success: false,
+        message: "Failed to get compliance health",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /**
    * @swagger
    * /api/seller/dashboard/stats:
    *   get:

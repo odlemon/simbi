@@ -1,8 +1,9 @@
 // @ts-nocheck
 
 import { logger } from "../../../utils/logger";
-import { AdminAlert, AlertTier, AlertStatus } from "@prisma/client";
+import { AdminAlert, AlertTier, AlertStatus, UserRole } from "@prisma/client";
 import { prisma } from "../../../utils/database";
+import { adminCanAccessAlert } from "../alerts/alertAudience";
 
 export class DashboardService {
 
@@ -464,17 +465,42 @@ export class DashboardService {
   }
 
   /**
-   * Get all alerts with filtering
+   * Get alerts visible to this admin role (RBAC), with optional tier/status and incremental filters.
    */
   async getAlerts(
-    tier?: AlertTier,
-    status?: AlertStatus
+    adminRole: UserRole,
+    options?: {
+      tier?: AlertTier;
+      status?: AlertStatus;
+      since?: Date;
+      afterId?: string;
+    }
   ): Promise<AdminAlert[]> {
     try {
-      return await prisma.adminAlert.findMany({
+      let createdAtFilter: { gte?: Date; gt?: Date } | undefined;
+      if (options?.afterId) {
+        const ref = await prisma.adminAlert.findUnique({
+          where: { id: options.afterId },
+          select: { createdAt: true },
+        });
+        if (ref?.createdAt) {
+          createdAtFilter = { gt: ref.createdAt };
+        }
+      }
+      if (options?.since) {
+        createdAtFilter = {
+          ...(createdAtFilter || {}),
+          gte: options.since,
+        };
+      }
+
+      const rows = await prisma.adminAlert.findMany({
         where: {
-          ...(tier && { tier }),
-          ...(status && { status }),
+          ...(options?.tier && { tier: options.tier }),
+          ...(options?.status && { status: options.status }),
+          ...(createdAtFilter && Object.keys(createdAtFilter).length
+            ? { createdAt: createdAtFilter }
+            : {}),
         },
         include: {
           assignedAdmin: {
@@ -482,11 +508,16 @@ export class DashboardService {
           },
         },
         orderBy: [
-          { tier: "asc" }, // Critical first
+          { tier: "asc" },
           { createdAt: "desc" },
         ],
-        take: 100,
+        take: 300,
       }) as any;
+
+      const visible = rows.filter((a: AdminAlert) =>
+        adminCanAccessAlert(a.alertCode, adminRole)
+      );
+      return visible.slice(0, 100);
     } catch (error: any) {
       logger.error("Error fetching alerts", { error: error.message });
       throw error;
@@ -528,10 +559,24 @@ export class DashboardService {
   }
 
   /**
-   * Acknowledge alert
+   * Acknowledge alert (RBAC: admin must be in audience for alertCode)
    */
-  async acknowledgeAlert(alertId: string, adminId: string): Promise<void> {
+  async acknowledgeAlert(
+    alertId: string,
+    adminId: string,
+    adminRole: UserRole
+  ): Promise<void> {
     try {
+      const alert = await prisma.adminAlert.findUnique({
+        where: { id: alertId },
+      });
+      if (!alert) {
+        throw new Error("NOT_FOUND_ALERT");
+      }
+      if (!adminCanAccessAlert(alert.alertCode, adminRole)) {
+        throw new Error("FORBIDDEN_ALERT_ACCESS");
+      }
+
       await prisma.adminAlert.update({
         where: { id: alertId },
         data: {
@@ -549,14 +594,25 @@ export class DashboardService {
   }
 
   /**
-   * Resolve alert
+   * Resolve alert (RBAC: admin must be in audience for alertCode)
    */
   async resolveAlert(
     alertId: string,
     resolutionNotes: string,
-    adminId: string
+    adminId: string,
+    adminRole: UserRole
   ): Promise<void> {
     try {
+      const alert = await prisma.adminAlert.findUnique({
+        where: { id: alertId },
+      });
+      if (!alert) {
+        throw new Error("NOT_FOUND_ALERT");
+      }
+      if (!adminCanAccessAlert(alert.alertCode, adminRole)) {
+        throw new Error("FORBIDDEN_ALERT_ACCESS");
+      }
+
       await prisma.adminAlert.update({
         where: { id: alertId },
         data: {

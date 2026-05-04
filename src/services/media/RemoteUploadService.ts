@@ -3,9 +3,17 @@ import axios from "axios";
 import FormData from "form-data";
 import { logger } from "../../utils/logger";
 
-// Hardcoded Ubuntu server upload endpoint
+// Hardcoded Ubuntu server upload endpoint (PDFs use same /upload + field "images" as images — not /upload-documents, so older single-route deploys work)
 const UPLOAD_SERVICE_URL = "http://31.220.82.129:3050/upload";
 const MEDIA_BASE_URL = "http://31.220.82.129/uploads";
+
+export type RemoteUploadFolder =
+  | "returns"
+  | "pre-shipment"
+  | "products"
+  | "temp"
+  | "custom-product-docs"
+  | "seller-documents";
 
 export interface RemoteUploadResult {
   success: boolean;
@@ -25,7 +33,7 @@ export class RemoteUploadService {
    */
   async uploadFiles(
     files: Express.Multer.File[] | Express.Multer.File,
-    type: "returns" | "pre-shipment" | "products" | "temp" = "temp"
+    type: RemoteUploadFolder = "temp"
   ): Promise<RemoteUploadResult> {
     try {
       const fileArray = Array.isArray(files) ? files : [files];
@@ -89,6 +97,17 @@ export class RemoteUploadService {
         error: error.message || "Failed to upload files to remote server",
       };
     }
+  }
+
+  /**
+   * Upload PDFs via the same POST /upload as images (field name "images", type= e.g. custom-product-docs).
+   * Avoids /upload-documents (not present on all deployed upload services).
+   */
+  async uploadPdfFiles(
+    files: Express.Multer.File[] | Express.Multer.File,
+    type: RemoteUploadFolder = "custom-product-docs"
+  ): Promise<RemoteUploadResult> {
+    return this.uploadFiles(files, type);
   }
 
   /**

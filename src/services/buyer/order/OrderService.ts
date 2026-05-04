@@ -5,6 +5,8 @@ import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
 import { CouponService } from "../../CouponService";
 import { CommercePricingService } from "../../admin/settings/CommercePricingService";
+import { ShippingQuoteService } from "../../shipping/ShippingQuoteService";
+import { MoneyUtils } from "../../../utils/money";
 
 
 
@@ -34,7 +36,9 @@ const createOrderSchema = z.object({
   notes: z.string().optional(),
   couponCode: z.string().optional(), // Optional coupon code
   /** When admin shipping mode is `distance`, used to compute shipping per seller order; optional. */
-  deliveryDistanceKm: z.number().min(0).finite().optional()
+  deliveryDistanceKm: z.number().min(0).finite().optional(),
+  /** Logistics region for carrier_v1 quotes (defaults to DEFAULT). */
+  regionCode: z.string().optional(),
 }).refine(
   (data) => {
     // If shippingAddress is provided (even as empty object), it takes precedence
@@ -68,7 +72,8 @@ const createOrderFromCartSchema = z.object({
   costCenter: z.string().optional(),
   notes: z.string().optional(),
   couponCode: z.string().optional(), // Optional coupon code
-  deliveryDistanceKm: z.number().min(0).finite().optional()
+  deliveryDistanceKm: z.number().min(0).finite().optional(),
+  regionCode: z.string().optional(),
 });
 
 const reorderFromOrderSchema = z.object({
@@ -77,7 +82,8 @@ const reorderFromOrderSchema = z.object({
   costCenter: z.string().optional(),
   notes: z.string().optional(),
   couponCode: z.string().optional(), // Optional coupon code
-  deliveryDistanceKm: z.number().min(0).finite().optional()
+  deliveryDistanceKm: z.number().min(0).finite().optional(),
+  regionCode: z.string().optional(),
 });
 
 const updateOrderStatusSchema = z.object({
@@ -106,6 +112,7 @@ export interface OrderData {
   notes?: string;
   couponCode?: string;
   deliveryDistanceKm?: number;
+  regionCode?: string;
 }
 
 export interface OrderItemData {
@@ -170,6 +177,16 @@ export interface ShippingInfo {
   estimatedDelivery?: Date;
   actualDelivery?: Date;
   carrier?: string;
+  /** Standardized carrier timeline (webhook / poll / admin), ascending by time. */
+  trackingEvents?: Array<{
+    standardStatus: string;
+    statusLabel: string;
+    rawStatus: string | null;
+    location: string | null;
+    notes: string | null;
+    source: string;
+    createdAt: Date;
+  }>;
 }
 
 export interface OrderTimelineEvent {
@@ -187,13 +204,27 @@ export interface CommissionBreakdown {
   commissionRate: number;
 }
 
+function shipmentStatusLabel(standardStatus: string): string {
+  const labels: Record<string, string> = {
+    PENDING_PICKUP: "Pending pickup",
+    IN_TRANSIT: "In transit",
+    OUT_FOR_DELIVERY: "Out for delivery",
+    DELIVERED: "Delivered",
+    FAILED_DELIVERY: "Delivery exception",
+    RETURNED_TO_SENDER: "Returned to sender",
+  };
+  return labels[standardStatus] || standardStatus;
+}
+
 export class OrderService {
   private couponService: CouponService;
   private commercePricing: CommercePricingService;
+  private shippingQuotes: ShippingQuoteService;
 
   constructor() {
     this.couponService = new CouponService();
     this.commercePricing = new CommercePricingService();
+    this.shippingQuotes = new ShippingQuoteService();
   }
 
   /**
@@ -210,7 +241,8 @@ export class OrderService {
         costCenter: orderData.costCenter,
         notes: orderData.notes,
         couponCode: orderData.couponCode,
-        deliveryDistanceKm: orderData.deliveryDistanceKm
+        deliveryDistanceKm: orderData.deliveryDistanceKm,
+        regionCode: orderData.regionCode,
       });
 
       // Generate order number
@@ -270,6 +302,7 @@ export class OrderService {
 
           return {
             inventoryId: sellerListing.id,
+            masterProductId: sellerListing.masterProductId,
             sellerId: sellerListing.sellerId,
             productName: sellerListing.masterProduct.name,
             partNumber: sellerListing.masterProduct.oemPartNumber,
@@ -460,6 +493,8 @@ export class OrderService {
         totalDiscountAmount = 0; // Will be calculated per seller order based on matching products
       }
 
+      const shippingEngine = await this.commercePricing.getShippingEngine();
+
       // Create one order per seller (grouped by supplier)
       const orders = await Promise.all(
         Array.from(itemsBySeller.entries()).map(async ([sellerId, sellerItems]) => {
@@ -502,9 +537,26 @@ export class OrderService {
               sellerDiscountAmount = 0;
             }
           }
+
+          let perSellerShipping = shippingCostPerSeller;
+          let shippingQuoteSnapshot: Record<string, unknown> | null = null;
+          if (shippingEngine === "carrier_v1") {
+            const quote = await this.shippingQuotes.getQuote({
+              sellerId,
+              lines: sellerItems.map((i) => ({
+                masterProductId: i.masterProductId,
+                quantity: i.quantity,
+              })),
+              deliveryDistanceKm: validatedData.deliveryDistanceKm,
+              regionCode: validatedData.regionCode || "DEFAULT",
+              currency: "USD",
+            });
+            perSellerShipping = MoneyUtils.roundToCents(quote.cost);
+            shippingQuoteSnapshot = quote.snapshot;
+          }
           
           const sellerTotal =
-            sellerTotalBeforeDiscount - sellerDiscountAmount + shippingCostPerSeller;
+            sellerTotalBeforeDiscount - sellerDiscountAmount + perSellerShipping;
 
           // Generate unique order number for this seller
           const sellerOrderNumber = await this.generateOrderNumber();
@@ -519,14 +571,15 @@ export class OrderService {
               poNumber: validatedData.poNumber,
               costCenter: validatedData.costCenter,
               subtotal: sellerSubtotal,
-              shippingCost: shippingCostPerSeller,
+              shippingCost: perSellerShipping,
               platformCommission: sellerCommission,
               discountAmount: sellerDiscountAmount,
               couponCode: couponValidation?.isValid ? couponValidation.coupon.code : null,
               totalAmount: sellerTotal,
               currency: 'USD', // TODO: Get from buyer preferences
               status: 'PENDING_PAYMENT',
-              paymentStatus: 'PENDING'
+              paymentStatus: 'PENDING',
+              ...(shippingQuoteSnapshot && { shippingQuoteSnapshot }),
             },
             include: {
               seller: {
@@ -1000,7 +1053,8 @@ export class OrderService {
         costCenter: validatedData.costCenter || originalOrder.costCenter || undefined,
         notes: validatedData.notes || `Reordered from order ${originalOrder.orderNumber}`,
         couponCode: validatedData.couponCode || undefined,
-        deliveryDistanceKm: validatedData.deliveryDistanceKm
+        deliveryDistanceKm: validatedData.deliveryDistanceKm,
+        regionCode: validatedData.regionCode,
       };
 
       // createOrder will handle seller notifications (NEW_ORDER) automatically
@@ -1183,7 +1237,8 @@ export class OrderService {
         costCenter: validatedData.costCenter || undefined,
         notes: validatedData.notes || undefined,
         couponCode: validatedData.couponCode || undefined,
-        deliveryDistanceKm: validatedData.deliveryDistanceKm
+        deliveryDistanceKm: validatedData.deliveryDistanceKm,
+        regionCode: validatedData.regionCode,
       };
 
       const orderResult = await this.createOrder(orderData);
@@ -1692,7 +1747,12 @@ export class OrderService {
             }
           },
           shippingAddress: true,
-          shipment: true,
+          shipment: {
+            include: {
+              carrier: { select: { id: true, name: true } },
+              trackingEvents: { orderBy: { createdAt: "asc" } },
+            },
+          },
           buyer: true,
           seller: true
         }
@@ -1704,6 +1764,17 @@ export class OrderService {
           error: 'ORDER_NOT_FOUND'
         };
       }
+
+      const shipmentEvents =
+        order.shipment?.trackingEvents?.map((ev) => ({
+          standardStatus: ev.standardStatus,
+          statusLabel: shipmentStatusLabel(ev.standardStatus),
+          rawStatus: ev.rawStatus,
+          location: ev.location,
+          notes: ev.notes,
+          source: ev.source,
+          createdAt: ev.createdAt,
+        })) || [];
 
       const tracking: OrderTracking = {
         orderId: order.id,
@@ -1735,11 +1806,14 @@ export class OrderService {
           sellerName: order.seller.businessName
         })),
         shipping: {
-          address: `${order.shippingAddress.addressLine1}, ${order.shippingAddress.city}`,
+          address: order.shippingAddress
+            ? `${order.shippingAddress.addressLine1}, ${order.shippingAddress.city}`
+            : "",
           trackingNumber: order.shipment?.trackingNumber,
           estimatedDelivery: order.estimatedDeliveryDate,
           actualDelivery: order.actualDeliveryDate,
-          carrier: order.shipment?.carrier?.name
+          carrier: order.shipment?.carrier?.name,
+          trackingEvents: shipmentEvents.length ? shipmentEvents : undefined,
         },
         timeline: await this.getOrderTimeline(order.id),
         totalAmount: order.totalAmount,

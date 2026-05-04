@@ -17,7 +17,7 @@ app.use((req, res, next) => {
 });
 
 const UPLOAD_DIR = '/var/www/simbi/uploads';
-const subdirs = ['returns', 'pre-shipment', 'products', 'temp'];
+const subdirs = ['returns', 'pre-shipment', 'products', 'temp', 'custom-product-docs', 'seller-documents'];
 
 // Create directories
 subdirs.forEach(subdir => {
@@ -53,17 +53,36 @@ const storage = multer.diskStorage({
   }
 });
 
+// Single /upload route: product images (products/) + PDFs (custom-product-docs/) via type= in body
+const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: MAX_FILE_BYTES },
   fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    const allowed = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
+      'application/pdf',
+    ];
     if (allowed.includes(file.mimetype)) {
       console.log(`File type allowed: ${file.mimetype}`);
       cb(null, true);
     } else {
       console.log(`File type rejected: ${file.mimetype}`);
-      cb(new Error(`Invalid file type. Allowed: ${allowed.join(', ')}`));
+      cb(new Error(`Invalid file type. Allowed: images and application/pdf`));
+    }
+  }
+});
+
+// PDF / documents for custom product requests (OEM spec + supplier docs)
+const uploadDocs = multer({
+  storage: storage,
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB per PDF
+  fileFilter: (req, file, cb) => {
+    const allowed = ['application/pdf'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only application/pdf is allowed for documents.'));
     }
   }
 });
@@ -141,6 +160,48 @@ app.post('/upload', upload.array('images', 10), (req, res) => {
   console.log(`\n✅ Upload successful: ${files.length} file(s) processed`);
   console.log(`📁 Files saved to: ${targetDir}`);
   console.log('=== END UPLOAD REQUEST ===\n');
+
+  res.json({ success: true, files });
+});
+
+// PDF uploads — field name "documents" (same response shape as /upload)
+app.post('/upload-documents', uploadDocs.array('documents', 15), (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'No documents uploaded',
+    });
+  }
+
+  const targetType = (req.body && req.body.type) || 'custom-product-docs';
+  const targetDir = path.join(UPLOAD_DIR, targetType);
+
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  const files = req.files.map((file) => {
+    const targetPath = path.join(targetDir, file.filename);
+    try {
+      fs.renameSync(file.path, targetPath);
+    } catch (error) {
+      return {
+        url: `http://31.220.82.129/uploads/temp/${file.filename}`,
+        filename: file.filename,
+        originalname: file.originalname,
+        size: file.size,
+        mimetype: file.mimetype,
+        error: `Failed to move to ${targetType} directory`,
+      };
+    }
+    return {
+      url: `http://31.220.82.129/uploads/${targetType}/${file.filename}`,
+      filename: file.filename,
+      originalname: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype,
+    };
+  });
 
   res.json({ success: true, files });
 });

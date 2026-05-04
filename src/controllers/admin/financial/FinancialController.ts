@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { Response } from "express";
+import { Currency } from "@prisma/client";
 import { AuthenticatedRequest } from "../../../types";
 import { FinancialReconciliationService } from "../../../services/admin/financial/FinancialReconciliationService";
 import { logger } from "../../../utils/logger";
@@ -74,6 +75,84 @@ export class FinancialController {
       res.status(500).json({
         success: false,
         message: "Failed to fetch reconciliation report",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // GET /api/admin/financial/reconciliation/window?from=ISO&to=ISO&currency=USD
+  getReconciliationWindow = async (
+    req: AuthenticatedRequest,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const { from, to, currency } = req.query;
+      if (!from || !to || typeof from !== "string" || typeof to !== "string") {
+        res.status(400).json({
+          success: false,
+          message: "Query params from and to are required (ISO-8601 datetimes)",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const fromDate = new Date(from);
+      const toDate = new Date(to);
+      if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid from or to date",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      let cur: Currency | undefined;
+      if (currency && typeof currency === "string") {
+        if (currency === "USD" || currency === "ZWL") {
+          cur = currency as Currency;
+        } else {
+          res.status(400).json({
+            success: false,
+            message: "Invalid currency. Allowed: USD, ZWL",
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+      }
+
+      const report = await this.financialService.getReconciliationWindow(
+        fromDate,
+        toDate,
+        cur
+      );
+
+      res.status(200).json({
+        success: true,
+        data: report,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      if (error.message === "RECONCILIATION_INVALID_RANGE") {
+        res.status(400).json({
+          success: false,
+          message: "from must be before or equal to to",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      if (error.message === "RECONCILIATION_WINDOW_TOO_LARGE") {
+        res.status(400).json({
+          success: false,
+          message: "Window must not exceed 31 days",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      logger.error("Error in getReconciliationWindow", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch reconciliation window",
         timestamp: new Date().toISOString(),
       });
     }

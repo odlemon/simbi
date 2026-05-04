@@ -14,6 +14,9 @@ import reviewRoutes from "./reviews";
 import returnRoutes from "./returns";
 import reportsRoutes from "./reports.routes";
 import notificationRoutes from "./notifications";
+import customProductRequestRoutes from "./customProductRequest.routes";
+import sriRoutes from "./sri.routes";
+import complianceRoutes from "./compliance.routes";
 
 const router = Router();
 
@@ -22,6 +25,9 @@ router.use("/auth", authRoutes);
 
 // Inventory Management
 router.use("/inventory", inventoryRoutes);
+
+// Custom master product requests (tab: Products → Custom requests)
+router.use("/products", customProductRequestRoutes);
 
 // Dashboard
 router.use("/dashboard", dashboardRoutes);
@@ -58,6 +64,12 @@ router.use("/reports", reportsRoutes);
 
 // Notifications
 router.use("/notifications", notificationRoutes);
+
+// SRI (Seller Reliability Index)
+router.use("/sri", sriRoutes);
+
+// Compliance (document uploads)
+router.use("/compliance", complianceRoutes);
 
 export default router;
 

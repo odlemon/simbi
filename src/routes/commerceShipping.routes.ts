@@ -6,5 +6,6 @@ const router = Router();
 const controller = new CommercePublicController();
 
 router.get("/shipping-config", (req, res) => controller.getShippingConfig(req, res));
+router.post("/shipping-quote", (req, res) => controller.postShippingQuote(req, res));
 
 export default router;

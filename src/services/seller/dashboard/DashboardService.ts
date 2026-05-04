@@ -5,6 +5,167 @@ import { logger } from "../../../utils/logger";
 import { prisma } from "../../../utils/database";
 
 export class DashboardService {
+  /**
+   * Fulfilment queue metrics for the seller dashboard
+   */
+  async getFulfilmentQueue(sellerId: string, previewLimit: number = 10) {
+    const now = Date.now();
+    const since24h = new Date(now - 24 * 60 * 60 * 1000);
+    const since48h = new Date(now - 48 * 60 * 60 * 1000);
+
+    // New orders in last 24h (seller has items)
+    const newOrders24hCount = await prisma.order.count({
+      where: {
+        createdAt: { gte: since24h },
+        items: { some: { inventory: { sellerId } } },
+      },
+    });
+
+    // Pending shipment >48h: seller accepted/processing/shipped but not dispatched yet
+    // (shipment/dispatch is admin-managed; we approximate by dispatchedAt null)
+    const pendingShipmentOver48hCount = await prisma.order.count({
+      where: {
+        createdAt: { lt: since48h },
+        dispatchedAt: null,
+        status: { in: [OrderStatus.PROCESSING, OrderStatus.AWAITING_SELLER_ACCEPTANCE, OrderStatus.PENDING_PAYMENT] as any },
+        items: { some: { inventory: { sellerId } } },
+      },
+    });
+
+    // Pending payout: use the same logic as seller payout pending (delivered + paid - paidOut > 0)
+    const payoutCandidates = await prisma.order.findMany({
+      where: {
+        sellerId,
+        status: "DELIVERED" as any,
+        payment: { status: { in: ["COMPLETED", "PARTIAL"] as any } },
+      },
+      include: { payment: true, payout: true },
+      orderBy: { payment: { paidAt: "asc" } },
+    });
+
+    let pendingPayoutCount = 0;
+    for (const order of payoutCandidates) {
+      if (!order.payment) continue;
+      const paidAmount = order.payment.amount;
+      const platformCommission = order.platformCommission || 0;
+      const sellerNetAmount = paidAmount - platformCommission;
+      const paidOutAmount = order.payout ? order.payout.netAmount : 0;
+      if (sellerNetAmount - paidOutAmount > 0) pendingPayoutCount++;
+    }
+
+    // Preview list for color-coding by age (frontend can compute red if ageHours>48)
+    const previewOrders = await prisma.order.findMany({
+      where: {
+        items: { some: { inventory: { sellerId } } },
+        status: { in: [OrderStatus.AWAITING_SELLER_ACCEPTANCE, OrderStatus.PROCESSING, OrderStatus.SHIPPED] as any },
+      },
+      take: Math.min(50, previewLimit),
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        createdAt: true,
+        sellerAcceptedAt: true,
+        dispatchedAt: true,
+        actualDeliveryDate: true,
+      },
+    });
+
+    const preview = previewOrders.map((o) => ({
+      ...o,
+      ageHours: Math.round(((now - new Date(o.createdAt).getTime()) / (1000 * 60 * 60)) * 100) / 100,
+    }));
+
+    return {
+      newOrders24hCount,
+      pendingShipmentOver48hCount,
+      pendingPayoutCount,
+      preview,
+    };
+  }
+
+  /**
+   * Compliance health widget for seller dashboard
+   */
+  async getComplianceHealth(sellerId: string) {
+    const required: Array<{ key: string; type: any; label: string }> = [
+      { key: "ZIMRA", type: "ZIMRA_CERTIFICATE", label: "ZIMRA" },
+      { key: "TIN", type: "TIN_CERTIFICATE", label: "TIN" },
+      { key: "KYC", type: "KYC_DOCUMENT", label: "KYC" },
+    ];
+
+    const docs = await prisma.sellerDocument.findMany({
+      where: {
+        sellerId,
+        documentType: { in: required.map((r) => r.type) as any },
+      },
+      orderBy: { uploadedAt: "desc" },
+    });
+
+    const latestAudit = await prisma.complianceAudit.findFirst({
+      where: { sellerId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const now = Date.now();
+    const docEntries = required.map((r) => {
+      const latest = docs.find((d) => d.documentType === r.type) || null;
+      const expiry = latest?.expiryDate ? new Date(latest.expiryDate) : null;
+      const daysUntilExpiry =
+        expiry && !Number.isNaN(expiry.getTime())
+          ? Math.ceil((expiry.getTime() - now) / (1000 * 60 * 60 * 24))
+          : null;
+
+      const isExpired = daysUntilExpiry !== null ? daysUntilExpiry < 0 : false;
+      const isExpiringSoon = daysUntilExpiry !== null ? daysUntilExpiry >= 0 && daysUntilExpiry < 60 : false;
+
+      let documentStatus: any = "MISSING";
+      if (latest) documentStatus = latest.status;
+
+      let statusRag: "GREEN" | "AMBER" | "RED" = "RED";
+      if (!latest) statusRag = "RED";
+      else if (latest.status === "REJECTED" || latest.status === "EXPIRED") statusRag = "RED";
+      else if (isExpired) statusRag = "RED";
+      else if (latest.status === "PENDING") statusRag = "AMBER";
+      else if (latest.status === "APPROVED" && isExpiringSoon) statusRag = "AMBER";
+      else if (latest.status === "APPROVED") statusRag = "GREEN";
+
+      return {
+        key: r.key,
+        label: r.label,
+        documentType: r.type,
+        statusRag,
+        documentStatus,
+        fileUrl: latest?.fileUrl || null,
+        issuedDate: latest?.issuedDate || null,
+        expiryDate: expiry ? expiry.toISOString() : null,
+        daysUntilExpiry,
+        isExpiringSoon,
+        rejectionReason: latest?.rejectionReason || null,
+        lastUploadedAt: latest?.uploadedAt ? new Date(latest.uploadedAt).toISOString() : null,
+      };
+    });
+
+    const nearestExpiryDoc = docEntries
+      .filter((d) => d.expiryDate)
+      .sort((a, b) => (a.daysUntilExpiry ?? 999999) - (b.daysUntilExpiry ?? 999999))[0];
+
+    return {
+      documents: docEntries,
+      nearestExpiry: nearestExpiryDoc
+        ? {
+            documentType: nearestExpiryDoc.documentType,
+            expiryDate: nearestExpiryDoc.expiryDate,
+            daysUntilExpiry: nearestExpiryDoc.daysUntilExpiry,
+            isExpiringSoon: nearestExpiryDoc.isExpiringSoon,
+          }
+        : null,
+      auditScore: latestAudit
+        ? { score: latestAudit.score, auditedAt: latestAudit.createdAt.toISOString(), notes: latestAudit.notes || null }
+        : { score: 0, auditedAt: null, notes: null },
+    };
+  }
 
   /**
    * Get dashboard stats

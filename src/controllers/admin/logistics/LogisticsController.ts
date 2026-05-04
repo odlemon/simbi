@@ -83,9 +83,13 @@ export class LogisticsController {
       });
     } catch (error: any) {
       logger.error("Error in createCarrier", { error: error.message });
-      res.status(500).json({
+      const msg = error.message || "Failed to create carrier";
+      const clientError =
+        /is required|already exists|Send JSON field|Unique constraint/i.test(msg) ||
+        msg.includes("P2002");
+      res.status(clientError ? 400 : 500).json({
         success: false,
-        message: error.message || "Failed to create carrier",
+        message: msg,
         timestamp: new Date().toISOString(),
       });
     }
@@ -317,6 +321,198 @@ export class LogisticsController {
       res.status(500).json({
         success: false,
         message: "Failed to fetch logistics analytics",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // GET /api/admin/logistics/regions
+  listLogisticsRegions = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const regions = await this.logisticsService.listLogisticsRegions();
+      res.status(200).json({
+        success: true,
+        data: regions,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in listLogisticsRegions", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch logistics regions",
+        details: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // POST /api/admin/logistics/regions
+  createLogisticsRegion = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      const { regionCode, name, primaryCarrierId, failoverCarrierIds } = req.body || {};
+      if (!regionCode || !primaryCarrierId) {
+        res.status(400).json({
+          success: false,
+          message: "regionCode and primaryCarrierId are required",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      const region = await this.logisticsService.createLogisticsRegion({
+        regionCode,
+        name,
+        primaryCarrierId,
+        failoverCarrierIds: Array.isArray(failoverCarrierIds) ? failoverCarrierIds : [],
+      });
+      res.status(201).json({
+        success: true,
+        message: "Region created",
+        data: region,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in createLogisticsRegion", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to create region",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // PUT /api/admin/logistics/regions/:id
+  updateLogisticsRegion = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      const { id } = req.params;
+      const { regionCode, name, primaryCarrierId, failoverCarrierIds } = req.body || {};
+      const region = await this.logisticsService.updateLogisticsRegion(id, {
+        regionCode,
+        name,
+        primaryCarrierId,
+        failoverCarrierIds,
+      });
+      res.status(200).json({
+        success: true,
+        message: "Region updated",
+        data: region,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in updateLogisticsRegion", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to update region",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // DELETE /api/admin/logistics/regions/:id
+  deleteLogisticsRegion = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      const { id } = req.params;
+      await this.logisticsService.deleteLogisticsRegion(id);
+      res.status(200).json({
+        success: true,
+        message: "Region deleted",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in deleteLogisticsRegion", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to delete region",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // GET /api/admin/logistics/shipping-matrix
+  listShippingRateMatrices = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const rows = await this.logisticsService.listShippingRateMatrices();
+      res.status(200).json({
+        success: true,
+        data: rows,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in listShippingRateMatrices", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch shipping rate matrix",
+        details: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
+
+  // POST /api/admin/logistics/shipping-matrix
+  upsertShippingRateMatrix = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.admin) {
+        res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      const b = req.body || {};
+      if (!b.currency || !b.tier) {
+        res.status(400).json({
+          success: false,
+          message: "currency and tier are required",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+      const row = await this.logisticsService.upsertShippingRateMatrix({
+        currency: b.currency,
+        tier: b.tier,
+        maxLengthCm: Number(b.maxLengthCm),
+        maxWidthCm: Number(b.maxWidthCm),
+        maxHeightCm: Number(b.maxHeightCm),
+        maxWeightKg: Number(b.maxWeightKg),
+        baseCost: Number(b.baseCost),
+        baselineEtaHours: Number(b.baselineEtaHours),
+        isActive: b.isActive,
+      });
+      res.status(200).json({
+        success: true,
+        message: "Matrix row saved",
+        data: row,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Error in upsertShippingRateMatrix", { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to save matrix row",
         timestamp: new Date().toISOString(),
       });
     }

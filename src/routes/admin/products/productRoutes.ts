@@ -66,6 +66,18 @@ router.post("/custom-requests/:id/reject", authenticateAdmin, requireCompliance,
 router.post("/custom-requests/:id/request-info", authenticateAdmin, requireCompliance, controller.requestMoreInfo);
 
 /**
+ * @route   POST /api/admin/products/custom-requests/:id/verify-counterfeit
+ * @desc    Record mandatory counterfeit / supplier documentation verification (required before approve)
+ * @access  Private (Super Admin or Compliance Manager)
+ */
+router.post(
+  "/custom-requests/:id/verify-counterfeit",
+  authenticateAdmin,
+  requireCompliance,
+  controller.verifyCounterfeitCheck
+);
+
+/**
  * @route   GET /api/admin/products/search/vehicle
  * @desc    Search products by vehicle (Make/Model/Year)
  * @access  Private (Any Admin)
@@ -113,6 +125,19 @@ router.post("/bulk-status", authenticateAdmin, requireSuperAdmin, controller.bul
  * @access  Private (Super Admin)
  */
 router.put("/:id", authenticateAdmin, requireSuperAdmin, controller.updateProduct);
+
+/**
+ * @route   DELETE /api/admin/products/:id/complete
+ * @desc    Permanently delete master product and listings (fails if sold on an order)
+ * @access  Private (Super Admin)
+ * @note    Must be registered before DELETE /:id so "complete" is not parsed as an id
+ */
+router.delete(
+  "/:id/complete",
+  authenticateAdmin,
+  requireSuperAdmin,
+  controller.deleteProductPermanently
+);
 
 /**
  * @route   DELETE /api/admin/products/:id

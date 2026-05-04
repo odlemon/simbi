@@ -18,6 +18,103 @@ interface CreateListingDTO {
 }
 
 export class InventoryService {
+  /**
+   * Top low-stock alerts (quantity <= lowStockThreshold), stable ordering.
+   */
+  async getLowStockAlerts(sellerId: string, limit: number = 5) {
+    const rows = await prisma.sellerInventory.findMany({
+      where: {
+        sellerId,
+        isActive: true,
+        quantity: { lte: prisma.sellerInventory.fields.lowStockThreshold },
+      },
+      take: Math.min(50, limit),
+      orderBy: [{ quantity: "asc" }, { updatedAt: "desc" }],
+      include: {
+        masterProduct: {
+          select: {
+            id: true,
+            name: true,
+            oemPartNumber: true,
+            masterPartId: true,
+            manufacturer: true,
+          },
+        },
+      },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      masterProductId: r.masterProductId,
+      product: r.masterProduct,
+      quantity: r.quantity,
+      lowStockThreshold: r.lowStockThreshold,
+      sellerPrice: r.sellerPrice,
+      currency: r.currency,
+      updatedAt: r.updatedAt,
+    }));
+  }
+
+  /**
+   * Export seller listings to CSV for bulk updates.
+   * Includes the columns expected by the bulk-upload template.
+   */
+  async exportInventoryCsv(sellerId: string): Promise<string> {
+    const rows = await prisma.sellerInventory.findMany({
+      where: { sellerId },
+      orderBy: [{ updatedAt: "desc" }],
+      select: {
+        masterProductId: true,
+        sellerPrice: true,
+        currency: true,
+        quantity: true,
+        condition: true,
+        lowStockThreshold: true,
+        reorderPoint: true,
+        sellerSku: true,
+        sellerNotes: true,
+      },
+    });
+
+    const headers = [
+      "masterProductId",
+      "sellerPrice",
+      "currency",
+      "quantity",
+      "condition",
+      "lowStockThreshold",
+      "reorderPoint",
+      "sellerSku",
+      "sellerNotes",
+    ];
+
+    const escapeCsv = (v: any) => {
+      if (v === null || v === undefined) return "";
+      const s = String(v);
+      if (/[\",\\n\\r]/.test(s)) return `\"${s.replace(/\"/g, '\"\"')}\"`;
+      return s;
+    };
+
+    const lines = [headers.join(",")];
+    for (const r of rows) {
+      lines.push(
+        [
+          r.masterProductId,
+          r.sellerPrice,
+          r.currency,
+          r.quantity,
+          r.condition,
+          r.lowStockThreshold,
+          r.reorderPoint ?? "",
+          r.sellerSku ?? "",
+          r.sellerNotes ?? "",
+        ]
+          .map(escapeCsv)
+          .join(",")
+      );
+    }
+    return lines.join("\\n");
+  }
 
   /**
    * Browse master catalog products (paginated for performance)

@@ -6,6 +6,8 @@ import { OrderStatus, PaymentStatus, Currency } from '@prisma/client';
 import { EmailService } from '../EmailService';
 import { SellerNotificationService } from '../seller/notifications/SellerNotificationService';
 import { CommercePricingService } from '../admin/settings/CommercePricingService';
+import { ShippingQuoteService } from '../shipping/ShippingQuoteService';
+import { MoneyUtils } from '../../utils/money';
 
 const createIndividualBuyerOrderSchema = z.object({
   // Buyer information
@@ -35,6 +37,7 @@ const createIndividualBuyerOrderSchema = z.object({
   notes: z.string().optional(),
   currency: z.enum(["USD", "ZWL"]).default("USD"),
   deliveryDistanceKm: z.number().min(0).finite().optional(),
+  regionCode: z.string().optional(),
 });
 
 export interface IndividualBuyerOrderResult {
@@ -51,11 +54,13 @@ export class IndividualBuyerOrderService {
   private emailService: EmailService;
   private notificationService: SellerNotificationService;
   private commercePricing: CommercePricingService;
+  private shippingQuotes: ShippingQuoteService;
 
   constructor() {
     this.emailService = new EmailService();
     this.notificationService = new SellerNotificationService();
     this.commercePricing = new CommercePricingService();
+    this.shippingQuotes = new ShippingQuoteService();
   }
 
   /**
@@ -74,6 +79,7 @@ export class IndividualBuyerOrderService {
     try {
       const validatedData = createIndividualBuyerOrderSchema.parse(data);
       const pricingSnapshot = await this.commercePricing.getSnapshot();
+      const shippingEngine = await this.commercePricing.getShippingEngine();
 
       // Validate items and calculate totals
       const processedItems = await Promise.all(
@@ -156,10 +162,25 @@ export class IndividualBuyerOrderService {
         });
         const platformCommission = itemCommissions.reduce((sum, comm) => sum + comm, 0);
 
-        const shippingCost = CommercePricingService.computeShippingCost(
+        let shippingCost = CommercePricingService.computeShippingCost(
           pricingSnapshot,
           validatedData.deliveryDistanceKm
         );
+        let shippingQuoteSnapshot: Record<string, unknown> | null = null;
+        if (shippingEngine === "carrier_v1") {
+          const quote = await this.shippingQuotes.getQuote({
+            sellerId,
+            lines: sellerItems.map((item) => ({
+              masterProductId: item.inventory.masterProductId,
+              quantity: item.quantity,
+            })),
+            deliveryDistanceKm: validatedData.deliveryDistanceKm,
+            regionCode: validatedData.regionCode || "DEFAULT",
+            currency: validatedData.currency as Currency,
+          });
+          shippingCost = MoneyUtils.roundToCents(quote.cost);
+          shippingQuoteSnapshot = quote.snapshot;
+        }
         const totalAmount = subtotal + shippingCost - platformCommission;
 
         const orderNumber = await this.generateOrderNumber();
@@ -192,6 +213,7 @@ export class IndividualBuyerOrderService {
             guestShippingCity: validatedData.shippingAddress.city,
             guestShippingProvince: validatedData.shippingAddress.province,
             guestShippingPostalCode: validatedData.shippingAddress.postalCode || null,
+            ...(shippingQuoteSnapshot && { shippingQuoteSnapshot }),
             items: {
               create: sellerItems.map((item, index) => ({
                 inventoryId: item.inventory.id,

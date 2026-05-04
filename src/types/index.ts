@@ -97,4 +97,24 @@ export interface ReconciliationRecord {
   transactionTime: Date;
 }
 
+/** Per-order row for minute-window payout vs commission reconciliation */
+export interface ReconciliationWindowLine {
+  orderId: string;
+  orderNumber: string;
+  currency: string;
+  paidAt: string | null;
+  grossOrderTotal: number;
+  orderPlatformCommission: number;
+  sumGatewayTxnFees: number;
+  payoutGatewayFee: number | null;
+  payoutNetAmount: number | null;
+  payoutPlatformCommission: number | null;
+  gatewayVariance: number;
+  gatewayVariancePct: number;
+  commissionVariance: number;
+  commissionVariancePct: number;
+  exceedsTolerance: boolean;
+  flags: string[];
+}
+
 

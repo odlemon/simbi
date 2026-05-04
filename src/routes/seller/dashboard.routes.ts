@@ -10,6 +10,8 @@ const controller = new DashboardController();
 router.use(authenticateSellerOrStaff);
 
 router.get("/comprehensive", (req, res) => controller.getComprehensiveDashboard(req, res));
+router.get("/fulfilment-queue", (req, res) => controller.getFulfilmentQueue(req, res));
+router.get("/compliance-health", (req, res) => controller.getComplianceHealth(req, res));
 router.get("/stats", (req, res) => controller.getStats(req, res));
 router.get("/activity", (req, res) => controller.getRecentActivity(req, res));
 router.get("/trends", (req, res) => controller.getSalesTrends(req, res));
