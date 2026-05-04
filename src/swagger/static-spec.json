@@ -97,7 +97,7 @@
                 "type": "object",
                 "required": ["email", "password"],
                 "properties": {
-                  "email": { "type": "string", "format": "email", "example": "admin@simbi.com" },
+                  "email": { "type": "string", "format": "email", "example": "admin@simbimarket.com" },
                   "password": { "type": "string", "format": "password", "example": "admin123" }
                 }
               }

@@ -29,7 +29,7 @@ ts-node prisma/seed.ts
 
 **What it seeds:**
 - ✅ **Super Admin User**
-  - Email: `admin@simbi.com`
+  - Email: `admin@simbimarket.com`
   - Password: `admin123`
   - Role: `SUPER_ADMIN`
   - Status: `ACTIVE`

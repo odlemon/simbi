@@ -28,7 +28,7 @@ Admin Side:
 **Status:** Deployed to Vercel ✅  
 **Live API:** https://simbi-three.vercel.app/api  
 **Database:** MySQL (Planet Scale) ✅  
-**Admin Credentials:** admin@simbi.com / admin123 ✅
+**Admin Credentials:** admin@simbimarket.com / admin123 ✅
 
 ---
 

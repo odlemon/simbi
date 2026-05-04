@@ -26,14 +26,14 @@ router.post('/login', unifiedAuthController.login.bind(unifiedAuthController));
 
 /**
  * @route POST /api/auth/forgot-password
- * @desc Request password reset (forgot password) - Works for both buyer and seller
+ * @desc Request password reset — buyer, seller, staff, or admin (`userType: "admin"`)
  * @access Public
  */
 router.post('/forgot-password', controller.forgotPassword.bind(controller));
 
 /**
  * @route POST /api/auth/reset-password
- * @desc Reset password using token - Works for both buyer and seller
+ * @desc Reset password using token — include `userType` from the reset link (`admin` for admins)
  * @access Public
  */
 router.post('/reset-password', controller.resetPassword.bind(controller));

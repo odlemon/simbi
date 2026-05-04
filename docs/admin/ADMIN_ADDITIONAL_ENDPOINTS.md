@@ -494,7 +494,7 @@ Authorization: Bearer <admin_token>
 **Request:**
 ```json
 {
-  "email": "admin@simbi.com",
+  "email": "admin@simbimarket.com",
   "password": "admin123"
 }
 ```
@@ -507,7 +507,7 @@ Authorization: Bearer <admin_token>
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "admin": {
       "id": "admin-uuid",
-      "email": "admin@simbi.com",
+      "email": "admin@simbimarket.com",
       "role": "SUPER_ADMIN"
     }
   },

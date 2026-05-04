@@ -14,7 +14,7 @@ POST http://localhost:3000/api/admin/auth/login
 Content-Type: application/json
 
 {
-  "email": "admin@simbi.com",
+  "email": "admin@simbimarket.com",
   "password": "admin123"
 }
 ```
@@ -215,7 +215,7 @@ But it should have been clearer:
 ```bash
 # 1. Login as admin
 POST /api/admin/auth/login
-{ "email": "admin@simbi.com", "password": "admin123" }
+{ "email": "admin@simbimarket.com", "password": "admin123" }
 
 # 2. Approve seller
 PATCH /api/admin/sellers/{sellerId}

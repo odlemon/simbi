@@ -9,7 +9,7 @@ Your Simbi Market Admin API is **100% complete** and ready to test!
 ## 🔐 Your Admin Credentials
 
 ```
-Email:    admin@simbi.com
+Email:    admin@simbimarket.com
 Password: admin123
 Role:     SUPER_ADMIN
 ```
@@ -29,7 +29,7 @@ http://localhost:3000/api-docs
 3. Enter:
 ```json
 {
-  "email": "admin@simbi.com",
+  "email": "admin@simbimarket.com",
   "password": "admin123"
 }
 ```
@@ -78,7 +78,7 @@ http://localhost:3000/api-docs
 ## 🎯 Test Data Available
 
 ### ✅ Created by Seed:
-- **1 Super Admin** (admin@simbi.com)
+- **1 Super Admin** (admin@simbimarket.com)
 - **4 System Settings** (commission, VAT, SRI threshold, payout schedule)
 - **5 Product Categories** (Engine Parts, Brake System, Suspension, Electrical, Body Parts)
 
@@ -190,7 +190,7 @@ Check these guides:
 
 **Admin Backend:** ✅ 100% Complete  
 **Total Endpoints:** 100+  
-**Test Credentials:** admin@simbi.com / admin123  
+**Test Credentials:** admin@simbimarket.com / admin123  
 **Swagger URL:** http://localhost:3000/api-docs
 
 **GO TEST IT NOW!** 🎯
