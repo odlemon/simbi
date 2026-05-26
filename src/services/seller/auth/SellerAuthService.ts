@@ -8,6 +8,7 @@ import { logger } from "../../../utils/logger";
 import { prisma } from "../../../utils/database";
 import { EmailVerificationService } from "../../EmailVerificationService";
 import { AccountLockoutService } from "../../AccountLockoutService";
+import { isEmailVerificationRequiredForLogin } from "../../../utils/authFlags";
 
 interface RegisterSellerDTO {
   email: string;
@@ -267,8 +268,7 @@ export class SellerAuthService {
       throw new Error("Account is not active");
     }
 
-    // Check if email is verified
-    if (!seller.emailVerified) {
+    if (isEmailVerificationRequiredForLogin() && !seller.emailVerified) {
       throw new Error("Please verify your email address before logging in. Check your email for the verification code.");
     }
 

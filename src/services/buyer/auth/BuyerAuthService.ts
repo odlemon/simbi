@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { prisma } from "../../../utils/database";
 import { EmailVerificationService } from "../../EmailVerificationService";
 import { AccountLockoutService } from "../../AccountLockoutService";
+import { isEmailVerificationRequiredForLogin } from "../../../utils/authFlags";
 
 
 
@@ -311,8 +312,7 @@ export class BuyerAuthService {
       if (buyer.accountLockedUntil) { ... prisma.buyer.update reset ... }
       */
 
-      // Check if email is verified
-      if (!buyer.emailVerified) {
+      if (isEmailVerificationRequiredForLogin() && !buyer.emailVerified) {
         return {
           success: false,
           message: 'Please verify your email address before logging in. Check your email for the verification code.',

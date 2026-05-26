@@ -5,6 +5,7 @@ import { prisma } from "../../utils/database";
 import { envConfig } from "../../utils/env";
 import { logger } from "../../utils/logger";
 import { AccountLockoutService } from "../AccountLockoutService";
+import { isEmailVerificationRequiredForLogin } from "../../utils/authFlags";
 import { UserStatus } from "@prisma/client";
 
 export interface UnifiedLoginResult {
@@ -323,8 +324,7 @@ export class UnifiedAuthService {
     if (seller.accountLockedUntil) { ... }
     */
 
-    // Check email verification
-    if (!seller.emailVerified) {
+    if (isEmailVerificationRequiredForLogin() && !seller.emailVerified) {
       throw new Error(
         "Please verify your email address before logging in. Check your email for the verification code."
       );
@@ -434,8 +434,7 @@ export class UnifiedAuthService {
     if (buyer.accountLockedUntil) { ... }
     */
 
-    // Check email verification
-    if (!buyer.emailVerified) {
+    if (isEmailVerificationRequiredForLogin() && !buyer.emailVerified) {
       throw new Error(
         "Please verify your email address before logging in. Check your email for the verification code."
       );
