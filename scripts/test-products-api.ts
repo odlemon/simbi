@@ -13,7 +13,7 @@ async function testProductsAPI() {
     // Step 1: Login as admin
     console.log("📝 Step 1: Logging in as admin...");
     const loginResponse = await axios.post(`${API_URL}/admin/auth/login`, {
-      email: "admin@simbi.com",
+      email: "admin@simbimarket.com",
       password: "admin123",
     });
 

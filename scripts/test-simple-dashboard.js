@@ -6,7 +6,7 @@ async function testDashboard() {
     
     // Login first
     const loginResponse = await axios.post('http://localhost:3000/api/admin/auth/login', {
-      email: 'admin@simbi.com',
+      email: 'admin@simbimarket.com',
       password: 'admin123'
     });
     

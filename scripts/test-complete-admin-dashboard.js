@@ -8,7 +8,7 @@ async function testCompleteAdminDashboard() {
     // Step 1: Login as admin
     console.log('🔐 Step 1: Admin Login...');
     const loginResponse = await axios.post('http://localhost:3000/api/admin/auth/login', {
-      email: 'admin@simbi.com',
+      email: 'admin@simbimarket.com',
       password: 'admin123'
     });
     

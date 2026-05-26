@@ -129,7 +129,7 @@ DATABASE_URL=your-database-url
 POST /api/admin/auth/login
 
 {
-  "email": "admin@simbi.com",
+  "email": "admin@simbimarket.com",
   "password": "admin123"
 }
 ```

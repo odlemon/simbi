@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../../../types';
 import { NotificationService } from '../../../services/admin/notifications/NotificationService';

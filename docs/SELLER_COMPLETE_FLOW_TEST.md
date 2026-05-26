@@ -37,7 +37,7 @@ POST http://localhost:3000/api/admin/auth/login
 Content-Type: application/json
 
 {
-  "email": "admin@simbi.com",
+  "email": "admin@simbimarket.com",
   "password": "admin123"
 }
 ```

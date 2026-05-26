@@ -7,14 +7,26 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Starting database seeding...");
 
-  // Create Super Admin User
+  // Create Super Admin User (canonical admin@simbimarket.com; migrate legacy admin@simbi.com if present)
   const hashedPassword = await bcrypt.hash("admin123", 12);
+  const adminEmail = "admin@simbimarket.com";
+  const legacyAdminEmail = "admin@simbi.com";
+
+  const legacyAdmin = await prisma.admin.findUnique({
+    where: { email: legacyAdminEmail },
+  });
+  if (legacyAdmin) {
+    await prisma.admin.update({
+      where: { id: legacyAdmin.id },
+      data: { email: adminEmail },
+    });
+  }
 
   const admin = await prisma.admin.upsert({
-    where: { email: "admin@simbi.com" },
+    where: { email: adminEmail },
     update: {},
     create: {
-      email: "admin@simbi.com",
+      email: adminEmail,
       password: hashedPassword,
       firstName: "Super",
       lastName: "Admin",
@@ -93,7 +105,7 @@ async function main() {
 
   console.log("\n🎉 Database seeding completed successfully!");
   console.log("\n📝 Super Admin Credentials:");
-  console.log("   Email:    admin@simbi.com");
+  console.log("   Email:    admin@simbimarket.com");
   console.log("   Password: admin123");
   console.log("\n🚀 You can now login at: http://localhost:3000/api-docs");
 }

@@ -40,7 +40,7 @@ ts-node prisma/seed.ts
 ```
 
 **What this creates:**
-- Super Admin user (admin@simbi.com / admin123)
+- Super Admin user (admin@simbimarket.com / admin123)
 - System settings (4 settings)
 - Product categories (5 categories)
 
@@ -204,7 +204,7 @@ npx ts-node scripts/import-products-simple.ts
 ```bash
 # Should show admin user
 # Login at: http://localhost:3000/api/admin/auth/login
-# Email: admin@simbi.com
+# Email: admin@simbimarket.com
 # Password: admin123
 ```
 
@@ -306,14 +306,14 @@ npx ts-node scripts/import-products-simple.ts
 ### **Main Seed:**
 ```
 🌱 Starting database seeding...
-✅ Super Admin created: { id: '...', email: 'admin@simbi.com', role: 'SUPER_ADMIN' }
+✅ Super Admin created: { id: '...', email: 'admin@simbimarket.com', role: 'SUPER_ADMIN' }
 ✅ System settings created
 ✅ Product categories created
 
 🎉 Database seeding completed successfully!
 
 📝 Super Admin Credentials:
-   Email:    admin@simbi.com
+   Email:    admin@simbimarket.com
    Password: admin123
 
 🚀 You can now login at: http://localhost:3000/api-docs

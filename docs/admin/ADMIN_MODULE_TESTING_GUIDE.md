@@ -14,7 +14,7 @@
 ## 🔐 Test Credentials
 
 ```
-Email:    admin@simbi.com
+Email:    admin@simbimarket.com
 Password: admin123
 Role:     SUPER_ADMIN
 ```
@@ -55,7 +55,7 @@ Use this checklist to systematically test all admin modules:
 4. Enter request body:
 ```json
 {
-  "email": "admin@simbi.com",
+  "email": "admin@simbimarket.com",
   "password": "admin123"
 }
 ```
@@ -69,7 +69,7 @@ Use this checklist to systematically test all admin modules:
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "admin": {
       "id": "...",
-      "email": "admin@simbi.com",
+      "email": "admin@simbimarket.com",
       "firstName": "Super",
       "lastName": "Admin",
       "role": "SUPER_ADMIN"
@@ -107,7 +107,7 @@ Use this checklist to systematically test all admin modules:
   "success": true,
   "data": {
     "id": "...",
-    "email": "admin@simbi.com",
+    "email": "admin@simbimarket.com",
     "firstName": "Super",
     "lastName": "Admin",
     "role": "SUPER_ADMIN",
@@ -678,7 +678,7 @@ If you encounter issues:
 
 **Admin Credentials:**
 ```
-Email:    admin@simbi.com
+Email:    admin@simbimarket.com
 Password: admin123
 URL:      http://localhost:3000/api-docs
 ```

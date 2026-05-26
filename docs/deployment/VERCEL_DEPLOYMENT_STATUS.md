@@ -64,7 +64,7 @@ curl https://simbi-three.vercel.app/
 ```bash
 curl -X POST https://simbi-three.vercel.app/api/admin/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@simbi.com","password":"admin123"}'
+  -d '{"email":"admin@simbimarket.com","password":"admin123"}'
 ```
 
 **Expected:**
