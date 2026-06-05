@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { prisma } from '../utils/database';
 import { EmailService } from './EmailService';
+import { appUrl } from '../constants/appUrls';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -31,11 +32,10 @@ export class PasswordResetService {
   ): Promise<boolean> {
     // Frontend URL for reset links — same page for all roles.
     // Admins: token only (no `type=`) so existing clients can POST /api/auth/reset-password with { token, newPassword } only.
-    const baseUrl = 'https://simbi-market-sigma.vercel.app';
     const resetUrl =
       userType === 'admin'
-        ? `${baseUrl}/reset-password?token=${resetToken}`
-        : `${baseUrl}/reset-password?token=${resetToken}&type=${userType}`;
+        ? appUrl(`/reset-password?token=${resetToken}`)
+        : appUrl(`/reset-password?token=${resetToken}&type=${userType}`);
     
     const htmlBody = `
       <!DOCTYPE html>
@@ -126,7 +126,7 @@ The Simbi Market Team
       toName: `${firstName} ${lastName}`,
       userType,
       resetUrl,
-      fromAddress: 'noreply@kyntaro.com',
+      fromAddress: 'noreply@khayalami.co.zw',
       fromName: 'Simbi Market'
     });
     

@@ -3,6 +3,10 @@ import { Response } from "express";
 import { AuthenticatedRequest } from "../../../types";
 import { LogisticsManagementService } from "../../../services/admin/logistics/LogisticsManagementService";
 import { logger } from "../../../utils/logger";
+import {
+  adminAuditService,
+  AdminAuditAction,
+} from "../../../services/admin/audit/AdminAuditService";
 
 export class LogisticsController {
   private logisticsService: LogisticsManagementService;
@@ -75,6 +79,15 @@ export class LogisticsController {
 
       const carrier = await this.logisticsService.createCarrier(req.body, req.admin.id);
 
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.CARRIER_CREATED,
+        entityType: "Carrier",
+        entityId: carrier.id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { code: carrier.code, name: carrier.name },
+      });
+
       res.status(201).json({
         success: true,
         message: "Carrier created successfully",
@@ -109,6 +122,15 @@ export class LogisticsController {
 
       const { id } = req.params;
       const carrier = await this.logisticsService.updateCarrier(id, req.body, req.admin.id);
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.CARRIER_UPDATED,
+        entityType: "Carrier",
+        entityId: id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { fields: Object.keys(req.body || {}) },
+      });
 
       res.status(200).json({
         success: true,
@@ -372,6 +394,16 @@ export class LogisticsController {
         primaryCarrierId,
         failoverCarrierIds: Array.isArray(failoverCarrierIds) ? failoverCarrierIds : [],
       });
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.REGION_CREATED,
+        entityType: "LogisticsRegion",
+        entityId: region.id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { regionCode, primaryCarrierId },
+      });
+
       res.status(201).json({
         success: true,
         message: "Region created",
@@ -407,6 +439,16 @@ export class LogisticsController {
         primaryCarrierId,
         failoverCarrierIds,
       });
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.REGION_UPDATED,
+        entityType: "LogisticsRegion",
+        entityId: id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { regionCode, primaryCarrierId },
+      });
+
       res.status(200).json({
         success: true,
         message: "Region updated",
@@ -502,6 +544,16 @@ export class LogisticsController {
         baselineEtaHours: Number(b.baselineEtaHours),
         isActive: b.isActive,
       });
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.MATRIX_UPDATED,
+        entityType: "ShippingRateMatrix",
+        entityId: row.id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { currency: b.currency, tier: b.tier },
+      });
+
       res.status(200).json({
         success: true,
         message: "Matrix row saved",

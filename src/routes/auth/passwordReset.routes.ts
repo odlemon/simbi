@@ -25,6 +25,13 @@ router.post('/register', unifiedRegistrationController.register.bind(unifiedRegi
 router.post('/login', unifiedAuthController.login.bind(unifiedAuthController));
 
 /**
+ * @route GET /api/auth/me
+ * @desc Unified session refresh for all user types
+ * @access Private (any authenticated user)
+ */
+router.get('/me', unifiedAuthController.me.bind(unifiedAuthController));
+
+/**
  * @route POST /api/auth/forgot-password
  * @desc Request password reset — buyer, seller, staff, or admin (`userType: "admin"`)
  * @access Public

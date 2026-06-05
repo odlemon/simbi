@@ -4,6 +4,10 @@ import { AuthenticatedRequest } from "../../../types";
 import { DisputeManagementService } from "../../../services/admin/disputes/DisputeManagementService";
 import { DisputeSLOService } from "../../../services/admin/disputes/DisputeSLOService";
 import { logger } from "../../../utils/logger";
+import {
+  adminAuditService,
+  AdminAuditAction,
+} from "../../../services/admin/audit/AdminAuditService";
 
 export class DisputeController {
   private disputeService: DisputeManagementService;
@@ -77,6 +81,14 @@ export class DisputeController {
       const { id } = req.params;
       await this.disputeService.assignDispute(id, req.admin.id);
 
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.DISPUTE_ASSIGNED,
+        entityType: "Dispute",
+        entityId: id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+      });
+
       res.status(200).json({
         success: true,
         message: "Dispute assigned successfully",
@@ -116,6 +128,15 @@ export class DisputeController {
       }
 
       await this.disputeService.resolveDispute(id, outcome, resolution, req.admin.id);
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.DISPUTE_RESOLVED,
+        entityType: "Dispute",
+        entityId: id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { outcome },
+      });
 
       res.status(200).json({
         success: true,

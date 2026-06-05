@@ -22,8 +22,12 @@ import reviewRoutes from "./reviews";
 import notificationRoutes from "./notifications/notificationRoutes";
 import financialPartnersRoutes from "./financialPartners.routes";
 import securityRoutes from "./security/securityRoutes";
+import auditRoutes from "./audit/auditRoutes";
+import { adminAuditMiddleware } from "../../middleware/adminAudit";
 
 const router = Router();
+
+router.use(adminAuditMiddleware);
 
 // Auth routes
 router.use("/auth", authRoutes);
@@ -90,6 +94,9 @@ router.use("/reviews", reviewRoutes);
 
 // Financial partners & loan ops (Settings → Financial partners in UI)
 router.use("/financial-partners", financialPartnersRoutes);
+
+// Audit trail
+router.use("/audit", auditRoutes);
 
 export default router;
 

@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { AuthController } from "../../../controllers/admin/auth/AuthController";
 import { authenticateAdmin } from "../../../middleware/authenticate";
-import { requireSuperAdmin } from "../../../middleware/rbac";
+import { requireAnyAdmin, requireSuperAdmin } from "../../../middleware/rbac";
 
 const router = Router();
 const authController = new AuthController();
@@ -41,19 +41,44 @@ router.get("/me", authenticateAdmin, authController.getProfile);
 router.put(
   "/change-password",
   authenticateAdmin,
+  requireAnyAdmin,
   authController.changePassword
 );
 
 /**
  * @route   GET /api/admin/auth/admins
  * @desc    Get all admins
- * @access  Private (Super Admin)
+ * @access  Private (any admin portal user)
  */
 router.get(
   "/admins",
   authenticateAdmin,
-  requireSuperAdmin,
+  requireAnyAdmin,
   authController.getAllAdmins
+);
+
+/**
+ * @route   POST /api/admin/auth/admins
+ * @desc    Invite admin (system-generated password emailed)
+ * @access  Private (any admin portal user; only Super Admin can assign SUPER_ADMIN role)
+ */
+router.post(
+  "/admins",
+  authenticateAdmin,
+  requireAnyAdmin,
+  authController.inviteAdmin
+);
+
+/**
+ * @route   PUT /api/admin/auth/admins/:id
+ * @desc    Update admin profile, role, or status
+ * @access  Private (Super Admin)
+ */
+router.put(
+  "/admins/:id",
+  authenticateAdmin,
+  requireSuperAdmin,
+  authController.updateAdmin
 );
 
 export default router;

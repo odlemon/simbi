@@ -7,6 +7,10 @@ import { logger } from "../../utils/logger";
 import { AccountLockoutService } from "../AccountLockoutService";
 import { isEmailVerificationRequiredForLogin } from "../../utils/authFlags";
 import { UserStatus } from "@prisma/client";
+import {
+  adminAuditService,
+  AdminAuditAction,
+} from "../admin/audit/AdminAuditService";
 
 export interface UnifiedLoginResult {
   user: any; // User object (admin, seller, buyer, or staff)
@@ -195,6 +199,8 @@ export class UnifiedAuthService {
       id: admin.id,
       email: admin.email,
       role: admin.role,
+      firstName: admin.firstName,
+      lastName: admin.lastName,
       type: "admin",
     };
 
@@ -204,10 +210,27 @@ export class UnifiedAuthService {
       audience: "simbi-admin",
     });
 
-    const { password: _, mfaSecret: __, ...adminWithoutPassword } = admin;
+    await adminAuditService.recordAction({
+      adminId: admin.id,
+      action: AdminAuditAction.LOGIN,
+      entityType: "Admin",
+      entityId: admin.id,
+      ipAddress: clientIp,
+    });
+
+    const {
+      password: _,
+      mfaSecret: __,
+      passwordResetToken,
+      passwordResetExpires,
+      ...adminWithoutPassword
+    } = admin;
 
     return {
-      user: adminWithoutPassword,
+      user: {
+        ...adminWithoutPassword,
+        mustChangePassword: false,
+      },
       userType: "admin",
       accessToken,
       expiresIn: jwtExpiresIn || "7d",

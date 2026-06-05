@@ -254,7 +254,8 @@ export class GuestCheckoutService {
       }
 
       // Send tracking link via SMS
-      const trackingUrl = `${process.env.FRONTEND_URL || "https://simbi-market.com"}/track?order=${orders[0].orderNumber}&token=${guestAccessToken}`;
+      const { appUrl } = await import("../../constants/appUrls");
+      const trackingUrl = `${appUrl("/track")}?order=${orders[0].orderNumber}&token=${guestAccessToken}`;
       // TODO: Send SMS with tracking link
       logger.info(`Guest order tracking link: ${trackingUrl}`);
 

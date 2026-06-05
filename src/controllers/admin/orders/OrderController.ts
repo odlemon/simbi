@@ -4,6 +4,10 @@ import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
 import { AuthenticatedRequest } from "../../../middleware/authenticate";
 import { AccountingService } from "../../../services/seller/accounting/AccountingService";
+import {
+  adminAuditService,
+  AdminAuditAction,
+} from "../../../services/admin/audit/AdminAuditService";
 
 export class OrderController {
   private accountingService: AccountingService;
@@ -696,10 +700,11 @@ export class OrderController {
    * PATCH /api/admin/orders/:id/status
    * Update order status (admin override)
    */
-  async updateOrderStatus(req: Request, res: Response) {
+  async updateOrderStatus(req: AuthenticatedRequest, res: Response) {
     try {
       const { id } = req.params;
       const { status, reason } = req.body;
+      const adminId = req.admin?.id;
 
       const validStatuses = [
         'PENDING_PAYMENT',
@@ -976,6 +981,17 @@ export class OrderController {
         }
       })();
 
+      if (adminId) {
+        await adminAuditService.recordAction({
+          adminId,
+          action: AdminAuditAction.ORDER_STATUS_CHANGED,
+          entityType: "Order",
+          entityId: id,
+          ipAddress: req.ip || req.socket?.remoteAddress,
+          metadata: { status, reason: reason || null, orderNumber: order.orderNumber },
+        });
+      }
+
       res.json({
         success: true,
         message: `Order status updated to ${status}`,
@@ -1178,6 +1194,15 @@ export class OrderController {
       await prisma.driver.update({
         where: { id: driverId },
         data: { status: 'UNAVAILABLE' }
+      });
+
+      await adminAuditService.recordAction({
+        adminId,
+        action: AdminAuditAction.ORDER_DISPATCHED,
+        entityType: "Order",
+        entityId: id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { driverId, orderNumber: order.orderNumber },
       });
 
       // Send response immediately - don't wait for notifications/emails
