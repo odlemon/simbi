@@ -15,7 +15,7 @@ This document tells the **frontend agent** what to build and **why**, using user
 1. Everyone uses the **same login form** (`POST /api/auth/login`) — no role toggles on the page.
 2. After login, redirect by `userType` — admins go to `/dashboard/admin`.
 3. The app shows **who is logged in** in the header at all times (`GET /api/auth/me` on refresh).
-4. **Any admin portal user** can **invite** teammates (system emails a temporary password at `https://simbimarket.com/login`).
+4. **Any admin portal user** can **invite** teammates (system emails a temporary password at `https://www.simbimarket.com/auth/login`).
 5. **Super Admins only** can assign the `SUPER_ADMIN` role, suspend users, or view the audit trail.
 
 ---
@@ -49,7 +49,7 @@ These apply across the whole admin app:
    You never send `adminId` in request bodies to “say who did it.” The backend reads `req.admin.id` from the token. Your job is to keep the token on every `/api/admin/*` request.
 
 5. **Passwords are never shown in the UI after invite.**  
-   Welcome emails link to `https://simbimarket.com/login` (configurable via `FRONTEND_URL` on the server).
+   Welcome emails link to `https://www.simbimarket.com/auth/login` (configurable via `FRONTEND_URL` on the server).
 
 6. **Sensitive fields never appear in API responses** — do not store them if they ever leak: `password`, `passwordResetToken`, `mfaSecret`.
 
@@ -311,7 +311,7 @@ Table columns:
 
 ### What the user sees (invitee — Patience)
 
-1. Receives email: login URL **`https://simbimarket.com/login`**, her email, temporary password, note to change password after first login.
+1. Receives email: login URL **`https://www.simbimarket.com/auth/login`**, her email, temporary password, note to change password after first login.
 2. Opens that URL (same unified login as everyone), signs in with emailed password.
 3. Sees first-login banner → changes password (Story 1.5).
 
