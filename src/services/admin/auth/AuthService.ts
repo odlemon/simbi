@@ -11,7 +11,7 @@ import {
   AdminAuditAction,
 } from "../audit/AdminAuditService";
 import { isAdminPortalRole } from "../../../constants/adminRoles";
-import { appUrl } from "../../../constants/appUrls";
+import { loginUrl } from "../../../constants/appUrls";
 import { generateSecurePassword } from "../../../utils/generateSecurePassword";
 import { emailService } from "../../EmailService";
 
@@ -455,14 +455,14 @@ export class AuthService {
       },
     });
 
-    const loginUrl = appUrl("/login");
+    const adminLoginUrl = loginUrl();
 
     const emailSent = await emailService.sendAdminWelcomeCredentialsEmail({
       email: data.email,
       firstName: data.firstName,
       lastName: data.lastName,
       temporaryPassword: plainPassword,
-      loginUrl,
+      loginUrl: adminLoginUrl,
       role: data.role,
     });
 

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { logger } from "../utils/logger";
 import { emailTransport, getFromAddress } from "../config/emailConfig";
-import { appUrl } from "../constants/appUrls";
+import { appUrl, loginUrl } from "../constants/appUrls";
 
 interface EmailAttachment {
   filename: string;
@@ -290,7 +290,7 @@ export class EmailService {
     </div>
 
     <div style="text-align: center;">
-      <a href="${appUrl("/staff/login")}" class="button">Login to Your Account</a>
+      <a href="${loginUrl()}" class="button">Login to Your Account</a>
     </div>
 
     <div style="margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">
@@ -351,7 +351,7 @@ NEXT STEPS:
 4. You will be prompted to change your password
 5. Set a strong, unique password
 
-LOGIN URL: ${appUrl("/staff/login")}
+LOGIN URL: ${loginUrl()}
 
 NEED HELP?
 If you have any questions or need assistance, please contact your manager or 
