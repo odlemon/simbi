@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { logger } from "../utils/logger";
 import { emailService } from "./EmailService";
+import { appUrl } from "../constants/appUrls";
 
 interface SendVerificationEmailData {
   email: string;
@@ -180,7 +181,7 @@ export class EmailVerificationService {
               </div>
               
               <div style="text-align: center; margin: 40px 0 20px 0;">
-                <a href="${userType === 'buyer' ? 'https://simbi-market.vercel.app/buyer/login' : 'https://simbi-market.vercel.app/seller/login'}" 
+                <a href="${userType === 'buyer' ? appUrl('/buyer/login') : appUrl('/seller/login')}" 
                    style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 14px 40px; border-radius: 6px; font-weight: bold; font-size: 16px;">
                   Get Started
                 </a>

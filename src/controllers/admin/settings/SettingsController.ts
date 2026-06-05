@@ -4,6 +4,10 @@ import { AuthenticatedRequest } from "../../../types";
 import { SystemSettingsService } from "../../../services/admin/settings/SystemSettingsService";
 import { CommercePricingService } from "../../../services/admin/settings/CommercePricingService";
 import { logger } from "../../../utils/logger";
+import {
+  adminAuditService,
+  AdminAuditAction,
+} from "../../../services/admin/audit/AdminAuditService";
 
 export class SettingsController {
   private settingsService: SystemSettingsService;
@@ -96,6 +100,23 @@ export class SettingsController {
       );
 
       const shippingEngineOut = await this.commercePricingService.getShippingEngine();
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.SETTINGS_UPDATED,
+        entityType: "CommercePricing",
+        entityId: "commerce-pricing",
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: {
+          shippingMode,
+          shippingEngine,
+          shippingFlatRate,
+          shippingDynamicPrice,
+          shippingDynamicDistanceKm,
+          commissionPercent,
+          useAdvancedProductRules,
+        },
+      });
 
       res.status(200).json({
         success: true,
@@ -197,6 +218,15 @@ export class SettingsController {
         req.admin.id
       );
 
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.SETTINGS_UPDATED,
+        entityType: "SystemSetting",
+        entityId: key,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { value, dataType },
+      });
+
       res.status(200).json({
         success: true,
         message: "Setting updated successfully",
@@ -243,6 +273,15 @@ export class SettingsController {
         description,
         req.admin.id
       );
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.SETTINGS_UPDATED,
+        entityType: "SystemSetting",
+        entityId: key,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { value, dataType, created: true },
+      });
 
       res.status(201).json({
         success: true,

@@ -6,6 +6,10 @@ import { SRICalculationService } from "../../../services/admin/sellers/SRICalcul
 import { DocumentManagementService } from "../../../services/admin/sellers/DocumentManagementService";
 import { ComplianceAuditService } from "../../../services/admin/sellers/ComplianceAuditService";
 import { logger } from "../../../utils/logger";
+import {
+  adminAuditService,
+  AdminAuditAction,
+} from "../../../services/admin/audit/AdminAuditService";
 
 export class SellerController {
   private sellerService: SellerManagementService;
@@ -232,6 +236,15 @@ export class SellerController {
       const { id } = req.params;
       const seller = await this.sellerService.updateSeller(id, req.body, req.admin.id);
 
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.SELLER_UPDATED,
+        entityType: "Seller",
+        entityId: id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { fields: Object.keys(req.body || {}) },
+      });
+
       res.status(200).json({
         success: true,
         message: "Seller updated successfully",
@@ -262,6 +275,14 @@ export class SellerController {
 
       const { id } = req.params;
       await this.sellerService.approveSeller(id, req.admin.id);
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.SELLER_APPROVED,
+        entityType: "Seller",
+        entityId: id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+      });
 
       res.status(200).json({
         success: true,
@@ -303,6 +324,15 @@ export class SellerController {
       }
 
       await this.sellerService.suspendSeller(id, reason, req.admin.id);
+
+      await adminAuditService.recordAction({
+        adminId: req.admin.id,
+        action: AdminAuditAction.SELLER_UPDATED,
+        entityType: "Seller",
+        entityId: id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: { action: "suspend", reason },
+      });
 
       res.status(200).json({
         success: true,

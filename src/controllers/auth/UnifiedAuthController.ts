@@ -2,6 +2,10 @@
 import { Request, Response } from "express";
 import { unifiedAuthService } from "../../services/auth/UnifiedAuthService";
 import { logger } from "../../utils/logger";
+import jwt from "jsonwebtoken";
+import { prisma } from "../../utils/database";
+import { envConfig } from "../../utils/env";
+import { isAdminPortalRole } from "../../constants/adminRoles";
 
 export class UnifiedAuthController {
   /**
@@ -179,6 +183,206 @@ export class UnifiedAuthController {
           timestamp: new Date().toISOString(),
         });
       }
+    }
+  }
+
+  /**
+   * GET /api/auth/me
+   * Unified session refresh for all user types.
+   *
+   * Returns:
+   * {
+   *   success: true,
+   *   data: {
+   *     userType: "admin" | "seller" | "buyer" | "staff",
+   *     user: { ...profile }
+   *   }
+   * }
+   */
+  async me(req: Request, res: Response): Promise<void> {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        res.status(401).json({
+          success: false,
+          message: "Authentication required. No token provided.",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const token = authHeader.substring(7);
+      const jwtSecret = envConfig.get("JWT_SECRET");
+      if (!jwtSecret) {
+        res.status(500).json({
+          success: false,
+          message: "Server configuration error",
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const decoded = jwt.verify(token, jwtSecret as string) as any;
+
+      // Buyer access token shape: { buyerId, type: "access", ... }
+      if (decoded?.type === "access" && decoded?.buyerId) {
+        const buyer = await prisma.buyer.findUnique({
+          where: { id: decoded.buyerId },
+          select: {
+            id: true,
+            email: true,
+            buyerType: true,
+            status: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+        if (!buyer) {
+          res.status(401).json({
+            success: false,
+            message: "Invalid token. Buyer not found.",
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        res.status(200).json({
+          success: true,
+          data: {
+            userType: "buyer",
+            user: buyer,
+          },
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // Staff token shape: { staffId, sellerId, type: "staff", ... }
+      if (decoded?.type === "staff" && decoded?.staffId) {
+        const staff = await prisma.sellerStaff.findUnique({
+          where: { id: decoded.staffId },
+          select: {
+            id: true,
+            sellerId: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            department: true,
+            position: true,
+            role: true,
+            status: true,
+            isActive: true,
+          },
+        });
+
+        if (!staff || !staff.isActive) {
+          res.status(401).json({
+            success: false,
+            message: "Invalid token. Staff not found or inactive.",
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        res.status(200).json({
+          success: true,
+          data: {
+            userType: "staff",
+            user: staff,
+          },
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // Seller token shape in this codebase typically: { id, email, type: "seller", ... }
+      if (decoded?.type === "seller" && decoded?.id) {
+        const seller = await prisma.seller.findUnique({
+          where: { id: decoded.id },
+          select: {
+            id: true,
+            email: true,
+            businessName: true,
+            tradingName: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+        if (!seller) {
+          res.status(401).json({
+            success: false,
+            message: "Invalid token. Seller not found.",
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        res.status(200).json({
+          success: true,
+          data: {
+            userType: "seller",
+            user: seller,
+          },
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // Admin: token includes role in ADMIN_PORTAL_ROLES (SUPER_ADMIN, FINOPS_ANALYST, ...)
+      if (decoded?.role && isAdminPortalRole(decoded.role) && decoded?.id) {
+        const admin = await prisma.admin.findUnique({
+          where: { id: decoded.id },
+        });
+
+        if (!admin) {
+          res.status(401).json({
+            success: false,
+            message: "Invalid token. Admin not found.",
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        const {
+          password,
+          mfaSecret,
+          passwordResetToken,
+          passwordResetExpires,
+          ...safeAdmin
+        } = admin as any;
+
+        res.status(200).json({
+          success: true,
+          data: {
+            userType: "admin",
+            user: {
+              ...safeAdmin,
+              mustChangePassword: false,
+            },
+          },
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      res.status(403).json({
+        success: false,
+        message: "Invalid token type",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      logger.error("Unified /me error", { error: error.message });
+      res.status(401).json({
+        success: false,
+        message: "Authentication failed",
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 }

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { logger } from "../utils/logger";
 import { emailTransport, getFromAddress } from "../config/emailConfig";
+import { appUrl } from "../constants/appUrls";
 
 interface EmailAttachment {
   filename: string;
@@ -289,7 +290,7 @@ export class EmailService {
     </div>
 
     <div style="text-align: center;">
-      <a href="https://simbi-market.vercel.app/staff/login" class="button">Login to Your Account</a>
+      <a href="${appUrl("/staff/login")}" class="button">Login to Your Account</a>
     </div>
 
     <div style="margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">
@@ -350,7 +351,7 @@ NEXT STEPS:
 4. You will be prompted to change your password
 5. Set a strong, unique password
 
-LOGIN URL: https://simbi-market.vercel.app/staff/login
+LOGIN URL: ${appUrl("/staff/login")}
 
 NEED HELP?
 If you have any questions or need assistance, please contact your manager or 
@@ -2171,7 +2172,7 @@ This is an automated message. Please do not reply to this email.
     </div>
 
     <div style="text-align: center;">
-      <a href="https://simbi-market.vercel.app/seller/inventory" class="button">Manage Inventory</a>
+      <a href="${appUrl("/seller/inventory")}" class="button">Manage Inventory</a>
     </div>
 
     <div style="margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">
@@ -2229,7 +2230,7 @@ RECOMMENDED ACTIONS:
 3. Update your inventory quantities in your seller dashboard
 4. Adjust low stock thresholds if needed
 
-MANAGE INVENTORY: https://simbi-market.vercel.app/seller/inventory
+MANAGE INVENTORY: ${appUrl("/seller/inventory")}
 
 NEED HELP?
 If you have questions about inventory management, please contact support at support@simbimarket.com
@@ -2239,6 +2240,61 @@ Simbi Market
 Zimbabwe AutoParts Marketplace
 This is an automated message. Please do not reply to this email.
     `;
+  }
+
+  /**
+   * Send welcome email with one-time generated password for new admin portal users.
+   */
+  async sendAdminWelcomeCredentialsEmail(params: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    temporaryPassword: string;
+    loginUrl: string;
+    role: string;
+  }): Promise<boolean> {
+    const { email, firstName, lastName, temporaryPassword, loginUrl, role } =
+      params;
+    const displayName = `${firstName} ${lastName}`.trim();
+    const adminLoginPath = loginUrl.replace(/\/$/, "");
+
+    const htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #1a1a1a;">Welcome to Simbi Market Admin</h2>
+        <p>Hi ${firstName},</p>
+        <p>Your admin account has been created with role <strong>${role}</strong>.</p>
+        <p><strong>Sign in here:</strong> <a href="${adminLoginPath}">${adminLoginPath}</a></p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Temporary password:</strong> <code style="background:#f4f4f4;padding:4px 8px;">${temporaryPassword}</code></p>
+        <p style="color:#b45309;"><strong>Important:</strong> Change your password after your first login via <em>Change password</em> in the admin portal.</p>
+        <p style="font-size: 12px; color: #666;">This is an automated message. Please do not reply.</p>
+      </div>
+    `;
+
+    const textBody = `
+Welcome to Simbi Market Admin
+
+Hi ${displayName},
+
+Your admin account has been created with role ${role}.
+
+Sign in: ${adminLoginPath}
+Email: ${email}
+Temporary password: ${temporaryPassword}
+
+Important: Change your password after your first login.
+
+This is an automated message. Please do not reply.
+    `.trim();
+
+    return this.sendEmail({
+      to: email,
+      toName: displayName,
+      subject: "Your Simbi Market admin account",
+      htmlBody,
+      textBody,
+      module: "default",
+    });
   }
 
   /**

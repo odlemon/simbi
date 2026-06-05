@@ -4,6 +4,10 @@ import { prisma } from "../../../utils/database";
 import { logger } from "../../../utils/logger";
 import { AuthenticatedRequest } from "../../../middleware/authenticate";
 import { PayoutStatus } from "@prisma/client";
+import {
+  adminAuditService,
+  AdminAuditAction,
+} from "../../../services/admin/audit/AdminAuditService";
 
 export class PayoutController {
   /**
@@ -488,6 +492,20 @@ export class PayoutController {
         remainingPending,
         ordersPaid: payoutRecords.length,
         bankReference
+      });
+
+      await adminAuditService.recordAction({
+        adminId,
+        action: AdminAuditAction.PAYOUT_RECORDED,
+        entityType: "Seller",
+        entityId: seller.id,
+        ipAddress: req.ip || req.socket?.remoteAddress,
+        metadata: {
+          amount: payoutAmount,
+          orderIds: orderIds || null,
+          ordersPaid: payoutRecords.length,
+          bankReference: bankReference || null,
+        },
       });
 
       // Send response immediately - don't wait for notifications/emails

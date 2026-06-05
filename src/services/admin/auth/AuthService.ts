@@ -6,6 +6,14 @@ import { prisma } from "../../../utils/database";
 import { envConfig } from "../../../utils/env";
 import { logger } from "../../../utils/logger";
 import { AccountLockoutService } from "../../AccountLockoutService";
+import {
+  adminAuditService,
+  AdminAuditAction,
+} from "../audit/AdminAuditService";
+import { isAdminPortalRole } from "../../../constants/adminRoles";
+import { appUrl } from "../../../constants/appUrls";
+import { generateSecurePassword } from "../../../utils/generateSecurePassword";
+import { emailService } from "../../EmailService";
 
 interface LoginResult {
   admin: Omit<Admin, "password" | "mfaSecret">;
@@ -21,6 +29,34 @@ interface CreateAdminData {
   role: UserRole;
 }
 
+interface InviteAdminData {
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+}
+
+interface UpdateAdminData {
+  firstName?: string;
+  lastName?: string;
+  role?: UserRole;
+  status?: UserStatus;
+}
+
+const ADMIN_SAFE_SELECT = {
+  id: true,
+  email: true,
+  firstName: true,
+  lastName: true,
+  role: true,
+  status: true,
+  mfaEnabled: true,
+  lastLoginAt: true,
+  lastLoginIp: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export class AuthService {
 
   /**
@@ -29,6 +65,12 @@ export class AuthService {
    */
   async createAdmin(data: CreateAdminData): Promise<Admin> {
     try {
+      if (!isAdminPortalRole(data.role)) {
+        throw new Error(
+          "Invalid admin role. Must be one of: SUPER_ADMIN, FINOPS_ANALYST, COMPLIANCE_MANAGER, LOGISTICS_COORDINATOR, TECH_SUPPORT"
+        );
+      }
+
       // Check if admin already exists
       const existing = await prisma.admin.findUnique({
         where: { email: data.email },
@@ -186,8 +228,13 @@ export class AuthService {
       // Generate JWT token
       const token = this.generateToken(admin);
 
-      // Log activity
-      await this.logActivity(admin.id, "LOGIN", "Admin", admin.id, ipAddress);
+      await adminAuditService.recordAction({
+        adminId: admin.id,
+        action: AdminAuditAction.LOGIN,
+        entityType: "Admin",
+        entityId: admin.id,
+        ipAddress,
+      });
 
       logger.info("Admin logged in successfully", {
         adminId: admin.id,
@@ -269,7 +316,8 @@ export class AuthService {
   async changePassword(
     adminId: string,
     currentPassword: string,
-    newPassword: string
+    newPassword: string,
+    ipAddress?: string
   ): Promise<void> {
     try {
       const admin = await prisma.admin.findUnique({
@@ -277,30 +325,49 @@ export class AuthService {
       });
 
       if (!admin) {
-        throw new Error("Admin not found");
+        const err = new Error("Admin not found");
+        (err as any).code = "ADMIN_NOT_FOUND";
+        throw err;
       }
 
-      // Verify current password
+      if (currentPassword === newPassword) {
+        const err = new Error(
+          "New password must be different from your current password"
+        );
+        (err as any).code = "PASSWORD_UNCHANGED";
+        throw err;
+      }
+
       const isPasswordValid = await bcrypt.compare(
         currentPassword,
         admin.password
       );
 
       if (!isPasswordValid) {
-        throw new Error("Current password is incorrect");
+        const err = new Error("Current password is incorrect");
+        (err as any).code = "INVALID_CURRENT_PASSWORD";
+        throw err;
       }
 
-      // Hash new password
       const hashedPassword = await bcrypt.hash(newPassword, 12);
 
-      // Update password
       await prisma.admin.update({
         where: { id: adminId },
-        data: { password: hashedPassword },
+        data: {
+          password: hashedPassword,
+          passwordResetToken: null,
+          passwordResetExpires: null,
+        },
       });
 
-      // Log activity
-      await this.logActivity(adminId, "PASSWORD_CHANGED", "Admin", adminId);
+      await adminAuditService.recordAction({
+        adminId,
+        action: AdminAuditAction.PASSWORD_CHANGED,
+        entityType: "Admin",
+        entityId: adminId,
+        ipAddress,
+        metadata: { via: "settings" },
+      });
 
       logger.info("Admin password changed", { adminId });
     } catch (error: any) {
@@ -332,100 +399,217 @@ export class AuthService {
   }
 
   /**
-   * Update admin status (suspend, activate, etc.)
+   * Invite admin: system-generated password emailed to user.
    */
-  async updateAdminStatus(
-    adminId: string,
-    status: UserStatus,
-    updatedBy: string
-  ): Promise<void> {
-    try {
-      await prisma.admin.update({
-        where: { id: adminId },
-        data: { status },
-      });
-
-      // Log activity
-      await this.logActivity(
-        updatedBy,
-        "STATUS_UPDATED",
-        "Admin",
-        adminId,
-        undefined,
-        { newStatus: status }
+  async inviteAdmin(
+    data: InviteAdminData,
+    createdBy: string,
+    createdByRole: UserRole,
+    ipAddress?: string
+  ): Promise<Omit<Admin, "password" | "mfaSecret" | "passwordResetToken" | "passwordResetExpires">> {
+    if (!isAdminPortalRole(data.role)) {
+      throw new Error(
+        "Invalid admin role. Must be one of: SUPER_ADMIN, FINOPS_ANALYST, COMPLIANCE_MANAGER, LOGISTICS_COORDINATOR, TECH_SUPPORT"
       );
-
-      logger.info("Admin status updated", {
-        adminId,
-        newStatus: status,
-        updatedBy,
-      });
-    } catch (error: any) {
-      logger.error("Error updating admin status", {
-        error: error.message,
-        adminId,
-      });
-      throw error;
     }
+
+    if (
+      data.role === UserRole.SUPER_ADMIN &&
+      createdByRole !== UserRole.SUPER_ADMIN
+    ) {
+      throw new Error(
+        "Only Super Admins can invite users with the Super Admin role"
+      );
+    }
+
+    const existing = await prisma.admin.findUnique({
+      where: { email: data.email },
+    });
+    if (existing) {
+      throw new Error("Admin with this email already exists");
+    }
+
+    const [buyerCollision, sellerCollision] = await Promise.all([
+      prisma.buyer.findUnique({ where: { email: data.email }, select: { id: true } }),
+      prisma.seller.findUnique({ where: { email: data.email }, select: { id: true } }),
+    ]);
+    const emailCollisionWarning =
+      buyerCollision || sellerCollision
+        ? {
+            buyerAccount: !!buyerCollision,
+            sellerAccount: !!sellerCollision,
+          }
+        : null;
+
+    const plainPassword = generateSecurePassword();
+    const hashedPassword = await bcrypt.hash(plainPassword, 12);
+
+    const admin = await prisma.admin.create({
+      data: {
+        email: data.email,
+        password: hashedPassword,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: data.role,
+        status: UserStatus.ACTIVE,
+      },
+    });
+
+    const loginUrl = appUrl("/login");
+
+    const emailSent = await emailService.sendAdminWelcomeCredentialsEmail({
+      email: data.email,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      temporaryPassword: plainPassword,
+      loginUrl,
+      role: data.role,
+    });
+
+    if (!emailSent) {
+      await prisma.admin.delete({ where: { id: admin.id } });
+      const err = new Error(
+        "Failed to send welcome email. Admin account was not created."
+      );
+      (err as any).code = "EMAIL_SEND_FAILED";
+      throw err;
+    }
+
+    await adminAuditService.recordAction({
+      adminId: createdBy,
+      action: AdminAuditAction.ADMIN_CREATED,
+      entityType: "Admin",
+      entityId: admin.id,
+      ipAddress,
+      metadata: {
+        email: data.email,
+        role: data.role,
+        ...(emailCollisionWarning ? { emailCollisionWarning } : {}),
+      },
+    });
+
+    logger.info("Admin invited successfully", {
+      adminId: admin.id,
+      email: admin.email,
+      role: admin.role,
+      createdBy,
+    });
+
+    const { password: _, mfaSecret, passwordResetToken, passwordResetExpires, ...safe } =
+      admin;
+    return safe;
   }
 
   /**
-   * Log admin activity for audit trail
+   * Update admin profile, role, or status (Super Admin).
    */
-  private async logActivity(
-    adminId: string,
-    action: string,
-    entityType: string,
-    entityId: string,
-    ipAddress?: string,
-    metadata?: any
-  ): Promise<void> {
-    try {
-      await prisma.activityLog.create({
-        data: {
-          adminId,
-          action,
-          entityType,
-          entityId,
-          ipAddress: ipAddress || "unknown",
-          userAgent: null,
-          metadata: metadata || null,
-        },
-      });
-    } catch (error: any) {
-      // Log error but don't throw - activity logging shouldn't break main flow
-      logger.error("Error logging activity", {
-        error: error.message,
-        adminId,
-        action,
-      });
+  async updateAdmin(
+    targetId: string,
+    data: UpdateAdminData,
+    updatedBy: string,
+    ipAddress?: string
+  ): Promise<Omit<Admin, "password" | "mfaSecret" | "passwordResetToken" | "passwordResetExpires">> {
+    const target = await prisma.admin.findUnique({ where: { id: targetId } });
+    if (!target) {
+      throw new Error("Admin not found");
     }
+
+    if (data.role !== undefined && !isAdminPortalRole(data.role)) {
+      throw new Error(
+        "Invalid admin role. Must be one of: SUPER_ADMIN, FINOPS_ANALYST, COMPLIANCE_MANAGER, LOGISTICS_COORDINATOR, TECH_SUPPORT"
+      );
+    }
+
+    const nextRole = data.role ?? target.role;
+    const nextStatus = data.status ?? target.status;
+    const demotingSuperAdmin =
+      target.role === UserRole.SUPER_ADMIN && nextRole !== UserRole.SUPER_ADMIN;
+    const deactivatingSuperAdmin =
+      target.role === UserRole.SUPER_ADMIN &&
+      target.status === UserStatus.ACTIVE &&
+      nextStatus !== UserStatus.ACTIVE;
+
+    if (demotingSuperAdmin || deactivatingSuperAdmin) {
+      const otherActiveSuperAdmins = await this.countActiveSuperAdmins(targetId);
+      if (otherActiveSuperAdmins < 1) {
+        throw new Error(
+          "Cannot change role or status: at least one other active Super Admin is required"
+        );
+      }
+    }
+
+    if (targetId === updatedBy) {
+      const selfDemote =
+        target.role === UserRole.SUPER_ADMIN && nextRole !== UserRole.SUPER_ADMIN;
+      const selfDeactivate =
+        target.status === UserStatus.ACTIVE && nextStatus !== UserStatus.ACTIVE;
+      if (selfDemote || selfDeactivate) {
+        const otherActiveSuperAdmins = await this.countActiveSuperAdmins(targetId);
+        if (otherActiveSuperAdmins < 1) {
+          throw new Error(
+            "You cannot change your own role or status in a way that removes the last active Super Admin"
+          );
+        }
+      }
+    }
+
+    const updated = await prisma.admin.update({
+      where: { id: targetId },
+      data: {
+        ...(data.firstName !== undefined ? { firstName: data.firstName } : {}),
+        ...(data.lastName !== undefined ? { lastName: data.lastName } : {}),
+        ...(data.role !== undefined ? { role: data.role } : {}),
+        ...(data.status !== undefined ? { status: data.status } : {}),
+      },
+    });
+
+    const suspended =
+      data.status !== undefined &&
+      data.status !== UserStatus.ACTIVE &&
+      target.status === UserStatus.ACTIVE;
+
+    await adminAuditService.recordAction({
+      adminId: updatedBy,
+      action: suspended
+        ? AdminAuditAction.ADMIN_SUSPENDED
+        : AdminAuditAction.ADMIN_UPDATED,
+      entityType: "Admin",
+      entityId: targetId,
+      ipAddress,
+      metadata: {
+        changes: data,
+        previousRole: target.role,
+        previousStatus: target.status,
+      },
+    });
+
+    logger.info("Admin updated", { targetId, updatedBy, changes: data });
+
+    const { password: _, mfaSecret, passwordResetToken, passwordResetExpires, ...safe } =
+      updated;
+    return safe;
+  }
+
+  private async countActiveSuperAdmins(excludeId?: string): Promise<number> {
+    return prisma.admin.count({
+      where: {
+        role: UserRole.SUPER_ADMIN,
+        status: UserStatus.ACTIVE,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+    });
   }
 
   /**
    * Get all admins (Super Admin only)
    */
-  async getAllAdmins(): Promise<Omit<Admin, "password" | "mfaSecret">[]> {
+  async getAllAdmins(): Promise<
+    Omit<Admin, "password" | "mfaSecret" | "passwordResetToken" | "passwordResetExpires">[]
+  > {
     try {
       const admins = await prisma.admin.findMany({
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          role: true,
-          status: true,
-          mfaEnabled: true,
-          lastLoginAt: true,
-          lastLoginIp: true,
-          createdAt: true,
-          updatedAt: true,
-          password: false,
-          mfaSecret: false,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
+        select: ADMIN_SAFE_SELECT,
+        orderBy: { createdAt: "desc" },
       });
 
       return admins as any;

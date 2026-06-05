@@ -1,11 +1,21 @@
 // @ts-nocheck
 import { Router } from "express";
 import { SettingsController } from "../../../controllers/admin/settings/SettingsController";
+import { AuthController } from "../../../controllers/admin/auth/AuthController";
 import { authenticateAdmin } from "../../../middleware/authenticate";
 import { requireSuperAdmin, requireAnyAdmin } from "../../../middleware/rbac";
 
 const router = Router();
 const controller = new SettingsController();
+const authController = new AuthController();
+
+// Account security (Settings tab — any admin portal user)
+router.put(
+  "/change-password",
+  authenticateAdmin,
+  requireAnyAdmin,
+  authController.changePassword
+);
 
 // System Settings
 router.get("/", authenticateAdmin, requireAnyAdmin, controller.getAllSettings);
